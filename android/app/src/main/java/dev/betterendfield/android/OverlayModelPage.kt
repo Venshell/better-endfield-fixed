@@ -26,6 +26,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,8 +65,11 @@ import java.util.Locale
 internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
 
-    var index by remember { mutableStateOf("[]") }
-    var modelsRevision by remember { mutableStateOf("") }
+    val modelState = remember { OverlayModelCatalogState() }
+    var modelVersion by remember { mutableIntStateOf(0) }
+    var modelRequest by remember { mutableLongStateOf(0L) }
+    val index = remember(modelVersion) { modelState.index() }
+    val modelsRevision = remember(modelVersion) { modelState.revision() }
     var importing by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(emptySet<String>()) }
     var character by remember { mutableStateOf("") }
@@ -77,10 +83,11 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
     var writing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("") }
 
-    fun acceptModels(reply: Bundle) {
-        modelsRevision = reply.getString("revision", "")
+    fun acceptModels(request: Long, reply: Bundle) {
+        if (!modelState.succeed(request, reply.getString("index"), reply.getString("revision"))) return
+        modelVersion = modelState.version()
+        if (!modelState.canWrite()) return
         importing = reply.getBoolean("busy")
-        index = reply.getString("index", "[]")
         notice = ""
     }
 
@@ -94,11 +101,13 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
     }
 
     fun refreshModels() {
+        val request = ++modelRequest
+        modelState.beginRead(request)
         OverlaySettingsClient.call(context, "read_models", null, null) { reply ->
-            if (reply.getBoolean("ok")) acceptModels(reply)
+            if (reply.getBoolean("ok")) acceptModels(request, reply)
             else {
-                modelsRevision = ""
-                notice = reply.getString("error") ?: "设置桥不可用"
+                if (modelState.fail(request, reply.getString("error")))
+                    modelVersion = modelState.version()
             }
         }
     }
@@ -127,13 +136,17 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
      * disabled until the panel is reopened.
      */
     fun writeModels(method: String, patch: String?) {
-        if (preview || writing || importing || modelsRevision.isEmpty()) return
+        if (preview || writing || importing || !modelState.canWrite()) return
         writing = true
+        val request = ++modelRequest
+        modelState.invalidate(request)
         OverlaySettingsClient.call(context, method, modelsRevision, patch) { reply ->
             writing = false
-            if (reply.getBoolean("ok")) acceptModels(reply)
+            if (reply.getBoolean("ok")) acceptModels(request, reply)
             else {
                 notice = reply.getString("error") ?: "设置未保存"
+                modelState.fail(request, notice)
+                modelVersion = modelState.version()
                 refreshModels()
             }
         }
@@ -196,7 +209,7 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
                     preview -> "预览模式：不会写入"
                     fovRevision.isEmpty() -> "设置桥不可用"
                     !runtimeLive -> "相机模块未加载，重启后生效"
-                    else -> "对当前主相机生效"
+                    else -> stringResource(R.string.overlay_fov_delivery_hint)
                 },
                 checked = fovEnabled,
                 enabled = writable && fovRevision.isNotEmpty(),
@@ -220,7 +233,7 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
             val entries = remember(index) { parseModels(index) }
             if (entries.isEmpty()) {
                 Text(
-                    if (modelsRevision.isEmpty()) "设置桥不可用，无法读取模型列表。"
+                    if (modelState.hasError() || !modelState.hasCatalog()) modelState.message()
                     else "无已安装模型。可在设置 app 的「模型安装」页导入。",
                     color = Be.Colors.textSecondary, fontSize = 12.sp,
                 )
@@ -235,6 +248,7 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
                     { character = nextCharacter(characters, filter) },
                     "关闭全部",
                     { writeModels("disable_models", null) },
+                    secondEnabled = writable && modelState.canWrite(),
                 )
                 entries.filter { filter.isEmpty() || it.characterId == filter }
                     .forEach { model ->
@@ -243,7 +257,6 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
                             model = model,
                             open = expanded.contains(model.generation),
                             enabled = writable && modelsRevision.isNotEmpty(),
-                            live = runtimeLive,
                             onToggleOpen = {
                                 expanded = if (expanded.contains(model.generation)) {
                                     expanded - model.generation
@@ -258,6 +271,9 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
                         )
                     }
             }
+            if (entries.isNotEmpty() && modelState.hasError()) {
+                Text(modelState.message(), color = Be.Colors.danger, fontSize = 11.sp)
+            }
             if (importing) {
                 Text("正在导入模型包，导入完成前不能修改。", color = Be.Colors.textSecondary, fontSize = 11.sp)
             }
@@ -269,7 +285,7 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
 
     Text(
         if (preview) "预览模式：控件不会写入任何设置。"
-        else "写入会立即发布给游戏进程；「启用」的生效时机取决于模型是否支持热切换，否则重启后生效。",
+        else stringResource(R.string.overlay_model_restart_hint),
         color = Be.Colors.textSecondary, fontSize = 10.sp,
     )
 }
@@ -323,7 +339,6 @@ private fun ModelCard(
     model: OverlayModel,
     open: Boolean,
     enabled: Boolean,
-    live: Boolean,
     onToggleOpen: () -> Unit,
     onEnabled: (Boolean) -> Unit,
     onAppearance: (String) -> Unit,
@@ -339,7 +354,7 @@ private fun ModelCard(
         OverlaySwitch(
             title = model.name,
             detail = CharacterNames.label(context, model.characterId) +
-                if (live) " · 启用后按热切换状态生效" else " · 启用后重启生效",
+                " · " + stringResource(R.string.overlay_model_restart_detail),
             checked = model.enabled,
             enabled = enabled,
             onChange = onEnabled,

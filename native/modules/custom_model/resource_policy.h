@@ -31,4 +31,11 @@ CommitResult CommitResource(std::span<Binding> bindings, Apply&& apply, Restore&
     }
     return restored ? CommitResult::Restored : CommitResult::RestoreFailed;
 }
+
+// Restore all receivers as one transaction. A failed original-state write
+// re-publishes the custom state, including on the receiver that failed.
+template<class Binding, class Restore, class Republish>
+CommitResult RestoreResource(std::span<Binding> bindings, Restore&& restore, Republish&& republish) {
+    return CommitResource(bindings,restore,republish);
+}
 }

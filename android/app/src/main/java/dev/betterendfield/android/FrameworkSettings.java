@@ -36,7 +36,9 @@ final class FrameworkSettings {
         local.registerOnSharedPreferenceChangeListener(listener);
         XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
             @Override public void onServiceBind(XposedService connected) {
-                synchronized (FrameworkSettings.class) { service = connected; remoteService = connected; publish(); }
+                synchronized (FrameworkSettings.class) {
+                    service = connected; remoteService = connected; FrameworkSettings.class.notifyAll(); publish();
+                }
             }
             @Override public void onServiceDied(XposedService disconnected) {
                 synchronized (FrameworkSettings.class) { if (service == disconnected) { service = null; remoteService = null; } }
@@ -147,6 +149,11 @@ final class FrameworkSettings {
      */
     static synchronized boolean remoteAvailable() {
         return remoteService != null;
+    }
+
+    static boolean awaitConnection(FrameworkServiceWait.Checkpoint checkpoint) throws java.io.IOException {
+        return FrameworkServiceWait.await(FrameworkSettings.class,
+                () -> remoteService != null, 10_000, checkpoint);
     }
 
     /**

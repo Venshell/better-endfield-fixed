@@ -133,6 +133,10 @@ class BemInstallState(private val context: Context) {
         private set
     var busy by mutableStateOf(false)
         private set
+    internal var pendingBundle by mutableStateOf<BemInstaller.PendingBundle?>(null)
+        private set
+    internal var pendingExternalUri by mutableStateOf<android.net.Uri?>(null)
+        private set
     var removing by mutableStateOf(false)
         private set
     var percent by mutableStateOf(-1)
@@ -156,16 +160,15 @@ class BemInstallState(private val context: Context) {
     fun characterLabel(id: String): String = characterNames.optString(id, id)
     fun selectCharacter(id: String) { selectedCharacter = id }
 
-    private var displayedIndex = ""
-
-    /** Drafts survive a rebuild so a refresh cannot discard an uncommitted edit. */
-    private data class Draft(val enabled: Boolean, val appearance: Int,
-        val options: String, val parameters: String)
-    private val drafts = HashMap<String, Draft>()
+    private val draftSession = BemIndexRevision.Draft()
+    var indexConflict by mutableStateOf(false)
+        private set
+    private fun selections(): Map<String, String> = packages.associate { it.generation to it.draft().toString() }
 
     fun refresh() {
         status = BemInstaller.status
         busy = BemInstaller.busy
+        pendingBundle = BemInstaller.pendingBundle
         removing = BemInstaller.removing
         percent = BemInstaller.progressPercent
         elapsedSeconds = if (BemInstaller.busy) {
@@ -173,29 +176,38 @@ class BemInstallState(private val context: Context) {
         } else {
             0L
         }
-        val index = FrameworkSettings.open(context).getString(BemInstaller.INDEX, "[]") ?: "[]"
         keepLocalCopies = FrameworkSettings.open(context).getBoolean(BemInstaller.KEEP_LOCAL_COPIES, true)
-        if (index != displayedIndex) {
-            displayedIndex = index
-            rebuild(index)
+        try {
+            val snapshot = BemInstaller.snapshot(context)
+            when (draftSession.refresh(snapshot.revision, selections())) {
+                BemIndexRevision.Draft.Refresh.LOAD_LATEST -> accept(snapshot)
+                BemIndexRevision.Draft.Refresh.KEEP_DRAFT -> indexConflict = true
+                BemIndexRevision.Draft.Refresh.UNCHANGED -> {
+                    indexConflict = false
+                    indexBroken = null
+                }
+            }
+        } catch (error: Exception) {
+            indexBroken = context.getString(R.string.bem_index_read_failed, error.message ?: "")
         }
     }
 
-    private fun rebuild(index: String) {
-        drafts.clear()
-        packages.forEach { pkg ->
-            drafts[pkg.generation] = Draft(pkg.enabled, pkg.appearanceIndex, pkg.options, pkg.parameters)
-        }
-        val list = try {
-            val parsed = JSONArray(index)
-            (0 until parsed.length()).map { position -> parse(parsed.getJSONObject(position)) }
-        } catch (error: Exception) {
-            indexBroken = "安装列表读取失败：" + error.message
-            emptyList()
-        }
-        if (list.isNotEmpty()) indexBroken = null
+    private fun accept(snapshot: BemInstaller.IndexSnapshot) {
+        val parsed = JSONArray(snapshot.index)
+        val list = (0 until parsed.length()).map { position -> parse(parsed.getJSONObject(position)) }
         packages = list
+        draftSession.accept(snapshot.revision, selections())
+        indexConflict = false
+        indexBroken = null
         if (selectedCharacter.isNotEmpty() && list.none { it.characterId == selectedCharacter }) selectedCharacter = ""
+    }
+
+    /** Called only after the user confirms discarding the retained draft. */
+    fun discardDraftAndReload() {
+        try { accept(BemInstaller.snapshot(context)) }
+        catch (error: Exception) {
+            indexBroken = context.getString(R.string.bem_index_read_failed, error.message ?: "")
+        }
     }
 
     private fun parse(entry: JSONObject): BemPackage {
@@ -270,41 +282,41 @@ class BemInstallState(private val context: Context) {
             }
         }
 
-        drafts[generation]?.let { draft ->
-            pkg.enabled = draft.enabled
-            if (minor >= 1) {
-                pkg.options = draft.options
-                pkg.refreshVisibility()
-            } else {
-                pkg.appearanceIndex = draft.appearance.coerceIn(0, (appearances.size - 1).coerceAtLeast(0))
-            }
-            if (minor >= 3) pkg.parameters = draft.parameters
-        } ?: run {
-            pkg.enabled = entry.optBoolean("enabled", true)
-        }
+        pkg.enabled = entry.optBoolean("enabled", true)
         return pkg
     }
 
     fun saveAll(): Boolean = try {
+        if (indexConflict) throw BemInstaller.IndexConflict(context)
         val changes = JSONArray()
         packages.forEach { changes.put(it.draft()) }
-        BemInstaller.saveAll(context, changes)
-        BemInstaller.status = "全部设置已保存，重启游戏后生效。"
+        accept(BemInstaller.saveAll(context, draftSession.revision(), changes))
+        BemInstaller.status = context.getString(R.string.bem_selection_saved)
         status = BemInstaller.status
         true
     } catch (error: Exception) {
-        BemInstaller.status = "保存失败：" + error.message
+        if (error is BemInstaller.IndexConflict) indexConflict = true
+        BemInstaller.status = context.getString(R.string.bem_selection_failed, error.message ?: "")
         status = BemInstaller.status
         false
     }
 
     fun disableAll(): Boolean = try {
-        BemInstaller.disableAll(context)
-        packages.forEach { it.enabled = false }
+        if (indexConflict) throw BemInstaller.IndexConflict(context)
+        val pending = packages.associateBy { it.generation }
+        accept(BemInstaller.disableAll(context, draftSession.revision()))
+        // Disable changes only the durable switches; retain unsaved option/slider edits.
+        packages.forEach { pkg -> pending[pkg.generation]?.let { old ->
+            pkg.appearanceIndex = old.appearanceIndex
+            pkg.options = old.options
+            pkg.parameters = old.parameters
+            if (pkg.minorVersion >= 1) pkg.refreshVisibility()
+        } }
         BemInstaller.status = context.getString(R.string.bem_disable_all_saved)
         status = BemInstaller.status
         true
     } catch (error: Exception) {
+        if (error is BemInstaller.IndexConflict) indexConflict = true
         BemInstaller.status = context.getString(R.string.bem_disable_all_failed, error.message ?: "")
         status = BemInstaller.status
         false
@@ -348,10 +360,29 @@ class BemInstallState(private val context: Context) {
     }
 
     fun import(uri: android.net.Uri) {
-        BemInstaller.start(context, uri)
+        if (BemInstaller.start(context, uri)) pendingExternalUri = null
+    }
+
+    internal fun importSelected(bundle: BemInstaller.PendingBundle, selected: List<Boolean>) {
+        BemInstaller.importSelected(bundle, BooleanArray(selected.size) { selected[it] })
+        refresh()
+    }
+
+    internal fun cancelBundle(bundle: BemInstaller.PendingBundle) {
+        BemInstaller.cancelBundle(bundle)
+        refresh()
     }
 
     fun startFromViewIntent(uri: android.net.Uri) {
-        BemInstaller.start(context, uri)
+        if (BemInstaller.start(context, uri)) pendingExternalUri = null
+        else pendingExternalUri = uri
+    }
+
+    internal fun restorePendingExternalUri(uri: android.net.Uri) {
+        pendingExternalUri = uri
+    }
+
+    internal fun retryPendingExternalImport() {
+        pendingExternalUri?.let { startFromViewIntent(it) }
     }
 }

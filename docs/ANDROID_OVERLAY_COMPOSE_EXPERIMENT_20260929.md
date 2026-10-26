@@ -4,7 +4,7 @@
 
 ## 范围与既有证据
 
-本轮只替换游戏内悬浮 Handle 和面板的 View 构造层。此前 3.3.21 的 Compose 迁移曾在游戏进程导致启动崩溃，见 [`ANDROID_R8_MINIFY_PLAN_20260929.md`](ANDROID_R8_MINIFY_PLAN_20260929.md) 第 6.5 节。用户指定当前分支用于实验，因而允许再次试验；构建、App 内预览、游戏进程加载是三个不同的验收级别。
+本轮只替换游戏内悬浮 Handle 和面板的 View 构造层。此前 3.3.21 的 Compose 迁移曾在游戏进程导致启动崩溃，见 [`ANDROID_R8_MINIFY_PLAN_20260929.md`((ANDROID_R8_MINIFY_PLAN_20260929.md) 第 6.5 节。用户指定当前分支用于实验，因而允许再次试验；构建、App 内预览、游戏进程加载是三个不同的验收级别。
 
 首次 composition 必须等宿主和两个 ComposeView 附着到窗口后再触发，并写入 `RuntimeLog`；同步创建失败在延后任务中记录并移除宿主。后续异步重组或设备端 classloader 问题仍可能导致崩溃。
 

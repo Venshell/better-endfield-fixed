@@ -1,11 +1,148 @@
 package dev.betterendfield.android;
 
 import android.app.Instrumentation;
+import android.content.ClipData;
+import android.content.Intent;
+import android.net.Uri;
 import org.json.*;
 import java.io.*;
 import java.nio.file.Files;
 
 public final class BemInstallerTest extends Instrumentation {
+    public void testIndexRevisionRejectsStalePageAndOverlay() throws Exception {BemIndexRevisionDeviceTest.stale(getTargetContext());}
+    public void testIndexDraftRefreshRetainsAndBlocks() throws Exception {BemIndexRevisionDeviceTest.refresh(getTargetContext());}
+    public void testIndexCleanRefreshAndImportConflict() throws Exception {BemIndexRevisionDeviceTest.cleanAndImport(getTargetContext());}
+    public void testIndexNormalSaveAndDisableRetainsDraft() throws Exception {BemIndexRevisionDeviceTest.normalAndDisable(getTargetContext());}
+    public void testIndexRemovedGenerationRetainsDraft() throws Exception {BemIndexRevisionDeviceTest.removed(getTargetContext());}
+    public void testIndexRevertedDraftLoadsLatest() throws Exception {BemIndexRevisionDeviceTest.reverted(getTargetContext());}
+    public void testExternalBemImportRequest() {
+        Uri first=Uri.parse("content://provider.example/first.bem");
+        Uri second=Uri.parse("content://provider.example/second.bem");
+        assertTrue(first.equals(BemImportRequest.fromIntent(new Intent(Intent.ACTION_VIEW,first))));
+        Intent shared=new Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM,first);
+        shared.setClipData(ClipData.newRawUri("file",first));
+        assertTrue(first.equals(BemImportRequest.fromIntent(shared)));
+        shared.setClipData(ClipData.newRawUri("file",second));
+        try {BemImportRequest.fromIntent(shared);fail("Accepted conflicting document URIs");}
+        catch(IllegalArgumentException expected) {}
+        Intent multiple=new Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM,first);
+        ClipData clip=ClipData.newRawUri("file",first);
+        clip.addItem(new ClipData.Item(second));multiple.setClipData(clip);
+        try {BemImportRequest.fromIntent(multiple);fail("Accepted multiple shared files");}
+        catch(IllegalArgumentException expected) {}
+        try {BemImportRequest.requireContentUri(Uri.parse("file:///sdcard/first.bem"));fail("Accepted filesystem path");}
+        catch(IllegalArgumentException expected) {}
+    }
+    public void testMultiResourceIndexConflicts() throws Exception {
+        JSONObject body=new JSONObject().put("generation","body-old").put("package_id","body.pack")
+            .put("character_id","chr_synthetic").put("target_kind","character").put("target_id","chr_synthetic")
+            .put("bem_minor",4).put("resource_keys",new JSONArray().put("android-arm64:body"))
+            .put("enabled",true);
+        JSONObject weapon=new JSONObject().put("generation","weapon-new").put("package_id","weapon.pack")
+            .put("character_id","chr_synthetic").put("target_kind","character").put("target_id","chr_synthetic")
+            .put("bem_minor",4).put("resource_keys",new JSONArray().put("android-arm64:weapon"))
+            .put("enabled",true);
+        JSONArray installed=BemInstaller.mergePublishedIndex(new JSONArray().put(body),weapon);
+        assertEquals(2,installed.length());
+        assertTrue(installed.getJSONObject(0).getBoolean("enabled"));
+        JSONObject replacement=new JSONObject(weapon.toString()).put("generation","body-new")
+            .put("resource_keys",new JSONArray().put("android-arm64:body"));
+        JSONArray conflicting=BemInstaller.mergePublishedIndex(new JSONArray().put(body),replacement);
+        assertEquals(2,conflicting.length());
+        assertFalse(conflicting.getJSONObject(0).getBoolean("enabled"));
+        JSONArray overlay=OverlayWritePolicy.apply(installed,new JSONArray().put(
+            new JSONObject().put("generation","weapon-new").put("enabled",true)));
+        assertTrue(overlay.getJSONObject(0).getBoolean("enabled"));
+        JSONArray overlapping=new JSONArray().put(new JSONObject(body.toString())).put(new JSONObject(replacement.toString()));
+        JSONArray switched=OverlayWritePolicy.apply(overlapping,new JSONArray().put(
+            new JSONObject().put("generation","body-new").put("enabled",true)));
+        assertFalse(switched.getJSONObject(0).getBoolean("enabled"));
+        assertTrue(switched.getJSONObject(1).getBoolean("enabled"));
+        JSONObject legacy=new JSONObject().put("generation","legacy-old").put("package_id","legacy.pack")
+            .put("character_id","chr_synthetic").put("bem_minor",0).put("enabled",true);
+        JSONArray mixed=BemInstaller.mergePublishedIndex(new JSONArray().put(legacy),weapon);
+        assertFalse(mixed.getJSONObject(0).getBoolean("enabled"));
+        JSONObject otherTarget=new JSONObject(legacy.toString()).put("character_id","chr_other");
+        JSONArray independent=BemInstaller.mergePublishedIndex(new JSONArray().put(otherTarget),weapon);
+        assertTrue(independent.getJSONObject(0).getBoolean("enabled"));
+        JSONObject samePackage=new JSONObject(weapon.toString()).put("generation","weapon-updated")
+            .put("resource_keys",new JSONArray().put("android-arm64:body"));
+        JSONArray updated=BemInstaller.mergePublishedIndex(new JSONArray().put(weapon),samePackage);
+        assertEquals(1,updated.length());
+        assertTrue("weapon-updated".equals(updated.getJSONObject(0).getString("generation")));
+        JSONObject windows=new JSONObject(weapon.toString()).put("resource_keys",new JSONArray().put("windows-x64:weapon"));
+        try {BemInstaller.mergePublishedIndex(new JSONArray(),windows);fail("Accepted Windows-only BEM 1.4");}
+        catch(IOException expected) {}
+    }
+    public void testZipSequentialIndexPolicy() throws Exception {
+        JSONObject old=new JSONObject().put("generation","old").put("package_id","old.pack")
+            .put("target_kind","character").put("target_id","chr_zip")
+            .put("bem_minor",4).put("resource_keys",new JSONArray().put("android-arm64:body"))
+            .put("enabled",true);
+        JSONObject first=new JSONObject(old.toString()).put("generation","first").put("package_id","first.pack");
+        JSONObject disjoint=new JSONObject(old.toString()).put("generation","weapon").put("package_id","weapon.pack")
+            .put("resource_keys",new JSONArray().put("android-arm64:weapon"));
+        JSONObject last=new JSONObject(old.toString()).put("generation","last").put("package_id","last.pack");
+        JSONArray afterFirst=BemInstaller.mergePublishedIndex(new JSONArray().put(old),first);
+        assertFalse(afterFirst.getJSONObject(0).getBoolean("enabled"));
+        assertTrue(afterFirst.getJSONObject(1).getBoolean("enabled"));
+        JSONObject invalid=new JSONObject(old.toString()).put("generation","invalid")
+            .put("resource_keys",new JSONArray().put("windows-x64:body"));
+        try {BemInstaller.mergePublishedIndex(afterFirst,invalid);fail("Accepted invalid ZIP item");}
+        catch(IOException expected) {}
+        assertTrue(afterFirst.getJSONObject(1).getBoolean("enabled"));
+        JSONArray afterDisjoint=BemInstaller.mergePublishedIndex(afterFirst,disjoint);
+        assertTrue(afterDisjoint.getJSONObject(1).getBoolean("enabled"));
+        assertTrue(afterDisjoint.getJSONObject(2).getBoolean("enabled"));
+        JSONArray afterLast=BemInstaller.mergePublishedIndex(afterDisjoint,last);
+        assertFalse(afterLast.getJSONObject(1).getBoolean("enabled"));
+        assertTrue(afterLast.getJSONObject(2).getBoolean("enabled"));
+        assertTrue(afterLast.getJSONObject(3).getBoolean("enabled"));
+    }
+    public void testBemIndexDurableMirror() throws Exception {
+        File directory=new File(getTargetContext().getCacheDir(),"bem-index-test-"+System.nanoTime());
+        assertTrue(directory.mkdir());
+        android.content.Context isolated=new android.content.ContextWrapper(getTargetContext()) {
+            @Override public File getFilesDir() {return directory;}
+            @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode) {
+                return super.getSharedPreferences("bem-index-test-"+directory.getName(),mode);
+            }
+        };
+        try {
+            JSONObject entry=new JSONObject().put("generation","11111111-1111-1111-1111-111111111111")
+                .put("enabled",true).put("selected_appearance","default");
+            FrameworkSettings.open(isolated).edit().putString(BemInstaller.INDEX,new JSONArray().put(entry).toString()).commit();
+            BemInstaller.disableAll(isolated, BemInstaller.snapshot(isolated).revision);
+            String preferences=FrameworkSettings.open(isolated).getString(BemInstaller.INDEX,"[]");
+            String durable=new String(Files.readAllBytes(new File(directory,"bem-index.json").toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(preferences.equals(durable));
+            assertFalse(new JSONArray(durable).getJSONObject(0).getBoolean("enabled"));
+        } finally {
+            FrameworkSettings.open(isolated).edit().clear().commit();
+            new File(directory,"bem-index.json").delete();directory.delete();
+        }
+    }
+    public void testModelPageRecoversFromBrokenIndexToEmptyList() {
+        android.content.Context isolated=new android.content.ContextWrapper(getTargetContext()) {
+            @Override public android.content.SharedPreferences getSharedPreferences(String name,int mode) {
+                return super.getSharedPreferences("bem-page-recovery-test-"+name,mode);
+            }
+        };
+        android.content.SharedPreferences preferences=FrameworkSettings.open(isolated);
+        try {
+            preferences.edit().putString(BemInstaller.INDEX,"{broken").commit();
+            BemInstallState state=new BemInstallState(isolated);
+            state.refresh();
+            assertTrue(state.getIndexBroken()!=null);
+            preferences.edit().putString(BemInstaller.INDEX,"[]").commit();
+            state.refresh();
+            assertTrue(state.getIndexBroken()==null);
+            assertTrue(state.getPackages().isEmpty());
+        } finally {
+            preferences.edit().clear().commit();
+        }
+    }
     public void testThirdPartyModulePackageBoundary() throws Exception {
         ThirdPartyModulePackageTest.run(this);
     }
@@ -36,7 +173,7 @@ public final class BemInstallerTest extends Instrumentation {
             JSONObject second = new JSONObject().put("generation", "22222222-2222-2222-2222-222222222222")
                     .put("enabled", true).put("selected_options", "shirt:blue");
             preferences.edit().putString(BemInstaller.INDEX, new JSONArray().put(first).put(second).toString()).commit();
-            BemInstaller.disableAll(isolated);
+            BemInstaller.disableAll(isolated, BemInstaller.snapshot(isolated).revision);
             JSONArray stored = BemInstaller.index(isolated);
             assertFalse(stored.getJSONObject(0).getBoolean("enabled"));
             assertFalse(stored.getJSONObject(1).getBoolean("enabled"));
@@ -72,6 +209,9 @@ public final class BemInstallerTest extends Instrumentation {
     private File directory;
     private String method;
     private String realInput;
+    public void testOverlayModelCatalogState() throws Exception {
+        OverlayModelCatalogStateTest.run();
+    }
     @Override public void onCreate(android.os.Bundle arguments) {method=arguments.getString("method","");realInput=arguments.getString("input","installer-real-input.bem");start();}
     @Override public void onStart() {
         android.os.Bundle result=new android.os.Bundle();
@@ -128,6 +268,24 @@ public final class BemInstallerTest extends Instrumentation {
         Files.write(bad.toPath(),new byte[40]);
         try {BemInstaller.inspectNative(bad.getPath());fail("Accepted corrupt import");}catch(IOException expected){}
     }
+    public void testMultiResourceImportAndConversion() throws Exception {
+        File input=new File(directory,"multi-resource-valid.bem");
+        try(InputStream in=getInstrumentation().getContext().getAssets().open("multi-resource-valid.bem");
+            FileOutputStream out=new FileOutputStream(input)) {
+            byte[] bytes=new byte[8192];int count;
+            while((count=in.read(bytes))!=-1) out.write(bytes,0,count);
+        }
+        JSONObject original=new JSONObject(BemInstaller.inspectNative(input.getPath()));
+        assertEquals(4,original.getInt("bem_minor"));
+        assertEquals(5,original.getJSONArray("resource_keys").length());
+        assertTrue("chr_synthetic".equals(original.getString("target_id")));
+        File output=new File(directory,"multi-resource-converted.bem");output.delete();
+        JSONObject converted=new JSONObject(BemInstaller.convertNative(input.getPath(),output.getPath(),"{}",false));
+        assertEquals(4,converted.getInt("bem_minor"));
+        assertTrue(output.isFile());
+        JSONObject checked=new JSONObject(BemInstaller.inspectNative(output.getPath()));
+        assertEquals(original.getJSONArray("resource_keys").length(),checked.getJSONArray("resource_keys").length());
+    }
     public void testRgbaFallbackAndCorruptPackage() throws Exception {
         File input=fixture(),output=new File(directory,"fallback.bem");output.delete();
         JSONObject report=new JSONObject(BemInstaller.convertNative(input.getPath(),output.getPath(),"{}",false));
@@ -140,11 +298,74 @@ public final class BemInstallerTest extends Instrumentation {
     public void testGamePrivateMaterialization() throws Exception {
         File input=fixture();String generation="00000000-0000-0000-0000-000000000001";
         JSONObject entry=new JSONObject().put("generation",generation).put("remote","bem-"+generation+".bem")
-            .put("bytes",input.length()).put("package_id","test.package").put("default_appearance","hidden");
+            .put("bytes",input.length()).put("package_id","test.package").put("character_id","test_character")
+            .put("appearances",new JSONArray().put("hidden")).put("default_appearance","hidden");
         String config=BemInstalledResources.prepare(getInstrumentation().getTargetContext(),new JSONArray().put(entry).toString(),name->new FileInputStream(input),x->{});
         assertTrue(config.contains("appearances=hidden"));assertTrue(config.contains("replace=1"));
         entry.put("generation","../../bad");
         try {BemInstalledResources.prepare(getInstrumentation().getTargetContext(),new JSONArray().put(entry).toString(),name->new FileInputStream(input),x->{});fail("Accepted path traversal");}catch(IOException expected){}
+    }
+    public void testRuntimeIndexConflictNormalization() throws Exception {
+        JSONObject older=new JSONObject().put("generation","00000000-0000-0000-0000-000000000031")
+            .put("package_id","old.package").put("character_id","same_character").put("enabled",true);
+        JSONObject newer=new JSONObject().put("generation","00000000-0000-0000-0000-000000000032")
+            .put("package_id","new.package").put("character_id","same_character").put("enabled",true);
+        JSONArray original=new JSONArray().put(older).put(newer);
+        JSONArray normalized=BemOptions.exclusive(original);
+        assertFalse(normalized.getJSONObject(0).getBoolean("enabled"));
+        assertTrue(normalized.getJSONObject(1).getBoolean("enabled"));
+        assertTrue(original.getJSONObject(0).getBoolean("enabled"));
+        newer.put("generation",older.getString("generation"));
+        try {BemOptions.exclusive(original);fail("Accepted duplicate generation");}catch(IOException expected){}
+        newer.put("generation","00000000-0000-0000-0000-000000000032").put("enabled","true");
+        try {BemOptions.exclusive(original);fail("Accepted string enabled state");}catch(IOException expected){}
+    }
+    public void testRuntimePreflightRejectsLaterInvalidEntryBeforeCopy() throws Exception {
+        android.content.Context base=getTargetContext();
+        File isolated=new File(base.getCacheDir(),"preflight-"+java.util.UUID.randomUUID());
+        android.content.Context game=new android.content.ContextWrapper(base) {
+            @Override public File getFilesDir(){return isolated;}
+        };
+        File source=fixture();
+        String first="00000000-0000-0000-0000-000000000041";
+        String second="00000000-0000-0000-0000-000000000042";
+        JSONObject valid=new JSONObject().put("generation",first).put("remote","bem-"+first+".bem")
+            .put("bytes",source.length()).put("package_id","first.package").put("character_id","first_character")
+            .put("appearances",new JSONArray().put("hidden")).put("default_appearance","hidden");
+        JSONObject invalid=new JSONObject().put("generation",second).put("remote","bem-"+second+".bem")
+            .put("bytes",source.length()).put("package_id","second.package").put("character_id","second_character")
+            .put("appearances",new JSONArray().put("default")).put("default_appearance","missing");
+        java.util.concurrent.atomic.AtomicInteger opens=new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            BemInstalledResources.prepare(game,new JSONArray().put(valid).put(invalid).toString(),name->{
+                opens.incrementAndGet();return new FileInputStream(source);
+            },value->{});
+            fail("Accepted invalid later appearance");
+        } catch(IOException expected) {
+            assertEquals(0,opens.get());
+            assertFalse(new File(isolated,"betterendfield/installed-models").exists());
+        } finally {deleteTree(isolated);}
+    }
+    public void testRuntimeConfigurationLimitRejectsBeforeCopy() throws Exception {
+        android.content.Context base=getTargetContext();
+        File oversized=new File(base.getCacheDir(),"x".repeat(1024*1024));
+        android.content.Context game=new android.content.ContextWrapper(base) {
+            @Override public File getFilesDir(){return oversized;}
+        };
+        String generation="00000000-0000-0000-0000-000000000043";
+        JSONObject entry=new JSONObject().put("generation",generation).put("remote","bem-"+generation+".bem")
+            .put("bytes",1).put("package_id","limit.package").put("character_id","limit_character")
+            .put("appearances",new JSONArray().put("default")).put("default_appearance","default");
+        java.util.concurrent.atomic.AtomicInteger opens=new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            BemInstalledResources.prepare(game,new JSONArray().put(entry).toString(),name->{
+                opens.incrementAndGet();return new java.io.ByteArrayInputStream(new byte[]{1});
+            },value->{});
+            fail("Accepted native configuration above 1 MiB");
+        } catch(IOException expected) {
+            assertEquals(0,opens.get());
+            assertFalse(oversized.exists());
+        }
     }
     public void testBem13ParameterSelectionPersistsAndRejectsInvalidTick() throws Exception {
         android.content.Context isolated = new android.content.ContextWrapper(getTargetContext()) {
@@ -170,18 +391,18 @@ public final class BemInstallerTest extends Instrumentation {
             preferences.edit().putString(BemInstaller.INDEX, new JSONArray().put(entry).toString()).commit();
             JSONObject change = new JSONObject().put("generation", generation).put("enabled", true)
                     .put("options", "base:on").put("parameters", "width:700");
-            BemInstaller.saveAll(isolated, new JSONArray().put(change));
+            BemInstaller.saveAll(isolated, BemInstaller.snapshot(isolated).revision, new JSONArray().put(change));
             JSONObject saved = BemInstaller.index(isolated).getJSONObject(0);
             assertTrue("width:700".equals(saved.getString("selected_parameters")));
             assertTrue("width:700".equals(saved.getString("remembered_parameters")));
             File payload = fixture();
             saved.put("remote", "bem-" + generation + ".bem").put("bytes", payload.length())
-                    .put("package_id", "test.parameters");
+                    .put("package_id", "test.parameters").put("character_id", "test_character");
             String runtime = BemInstalledResources.prepare(getTargetContext(),
                     new JSONArray().put(saved).toString(), name -> new FileInputStream(payload), value -> {});
             assertTrue(runtime.contains("parameters=width:700"));
             change.put("parameters", "width:750");
-            try { BemInstaller.saveAll(isolated, new JSONArray().put(change)); fail("Accepted off-step tick"); }
+            try { BemInstaller.saveAll(isolated, BemInstaller.snapshot(isolated).revision, new JSONArray().put(change)); fail("Accepted off-step tick"); }
             catch (IOException expected) {}
             assertTrue("width:700".equals(BemInstaller.index(isolated).getJSONObject(0).getString("selected_parameters")));
         } finally {
@@ -200,7 +421,8 @@ public final class BemInstallerTest extends Instrumentation {
         writeText(new File(root,"keep.txt"),"other data");
         File source=fixture();
         JSONObject entry=new JSONObject().put("generation",active).put("remote","bem-"+active+".bem")
-                .put("bytes",source.length()).put("package_id","test.package").put("default_appearance","hidden");
+                .put("bytes",source.length()).put("package_id","test.package").put("character_id","test_character")
+                .put("appearances",new JSONArray().put("hidden")).put("default_appearance","hidden");
         BemInstalledResources.prepare(game,new JSONArray().put(entry).toString(),name->new FileInputStream(source),x->{},true);
         assertTrue(new File(root,active+".bem").isFile());
         assertFalse(new File(root,stale+".bem").exists());

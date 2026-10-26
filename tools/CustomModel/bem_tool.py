@@ -1,4 +1,4 @@
-"""Creator CLI: inspect, convert, pack, validate BEM 1.0..1.3. Never executes source INI/shaders."""
+"""Creator CLI: inspect, convert, pack, validate BEM 1.0..1.4. Never executes source INI/shaders."""
 from __future__ import annotations
 import argparse
 import contextlib
@@ -11,8 +11,8 @@ from pathlib import Path
 import bem_v1 as bem
 import bem_projects
 
-TOOL_VERSION = "1.5.0"
-FORMAT_VERSIONS = {0: '1.0', 1: '1.1', 2: '1.2', 3: '1.3'}
+TOOL_VERSION = "1.5.2"
+FORMAT_VERSIONS = {0: '1.0', 1: '1.1', 2: '1.2', 3: '1.3', 4: '1.4'}
 from convert_efmi_poc import Source
 from efmi_source import sections, analyze_source
 from efmi_lod_source import ENTRY, inspect_lod_source
@@ -253,13 +253,16 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['inspect','convert','validate','pack','unpack','bundle','new-project','build',
                                            'init-workspace','workspace-init'])
-    parser.add_argument('--version', action='version', version='BEM Tools '+TOOL_VERSION+' / BEM 1.0+1.1+1.2+1.3')
+    parser.add_argument('--version', action='version', version='BEM Tools '+TOOL_VERSION+' / BEM 1.0+1.1+1.2+1.3+1.4')
     parser.add_argument('source',type=Path)
     parser.add_argument('additional',type=Path,nargs='*',help='Additional BEM files for bundle only')
     parser.add_argument('--recipe',type=Path)
     parser.add_argument('--source',dest='workspace_source',type=Path,
                         help='Input source for init-workspace; positional source is the workspace directory')
     parser.add_argument('--deformations',type=Path,help='Author position-morph inputs saved in the export project')
+    parser.add_argument('--resource', help='BEM 1.4 resource ID for inspect/validate selected-plan output')
+    parser.add_argument('--platform', choices=['windows-x64', 'android-arm64'],
+                        help='BEM 1.4 platform for inspect/validate selected-plan output')
     parser.add_argument('--ini')
     parser.add_argument('-o','--output',type=Path)
     parser.add_argument('--report',type=Path)
@@ -270,7 +273,7 @@ def main(argv=None):
     parser.add_argument('--author')
     parser.add_argument('--package-version')
     args=parser.parse_args(raw_argv)
-    result=dict(tool_version=TOOL_VERSION,format_version='1.0/1.1/1.2/1.3',command=args.command,source=str(args.source),success=False,conversion_ready=False,render_verified=False,issues=[])
+    result=dict(tool_version=TOOL_VERSION,format_version='1.0/1.1/1.2/1.3/1.4',command=args.command,source=str(args.source),success=False,conversion_ready=False,render_verified=False,issues=[])
     report_path = args.report
     protected_paths = [args.source, *args.additional] + ([args.output] if args.output else []) + ([args.recipe] if args.recipe else [])
     if args.deformations: protected_paths.append(args.deformations)
@@ -284,6 +287,8 @@ def main(argv=None):
             from bem_v13 import author_input_paths
             protected_paths.extend(author_input_paths(shape_input))
         bem.require(not args.additional or args.command=='bundle', 'Additional inputs are only valid for bundle')
+        bem.require(not (args.resource or args.platform) or args.command in ('inspect', 'validate'),
+                    'Resource/platform filters apply only to inspect/validate')
         if args.report:
             paths=protected_paths
             bem.require(all(args.report.resolve()!=p.resolve() for p in paths), 'Report cannot overwrite input/output/recipe')
@@ -326,6 +331,11 @@ def main(argv=None):
             bem.require(args.source.resolve()!=args.output.resolve(),'OUTPUT: 不能覆盖源文件')
             result.update(convert(args.source,args.recipe,args.output,deformations=args.deformations) if args.recipe else
                           convert_automatic(args.source,args.output,args.ini,deformations=args.deformations))
+        if args.resource or args.platform:
+            import bem_v14
+            manifest = result.get('package')
+            bem.require(manifest is not None and bem_v14.used(manifest), 'Resource filtering requires BEM 1.4')
+            result['selection_plan'] = bem_v14.selection_plan(manifest, resource=args.resource, platform=args.platform)
         result['success']=True
     except Exception as exc:
         result['issues'].append(dict(code='CONVERSION_FAILED',message=str(exc),

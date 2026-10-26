@@ -2,7 +2,7 @@
 // Android world prefabs omit LOD0. Build from the exact UI LOD0 resource and
 // rebind to world LOD1 only after matching renderer space and every bone path
 // and rest matrix. This never equates LOD0/LOD1 geometry or material tables.
-bool PrepareAndroidWorldResource(const CharacterAdapter& adapter,const BemPocData& bem,
+bool PrepareAndroidWorldResource(const CharacterAdapter& adapter,std::string_view selection_key,const BemPocData& bem,
     void* asset,std::vector<PreparedBinding>& bindings) {
     void* handle=nullptr; uint32_t handle_root=0;
     struct DonorLifetime {
@@ -12,7 +12,7 @@ bool PrepareAndroidWorldResource(const CharacterAdapter& adapter,const BemPocDat
     void* donor=RootTemporary(betterendfield::AndroidLoadUiDonor(adapter.ui_resource,handle,handle_root));
     if (!donor || ObjectName(donor)!=adapter.ui_resource) { Log("Android UI donor unavailable."); return false; }
     std::vector<PreparedBinding> sources;
-    if (!ReadCompletedAndroidDonor(adapter,bem,donor,sources)) {
+    if (!ReadCompletedAndroidDonor(adapter,selection_key,bem,donor,sources)) {
         sources.clear();
         if (!PrepareResource(adapter,bem,donor,sources)) return false;
     }

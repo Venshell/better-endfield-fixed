@@ -9,6 +9,22 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// testHost 的独立 main 检查不是 JUnit；统一门禁拥有编译、执行和计数。
+// 每次执行重新编译，不能把 Gradle NO-SOURCE 或旧 class 当成回归通过。
+val verifyPortHost by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Runs Android port Java host suites and four Python BEM suites."
+    workingDir(rootProject.file(".."))
+    commandLine(providers.gradleProperty("portHostPython").orElse("python").get(),
+        "-B", rootProject.file("../tools/AndroidPort/run_host_gate.py").absolutePath,
+        "--java-home", System.getProperty("java.home"),
+        "--work-dir", layout.buildDirectory.dir("portHost").get().asFile.absolutePath)
+}
+
+tasks.matching { it.name == "check" || it.name.matches(Regex("test.*UnitTest")) }.configureEach {
+    dependsOn(verifyPortHost)
+}
+
 // Signing identities. The two are deliberately kept at different secrecy.
 //
 //   debug   -- keystore/bem-debug.keystore, committed together with its

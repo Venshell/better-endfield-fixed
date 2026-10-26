@@ -10,7 +10,6 @@ import android.util.Log;
 import java.lang.reflect.Method;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import android.os.ParcelFileDescriptor;
@@ -34,8 +33,14 @@ public final class XposedEntry extends XposedModule {
      */
     private volatile String heldBackCommand;
     private volatile boolean thirdPartyPrepared;
+    private volatile boolean thirdPartyHostExpected;
     private volatile String thirdPartyObserved = "";
-    private final AtomicReference<String> thirdPartyPending = new AtomicReference<>();
+    private volatile String thirdPartyRestartPending = "";
+    private volatile long thirdPartyRetryAfter;
+    private long thirdPartyRetryDelay = 2000;
+    private final Object thirdPartyQueueLock = new Object();
+    private String thirdPartyPending;
+    private String thirdPartyInFlight;
     private final AtomicBoolean thirdPartyUpdating = new AtomicBoolean();
 
     /** This module instance, so helper classes in this package can reach hook(). */
@@ -327,17 +332,18 @@ public final class XposedEntry extends XposedModule {
                                 name -> new ParcelFileDescriptor.AutoCloseInputStream(openRemoteFile(name)),
                                 this::report);
                         } catch(Exception error) {report("MMD library preparation failed: "+error);}
-                        if (!configs.thirdParty().isEmpty()) {
+                        thirdPartyHostExpected = !configs.thirdParty().isEmpty();
+                        if (thirdPartyHostExpected) {
                             try {
-                                ThirdPartyRuntimeMaterializer.prepare(context, configs.thirdParty(),
+                                ThirdPartyRuntimeMaterializer.prepareChecked(context, configs.thirdParty(),
                                         name -> new ParcelFileDescriptor.AutoCloseInputStream(openRemoteFile(name)),
                                         this::report);
                             } catch (Exception error) {
+                                thirdPartyHostExpected = false;
                                 report("Third-party preparation failed: " + error);
                             }
-                            thirdPartyObserved = configs.thirdParty();
-                            thirdPartyPrepared = true;
                         }
+                        thirdPartyPrepared = true;
                         // The imported .vmd rides the same remote file space the
                         // packages do; its declared length comes from the same
                         // settings snapshot the configurations were read from.
@@ -652,9 +658,13 @@ public final class XposedEntry extends XposedModule {
         if (!thirdPartyPrepared || context == null) return;
         String current = getRemotePreferences("module_settings")
                 .getString(ThirdPartyModuleStore.KEY, "");
-        if (current == null || current.isEmpty() || current.equals(thirdPartyObserved)) return;
-        thirdPartyObserved = current;
-        thirdPartyPending.set(current);
+        if (current == null || current.isEmpty()) return;
+        synchronized (thirdPartyQueueLock) {
+            if (current.equals(thirdPartyObserved) || current.equals(thirdPartyRestartPending)
+                    || current.equals(thirdPartyInFlight) || current.equals(thirdPartyPending)
+                    || android.os.SystemClock.elapsedRealtime() < thirdPartyRetryAfter) return;
+            thirdPartyPending = current;
+        }
         startThirdPartyWorker(context);
     }
 
@@ -662,19 +672,49 @@ public final class XposedEntry extends XposedModule {
         if (!thirdPartyUpdating.compareAndSet(false, true)) return;
         Thread worker = new Thread(() -> {
             try {
-                String next;
-                while ((next = thirdPartyPending.getAndSet(null)) != null) {
+                while (true) {
+                    String next;
+                    synchronized (thirdPartyQueueLock) {
+                        if (android.os.SystemClock.elapsedRealtime() < thirdPartyRetryAfter) break;
+                        next = thirdPartyPending;
+                        thirdPartyPending = null;
+                        thirdPartyInFlight = next;
+                    }
+                    if (next == null) break;
                     try {
-                        ThirdPartyRuntimeMaterializer.prepare(context, next,
+                        ThirdPartyRuntimeMaterializer.Publication publication =
+                                ThirdPartyRuntimeMaterializer.publishChecked(context, next,
                                 name -> new ParcelFileDescriptor.AutoCloseInputStream(openRemoteFile(name)),
                                 this::report);
+                        if (thirdPartyHostExpected) {
+                            ThirdPartyRuntimeMaterializer.awaitReceipt(publication);
+                            synchronized (thirdPartyQueueLock) { thirdPartyObserved = next; }
+                        } else {
+                            synchronized (thirdPartyQueueLock) { thirdPartyRestartPending = next; }
+                            report("Third-party generation prepared; restart the game to start the module host");
+                        }
+                        synchronized (thirdPartyQueueLock) {
+                            thirdPartyInFlight = null;
+                            thirdPartyRetryDelay = 2000;
+                        }
                     } catch (Exception error) {
                         report("Third-party update failed: " + error);
+                        synchronized (thirdPartyQueueLock) {
+                            thirdPartyInFlight = null;
+                            thirdPartyRetryAfter = android.os.SystemClock.elapsedRealtime() + thirdPartyRetryDelay;
+                            thirdPartyRetryDelay = Math.min(thirdPartyRetryDelay * 2, 60000);
+                            if (next.equals(thirdPartyPending)) thirdPartyPending = null;
+                        }
+                        break;
                     }
                 }
             } finally {
                 thirdPartyUpdating.set(false);
-                if (thirdPartyPending.get() != null) startThirdPartyWorker(context);
+                synchronized (thirdPartyQueueLock) {
+                    if (thirdPartyPending != null
+                            && android.os.SystemClock.elapsedRealtime() >= thirdPartyRetryAfter)
+                        startThirdPartyWorker(context);
+                }
             }
         }, "BetterEndfield-ThirdPartyUpdate");
         worker.setDaemon(true);

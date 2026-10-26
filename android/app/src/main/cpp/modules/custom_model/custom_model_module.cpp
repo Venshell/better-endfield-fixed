@@ -403,6 +403,9 @@ ModuleResult CustomModelModule::Start(Il2CppRuntime& runtime) {
     std::string error;
     BemPackageInfo info;
     if (!ReadBemPackageInfo(package_path_, info, error)) return {false, "BEM metadata rejected: " + error};
+    const bool sharedReplacement=ConfigValue(config,"replace")=="1";
+    if (info.minor >= 4 && !sharedReplacement)
+        return {false, "BEM 1.4 requires the resource-aware shared runtime"};
     world_resource_=info.world_resource; ui_resource_=info.ui_resource;
     detached_probe_=ConfigValue(config,"mesh_probe")=="1";
     LogInfo(Id(), ("BEM target world="+world_resource_+" ui="+ui_resource_).c_str());
@@ -411,7 +414,6 @@ ModuleResult CustomModelModule::Start(Il2CppRuntime& runtime) {
         appearance_=configured_options.empty()?ConfigValue(config,"options"):configured_options.front();
         if(appearance_.empty()) appearance_=info.default_options;
     } else if (appearance_.empty()) appearance_ = info.default_appearance;
-    const bool sharedReplacement=ConfigValue(config,"replace")=="1";
     if (!sharedReplacement) {
         if (!LoadBem(package_path_, package_, error, appearance_)) return {false, "BEM package rejected: " + error};
         if (package_.components.empty()) return {false, "BEM package has no components"};

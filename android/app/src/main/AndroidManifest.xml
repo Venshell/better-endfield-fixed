@@ -24,7 +24,36 @@
             android:authorities="dev.betterendfield.android.overlay.settings"
             android:exported="true"
             android:grantUriPermissions="false" />
-        <activity android:name=".BemInstallActivity" android:exported="false" android:theme="@style/AppTheme" />
+        <receiver android:name=".ModulePackageReplacedReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".FrameworkBootstrapActivity"
+            android:screenOrientation="behind"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity android:name=".BemInstallActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/AppTheme">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="application/zip" />
+                <data android:scheme="content" android:mimeType="application/x-zip-compressed" />
+                <data android:scheme="content" android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
         <activity android:name=".ThirdPartyModulesActivity" android:exported="false" android:theme="@style/AppTheme" />
         <activity android:name=".ThirdPartyModuleActivity" android:exported="false" android:theme="@style/AppTheme" />
         <activity

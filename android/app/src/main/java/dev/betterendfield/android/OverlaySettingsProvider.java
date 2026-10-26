@@ -43,10 +43,10 @@ public final class OverlaySettingsProvider extends ContentProvider {
             if (read && extras != null && !extras.isEmpty()) throw new IllegalArgumentException("Invalid read request");
             if (models) synchronized (BemInstaller.class) {
                 // Normalize once through the installer, then compare under the very same lock as every writer.
-                JSONArray current = BemInstaller.index(app);
+                BemInstaller.IndexSnapshot snapshot=BemInstaller.snapshot(app);
+                JSONArray current = new JSONArray(snapshot.index);
                 if (current.toString().length() > 200_000) throw new java.io.IOException("模型列表超出桥接大小限制");
                 if (!read) {
-                    OverlayWritePolicy.requireRevision(extras.getString("expected"), current.toString());
                     JSONArray changes = new JSONArray();
                     boolean disable = "disable_models".equals(method);
                     if (disable) {
@@ -55,11 +55,10 @@ public final class OverlaySettingsProvider extends ContentProvider {
                     } else changes.put(OverlayWritePolicy.patch(extras.getString("patch"), false));
                     if (OverlayWritePolicy.apply(current, changes).toString().length() > 200_000)
                         throw new java.io.IOException("模型列表超出桥接大小限制");
-                    if (disable) BemInstaller.disableAll(app); else BemInstaller.saveChanges(app, changes);
-                    current = BemInstaller.index(app);
+                    snapshot=disable ? BemInstaller.disableAll(app,extras.getString("expected"))
+                            : BemInstaller.saveChanges(app,extras.getString("expected"),changes);
                 }
-                String index = current.toString();
-                result.putString("index", index); result.putString("revision", OverlayWritePolicy.revision(index));
+                result.putString("index", snapshot.index); result.putString("revision", snapshot.revision);
                 result.putBoolean("busy", BemInstaller.busy);
             } else synchronized (ModuleSettings.class) {
                 if (!read) {
@@ -81,6 +80,8 @@ public final class OverlaySettingsProvider extends ContentProvider {
         } catch (Exception error) {
             result.clear(); result.putBoolean("ok", false);
             result.putString("error", error.getMessage() == null ? "设置未保存" : error.getMessage());
+            result.putString("error_code", error instanceof BemInstaller.IndexConflict
+                    ? "index_conflict" : "provider_" + error.getClass().getSimpleName());
         } finally {
             Binder.restoreCallingIdentity(identity);
         }

@@ -1,6 +1,6 @@
 # 角色资料入库与 EFMI 原资源对应
 
-2026-09-20 更新：下文“源资源对应待补齐”是 1.1.2 阶段记录。1.1.3 已从原游戏数据补齐 32 角色的 360 个完整单子网格入口及 1,181 项纹理身份；详见 [EFMI 身份补全](BEM_EFMI_IDENTITIES_20260920.md)。10 个多子网格入口仍需专门规则，不作为缺采样处理。
+2026-09-20 更新：下文“源资源对应待补齐”是 1.1.2 阶段记录。1.1.3 已从原游戏数据补齐 32 角色的 360 个完整单子网格入口及 1,181 项纹理身份；详见 [EFMI 身份补全((BEM_EFMI_IDENTITIES_20260920.md)。10 个多子网格入口仍需专门规则，不作为缺采样处理。
 
 ## 本次入库
 
@@ -40,11 +40,11 @@ EFMI Tools 的 Object Sources 输出包含 `Metadata.json`、原始缓冲及 `Te
 
 官方来源（本次检查版本）：
 
-- [EFMI Tools 提取流程](https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/guides/modder_guide.md)
-- [Object Sources 元数据结构](https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/efmi-tools/migoto_io/object_extractor/migoto_object/metadata_format.py)
-- [纹理使用关系导出](https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/efmi-tools/migoto_io/object_extractor/migoto_object/migoto_object_exporter.py)
-- [组件排序和资源读取](https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/efmi-tools/migoto_io/object_extractor/migoto_object/migoto_object_builder.py)
-- [EFMI Tools v0.6.5](https://github.com/SpectrumQT/EFMI-Tools/releases/tag/v0.6.5) 与 [EFMI Package v1.4.6](https://github.com/SpectrumQT/EFMI-Package/releases/tag/v1.4.6)。Package 树检查版本 `3cc2f4b89e791983484ac00ad5a3e15779957350`。
+- [EFMI Tools 提取流程((https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/guides/modder_guide.md)
+- [Object Sources 元数据结构((https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/efmi-tools/migoto_io/object_extractor/migoto_object/metadata_format.py)
+- [纹理使用关系导出((https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/efmi-tools/migoto_io/object_extractor/migoto_object/migoto_object_exporter.py)
+- [组件排序和资源读取((https://github.com/SpectrumQT/EFMI-Tools/blob/eaa903624529e4cff93fa5c6cf999b3d44d40eff/efmi-tools/migoto_io/object_extractor/migoto_object/migoto_object_builder.py)
+- [EFMI Tools v0.6.5((https://github.com/SpectrumQT/EFMI-Tools/releases/tag/v0.6.5) 与 [EFMI Package v1.4.6((https://github.com/SpectrumQT/EFMI-Package/releases/tag/v1.4.6)。Package 树检查版本 `3cc2f4b89e791983484ac00ad5a3e15779957350`。
 
 ## 剩余接入边界
 

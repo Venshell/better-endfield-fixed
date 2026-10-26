@@ -97,7 +97,7 @@ bool SetArrayValue(void* array,int index,void* object) {
     if (!array || !object || index<0 || index>=ArrayLength(array)) return false;
     static_cast<Object*>(array)->array[index]=object; return true;
 }
-bool ReadCompletedAndroidDonor(const CharacterAdapter&,const BemPocData&,void*,std::vector<PreparedBinding>&) { return false; }
+bool ReadCompletedAndroidDonor(const CharacterAdapter&,std::string_view,const BemPocData&,void*,std::vector<PreparedBinding>&) { return false; }
 bool PrepareResource(const CharacterAdapter&,const BemPocData&,void*,std::vector<PreparedBinding>& output) {
     output=ui_sources; return true;
 }
@@ -135,7 +135,7 @@ struct Fixture {
         bem.textures.resize(1); bem.textures[0].original_name="OriginalTexture";
         world_material->slots={{Make("OriginalTexture")}};
     }
-    bool Run() { bindings.clear(); return PrepareAndroidWorldResource(adapter,bem,world,bindings); }
+    bool Run() { bindings.clear(); return PrepareAndroidWorldResource(adapter,"selection",bem,world,bindings); }
 };
 }
 int main() {

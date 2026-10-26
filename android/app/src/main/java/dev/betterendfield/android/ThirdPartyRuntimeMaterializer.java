@@ -18,8 +18,44 @@ final class ThirdPartyRuntimeMaterializer {
     static volatile String indexPath = "";
     interface Source { InputStream open(String name) throws IOException; }
     private static final long MAX = 256L * 1024 * 1024;
+    static final class Publication {
+        final String path;
+        final String id;
+        Publication(String path, String id) { this.path = path; this.id = id; }
+    }
+    private static final long RECEIPT_TIMEOUT_MS = 10000;
+    /** Waits for the native worker's matching application result, not just index publication. */
+    static void awaitReceipt(Publication publication) throws Exception {
+        if (publication.path.isEmpty()) return;
+        File receipt = new File(publication.path + ".receipt");
+        long deadline = android.os.SystemClock.elapsedRealtime() + RECEIPT_TIMEOUT_MS;
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            if (receipt.isFile() && receipt.length() <= 1024 * 1024) {
+                try {
+                    JSONObject result = new JSONObject(read(receipt, 1024 * 1024));
+                    if (publication.id.equals(result.optString("publication_id"))) {
+                        if (!result.optBoolean("accepted")) throw new IOException("Native module index rejected: " + result.optString("error"));
+                        return;
+                    }
+                } catch (org.json.JSONException incomplete) { /* atomic publication is still in progress */ }
+            }
+            Thread.sleep(100);
+        }
+        throw new IOException("Native module index application was not acknowledged within " + RECEIPT_TIMEOUT_MS + " ms");
+    }
     static String prepare(Context context, String encoded, Source source, Consumer<String> log) throws Exception {
-        if (encoded == null || encoded.trim().isEmpty()) { indexPath = ""; return ""; }
+        return prepare(context, encoded, source, log, false).path;
+    }
+    /** Runtime updates reject failed enabled generations before replacing the previous index. */
+    static String prepareChecked(Context context, String encoded, Source source, Consumer<String> log) throws Exception {
+        return publishChecked(context, encoded, source, log).path;
+    }
+    static Publication publishChecked(Context context, String encoded, Source source, Consumer<String> log) throws Exception {
+        return prepare(context, encoded, source, log, true);
+    }
+    private static Publication prepare(Context context, String encoded, Source source, Consumer<String> log,
+                                  boolean requireEnabledGenerations) throws Exception {
+        if (encoded == null || encoded.trim().isEmpty()) { indexPath = ""; return new Publication("", ""); }
         JSONObject index = new JSONObject(encoded);
         if (index.optInt("schema") != 1 || index.optInt("port") < 1024 || index.optInt("port") > 65535
                 || !index.optString("token").matches("[A-Za-z0-9_-]{32,128}")) throw new IOException("Invalid third-party runtime index");
@@ -28,6 +64,7 @@ final class ThirdPartyRuntimeMaterializer {
         JSONArray records = index.getJSONArray("modules");
         if (records.length() > 128) throw new IOException("Too many third-party modules");
         HashSet<String> ids = new HashSet<>();
+        IOException preparationFailure = null;
         for (int i = 0; i < records.length(); i++) {
             JSONObject record = records.getJSONObject(i);
             String id = record.getString("id");
@@ -71,17 +108,22 @@ final class ThirdPartyRuntimeMaterializer {
             }
             record.put("directory", directory.getAbsolutePath());
             } catch (Exception failure) {
+                boolean requested = record.optBoolean("enabled", false);
                 record.put("enabled", false);
                 record.put("directory", new File(root, "unavailable-" + i).getAbsolutePath());
                 record.put("preparation_error", failure.getClass().getSimpleName() + ": " + failure.getMessage());
                 log.accept("Third-party module preparation failed: " + id + ": " + failure.getMessage());
+                if (requested) preparationFailure = new IOException("Third-party module preparation failed: " + id, failure);
             }
         }
+        if (requireEnabledGenerations && preparationFailure != null) throw preparationFailure;
+        String publicationId = UUID.randomUUID().toString();
+        index.put("publication_id", publicationId);
         File destination = new File(root, "index.json"), pending = new File(root, "index-" + UUID.randomUUID() + ".tmp");
         try (FileOutputStream out = new FileOutputStream(pending)) { out.write(index.toString().getBytes(StandardCharsets.UTF_8)); out.getFD().sync(); }
         try { android.system.Os.rename(pending.getAbsolutePath(), destination.getAbsolutePath()); }
         catch (Exception failure) { pending.delete(); throw new IOException("Cannot publish module index", failure); }
-        indexPath = destination.getAbsolutePath(); return indexPath;
+        indexPath = destination.getAbsolutePath(); return new Publication(indexPath, publicationId);
     }
     private static File child(File root, String path) throws IOException {
         if (path == null || path.isEmpty() || path.startsWith("/") || path.indexOf('\\') >= 0 || path.indexOf(':') >= 0 || path.indexOf('\0') >= 0)

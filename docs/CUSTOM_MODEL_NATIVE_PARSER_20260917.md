@@ -74,7 +74,7 @@ CLI 成功表示资料库已生成，不表示所有引用完整；看 `offline_
 ## 运行时观测合并接口
 
 `parse_native_models.py --observations observed.json` 支持后续接入针对性 dump。
-现已接入可选的定向资源交付探针，见[运行时采集步骤](CUSTOM_MODEL_RUNTIME_PROBE_20260917.md)。
+现已接入可选的定向资源交付探针，见[运行时采集步骤](archive/CUSTOM_MODEL_RUNTIME_PROBE_20260917.md)。
 庄方宜 world/UI 的八个目标 renderer 已完成真实采集并合入资料库。
 
 ```json
@@ -168,7 +168,7 @@ Normal 通道实际是 Float32×1，不能因为占用同样的四字节便填�
 它不会推断材质意图：配方必须覆盖选中状态；保留源贴图须有一致字节或明确绑定证据。
 庄方宜已生成真实 BEMPC25 包、启用 Adapter 并部署测试安装，用户随后确认“看上去是正常的”。
 十项全局覆盖对应八份唯一原生 DDS，核实依据是 mip 字节、格式和目标材质，未重算 3DMigoto GPU hash。
-身体首段存在槽位语义适配，详见[验证记录及完整生成命令](CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION_20260917.md)。
+身体首段存在槽位语义适配，详见[验证记录及完整生成命令](archive/CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION_20260917.md)。
 
 ## 验证
 

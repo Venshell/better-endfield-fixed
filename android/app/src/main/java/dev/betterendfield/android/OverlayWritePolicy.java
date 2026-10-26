@@ -28,12 +28,7 @@ final class OverlayWritePolicy {
         return token.toString();
     }
     static String revision(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder result = new StringBuilder();
-            for (byte b : digest) result.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
-            return result.toString();
-        } catch (java.security.NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
+        return BemIndexRevision.of(value);
     }
     static void requireRevision(String expected, String current) throws IOException {
         if (expected == null || !expected.equals(revision(current)))
@@ -81,10 +76,7 @@ final class OverlayWritePolicy {
             if (change.has("parameters")) BemParameters.select(entry, change.getString("parameters"));
             if (change.has("enabled")) {
                 boolean enabled = change.getBoolean("enabled");
-                if (enabled) for (int j = 0; j < entries.length(); ++j) {
-                    JSONObject other = entries.getJSONObject(j);
-                    if (entry.getString("character_id").equals(other.getString("character_id"))) other.put("enabled", false);
-                }
+                if (enabled) BemOptions.disableConflicts(entries,entry);
                 entry.put("enabled", enabled);
             }
         }

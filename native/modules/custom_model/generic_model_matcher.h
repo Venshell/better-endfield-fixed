@@ -5,10 +5,12 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace BetterEndfield::CustomModel::GenericMatching {
-enum class Region { Unknown, Lod0, Lod1, Lod2, Lod3, MobileProxy, DesktopProxy };
+enum class Region { Unknown, Lod0, Lod1, Lod2, Lod3, MobileProxy, DesktopProxy, Explicit };
 struct ReceiverKey {
     std::string character, resource, path;
     Region region=Region::Unknown;
@@ -25,8 +27,35 @@ inline Region ClassifyReceiver(std::string_view path) {
     }
     return Region::Unknown;
 }
+inline bool ReceiverLodAgrees(std::string_view path,uint32_t lod) {
+    constexpr std::string_view prefix="Mesh_all/lod";
+    if (!path.starts_with(prefix) || path.size()<=prefix.size()) return true;
+    const char digit=path[prefix.size()];
+    if (digit<'0' || digit>'3' || (path.size()>prefix.size()+1 && path[prefix.size()+1]!='/')) return true;
+    return uint32_t(digit-'0')==lod;
+}
 enum class PathStatus { Valid, OutsideRoot, Cycle, TooDeep, InvalidName };
 struct RelativePath { PathStatus status=PathStatus::OutsideRoot; std::string path; };
+inline bool ClonePathEvidenceAvailable(bool renderer_path_valid,size_t expected_bones,size_t recorded_bones) {
+    return renderer_path_valid && expected_bones==recorded_bones;
+}
+struct PathObject { std::string path; void* object=nullptr; };
+inline bool ResolveUniquePaths(std::span<const PathObject> candidates,
+    std::span<const std::string> requested,std::vector<void*>& resolved) {
+    resolved.clear();
+    if (requested.size()>256 || candidates.size()>65536) return false;
+    std::unordered_set<std::string_view> wanted;
+    for (const auto& path:requested) if (!wanted.insert(path).second) return false;
+    std::unordered_map<std::string_view,void*> found;
+    for (const auto& candidate:candidates) {
+        if (!candidate.object) return false;
+        if (!wanted.contains(candidate.path)) continue;
+        if (!found.emplace(candidate.path,candidate.object).second) return false;
+    }
+    if (found.size()!=requested.size()) return false;
+    for (const auto& path:requested) resolved.push_back(found.at(path));
+    return true;
+}
 // Walk actual parent objects. An outer scene parent/name never defines the root.
 template<class Parent,class Name>
 RelativePath CheckedRelativePath(void* root,void* transform,Parent&& parent,Name&& name,size_t limit=128) {
@@ -65,6 +94,9 @@ struct Request {
     uint64_t indices=0;
     bool check_indices=true;
     std::string_view verified_receiver_path;
+    // Empty is a valid 1.4 renderer path (resource root). Presence is separate
+    // from value so an omitted proof cannot match that root accidentally.
+    bool verified_receiver_path_present=false;
 };
 enum class MatchStatus { Matched, Missing, Ambiguous, InvalidIndex };
 struct Match { MatchStatus status=MatchStatus::Missing; size_t index=0; size_t valid_count=0; };
@@ -72,15 +104,18 @@ struct Match { MatchStatus status=MatchStatus::Missing; size_t index=0; size_t v
 // complete component mapping is unique, including cross-component contracts.
 template<class Validate>
 Match SelectUnique(std::span<const Candidate> candidates,const Request& request,Validate&& validate) {
-    if (request.region==Region::Unknown || request.character.empty() || request.resource.empty() || request.mesh_name.empty())
+    if (request.region==Region::Unknown || request.character.empty() || request.resource.empty() || request.mesh_name.empty() ||
+        (request.region==Region::Explicit && !request.verified_receiver_path_present))
         return {MatchStatus::InvalidIndex,0,0};
     Match result;
     for (size_t i=0;i<candidates.size();++i) {
         const auto& c=candidates[i];
         if (!c.renderer || c.key.character!=request.character || c.key.resource!=request.resource ||
-            c.key.region!=request.region || ClassifyReceiver(c.key.path)!=c.key.region) continue;
+            c.key.region!=request.region || (request.region!=Region::Explicit &&
+                ClassifyReceiver(c.key.path)!=c.key.region)) continue;
         for (size_t j=0;j<i;++j) if (candidates[j].key==c.key) return {MatchStatus::InvalidIndex,0,0};
-        if (!request.verified_receiver_path.empty() && c.key.path!=request.verified_receiver_path) continue;
+        if ((request.region==Region::Explicit || !request.verified_receiver_path.empty()) &&
+            c.key.path!=request.verified_receiver_path) continue;
         const auto& identity=c.pristine;
         if ((identity.origin!=DonorOrigin::Pristine && identity.origin!=DonorOrigin::SavedOriginal) ||
             !identity.mesh || identity.name!=request.mesh_name ||

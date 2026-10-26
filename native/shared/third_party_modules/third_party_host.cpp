@@ -41,7 +41,7 @@ std::filesystem::path UtfPath(const std::string& value){return std::filesystem::
 bool Id(const std::string& id){if(id.empty() || id.size()>96 || !std::isalnum(static_cast<unsigned char>(id[0])))return false;for(unsigned char c:id)if(!std::isalnum(c)&&c!='_'&&c!='.'&&c!='-')return false;std::string lower=id;std::transform(lower.begin(),lower.end(),lower.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});return !lower.starts_with("betterendfield.")&&lower!="voice.character";}
 std::filesystem::path Child(const std::filesystem::path& root,const std::string& relative){Require(!relative.empty() && relative.find('\\')==relative.npos && relative.find(':')==relative.npos && relative.find('\0')==relative.npos,"Invalid package-relative path");auto path=UtfPath(relative);Require(!path.is_absolute(),"Absolute package library path");for(const auto& part:path)Require(part!="."&&part!=".."&&!part.empty(),"Invalid package path segment");auto base=std::filesystem::weakly_canonical(root);auto candidate=std::filesystem::weakly_canonical(base/path);auto rel=candidate.lexically_relative(base);Require(!rel.empty()&&!rel.is_absolute()&&*rel.begin()!="..","Library escapes module generation");Require(std::filesystem::is_regular_file(candidate),"Native module library is missing");return candidate;}
 J Parse(const std::string& data){Require(data.size()<=kLimit,"JSON exceeds limit");try{return J::parse(data);}catch(const J::parse_error&){throw std::runtime_error("Invalid module JSON");}}
-bool ConstantEqual(const std::string& a,const std::string& b){size_t diff=a.size()^b.size();for(size_t i=0;i<std::max(a.size(),b.size());++i)diff|=(i<a.size()?a[i]:0)^(i<b.size()?b[i]:0);return diff==0;}
+bool ConstantEqual(const std::string& a,const std::string& b){size_t diff=a.size()^b.size();for(size_t i=0;i<(std::max)(a.size(),b.size());++i)diff|=(i<a.size()?a[i]:0)^(i<b.size()?b[i]:0);return diff==0;}
 }
 struct ThirdPartyHost::Impl {
     struct Module {
@@ -60,6 +60,17 @@ struct ThirdPartyHost::Impl {
     struct Message {std::string module,request,body;};std::deque<Message> inbox;size_t inboxBytes=0;
     std::mutex updateMutex;std::string pending;
     std::filesystem::file_time_type stamp{};
+    void Receipt(const J& index,bool accepted,const std::string& error={}){
+        if(!index.contains("publication_id")||!index.at("publication_id").is_string())return;
+        const auto publication=index.at("publication_id").get<std::string>();
+        if(publication.size()!=36||!std::all_of(publication.begin(),publication.end(),[](unsigned char c){return std::isxdigit(c)||c=='-';}))return;
+        J states=J::array();for(const auto& [id,m]:modules)states.push_back({{"id",id},{"status",m->status},{"restart_required",m->restart}});
+        const auto data=J{{"publication_id",publication},{"accepted",accepted},{"error",error},{"modules",states}}.dump();
+        const auto target=indexPath.string()+".receipt",temporary=target+".tmp";
+        try{std::ofstream output(temporary,std::ios::binary|std::ios::trunc);Require(bool(output.write(data.data(),data.size()).flush()),"Cannot write module receipt");output.close();std::filesystem::rename(temporary,target);}
+        catch(const std::exception& failure){if(log)log("third-party",failure.what());std::error_code ignored;std::filesystem::remove(temporary,ignored);}
+    }
+    void Apply(const J& index,bool initial){try{Configure(index,initial);Receipt(index,true);}catch(const std::exception& error){Receipt(index,false,error.what());throw;}}
     static void BE_CALL LogMessage(void* context,const char* message){
         auto* m=static_cast<Module*>(context);if(!m||!message)return;size_t size=0;while(size<4096&&message[size])++size;std::string text(message,size);
         {std::lock_guard lock(m->logsMutex);if(m->logs.size()>=64)m->logs.pop_front();m->logs.push_back(text);}
@@ -73,6 +84,12 @@ struct ThirdPartyHost::Impl {
     void Configure(const J& index,bool initial){
         Require(index.is_object()&&index.value("schema",0)==1&&index.at("modules").is_array()&&index.at("modules").size()<=128,"Invalid third-party index");
         if(!initial)Require(index.at("port")==port && index.at("token")==token,"Changing connection credentials requires restart");
+        std::set<std::string> validated;
+        for(const auto& record:index.at("modules")){
+            const auto id=record.at("id").get<std::string>();
+            Require(Id(id)&&validated.insert(id).second,"Invalid or duplicate third-party ID");
+            Require(record.at("directory").is_string()&&record.at("generation").is_string()&&record.at("enabled").is_boolean()&&record.at("configuration").is_object(),"Invalid third-party module record");
+        }
         std::set<std::string> present;order.clear();
         for(const auto& record:index.at("modules")){
             const auto id=record.at("id").get<std::string>();Require(Id(id)&&present.insert(id).second,"Invalid or duplicate third-party ID");
@@ -160,10 +177,10 @@ struct ThirdPartyHost::Impl {
 #endif
         while(sent<output.size()){const auto count=send(fd,output.data()+sent,static_cast<int>(std::min<size_t>(output.size()-sent,INT_MAX)),flags);if(count<=0)break;sent+=count;}
     }
-    void Loop(J initial){try{Configure(initial,true);}catch(const std::exception& error){if(log)log("third-party",error.what());}
+    void Loop(J initial){try{Apply(initial,true);}catch(const std::exception& error){if(log)log("third-party",error.what());}
         auto next=std::chrono::steady_clock::now();while(!stopping.load()){
-            std::string update;{std::lock_guard lock(updateMutex);update.swap(pending);}if(!update.empty())try{Configure(Parse(update),false);}catch(const std::exception& error){if(log)log("third-party",error.what());}
-            if(std::chrono::steady_clock::now()>=next){next=std::chrono::steady_clock::now()+std::chrono::seconds(1);try{auto current=std::filesystem::last_write_time(indexPath);if(current!=stamp){stamp=current;Configure(Parse(Read(indexPath)),false);}}catch(const std::exception& error){if(log)log("third-party",error.what());}}
+            std::string update;{std::lock_guard lock(updateMutex);update.swap(pending);}if(!update.empty())try{Apply(Parse(update),false);}catch(const std::exception& error){if(log)log("third-party",error.what());}
+            if(std::chrono::steady_clock::now()>=next){next=std::chrono::steady_clock::now()+std::chrono::seconds(1);try{auto current=std::filesystem::last_write_time(indexPath);if(current!=stamp){stamp=current;Apply(Parse(Read(indexPath)),false);}}catch(const std::exception& error){if(log)log("third-party",error.what());}}
             while(!inbox.empty()&&!stopping.load()){
                 auto message=std::move(inbox.front());inbox.pop_front();inboxBytes-=message.body.size();auto found=modules.find(message.module);
                 if(found==modules.end())continue;auto& module=*found->second;BE_Result result=BE_Result_NotReady;

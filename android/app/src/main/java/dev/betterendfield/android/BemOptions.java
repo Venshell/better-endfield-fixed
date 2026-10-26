@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.HashSet;
+import java.util.Set;
+import java.util.ArrayList;
 
 /** BEM 1.1 finite option selection; never executes source INI commands. */
 final class BemOptions {
@@ -22,7 +24,9 @@ final class BemOptions {
         LinkedHashMap<String,String> values=new LinkedHashMap<>();
         for(int i=0;i<groups.length();++i) {
             JSONObject group=groups.getJSONObject(i);
-            values.put(group.getString("id"),group.getString("default"));
+            String id=group.getString("id"),value=group.getString("default");
+            requireToken(id);requireToken(value);
+            if(values.put(id,value)!=null) throw new IOException("重复的选项组");
         }
         HashSet<String> seen=new HashSet<>();
         if(!encoded.isEmpty()) for(String pair:encoded.split("&",-1)) {
@@ -33,8 +37,14 @@ final class BemOptions {
         for(int i=0;i<groups.length();++i) {
             JSONObject group=groups.getJSONObject(i);
             String value=values.get(group.getString("id"));
+            requireToken(value);
             JSONArray choices=group.getJSONArray("choices");boolean found=false;
-            for(int j=0;j<choices.length();++j) found |= value.equals(choices.getJSONObject(j).getString("id"));
+            HashSet<String> choiceIds=new HashSet<>();
+            for(int j=0;j<choices.length();++j) {
+                String id=choices.getJSONObject(j).getString("id");requireToken(id);
+                if(!choiceIds.add(id)) throw new IOException("重复的组件选项");
+                found |= value.equals(id);
+            }
             if(!found) throw new IOException("选项已从包中移除："+group.getString("name"));
         }
         if(!valid(entry,values)) throw new IOException("此选项组合在包内不可达");
@@ -55,6 +65,79 @@ final class BemOptions {
         JSONArray choices=entry.getJSONArray("appearances");
         for(int i=0;i<choices.length();++i) if(value.equals(choices.getString(i))) return value;
         throw new IOException("无效的外观选项");
+    }
+
+    static String targetKey(JSONObject entry) throws Exception {
+        String kind=entry.optInt("bem_minor",0)>=4?entry.getString("target_kind"):
+            entry.optString("target_kind","character");
+        if(!kind.equals("character")&&!kind.equals("weapon")) throw new IOException("无效的模型目标类别");
+        String id=entry.has("target_id")?entry.getString("target_id"):entry.getString("character_id");
+        if(entry.optInt("bem_minor",0)>=4&&!entry.has("target_id")) throw new IOException("模型包缺少目标标识");
+        requireToken(id);
+        return kind+":"+id;
+    }
+
+    static Set<String> resourceKeys(JSONObject entry) throws Exception {
+        Set<String> keys=new HashSet<>();
+        if(!entry.has("resource_keys")) {
+            if(entry.optInt("bem_minor",0)>=4) throw new IOException("模型包缺少资源目标");
+            return keys;
+        }
+        JSONArray resources=entry.getJSONArray("resource_keys");
+        if(resources.length()<1||resources.length()>64) throw new IOException("无效的模型资源目标");
+        for(int i=0;i<resources.length();++i) {
+            String key=resources.getString(i);int split=key.indexOf(':');
+            if(split<1) throw new IOException("无效的模型资源目标");
+            String platform=key.substring(0,split),name=key.substring(split+1);
+            requireToken(name);
+            if(entry.optInt("bem_minor",0)>=4 && !name.equals(name.toLowerCase(java.util.Locale.ROOT)))
+                throw new IOException("无效的模型资源目标");
+            if((!platform.equals("android-arm64")&&!platform.equals("windows-x64"))||!keys.add(key))
+                throw new IOException("无效的模型资源目标");
+        }
+        return keys;
+    }
+
+    static boolean supportsAndroid(JSONObject entry) throws Exception {
+        if(entry.optInt("bem_minor",0)<4) return true;
+        for(String key:resourceKeys(entry)) if(key.startsWith("android-arm64:")) return true;
+        return false;
+    }
+
+    static boolean conflicts(JSONObject first,JSONObject second) throws Exception {
+        if(first.has("package_id")&&second.has("package_id")&&
+            first.getString("package_id").equals(second.getString("package_id"))) return true;
+        if(first.optInt("bem_minor",0)<4&&second.optInt("bem_minor",0)<4)
+            return targetKey(first).equals(targetKey(second));
+        Set<String> a=resourceKeys(first),b=resourceKeys(second);
+        if(a.isEmpty()||b.isEmpty()) return targetKey(first).equals(targetKey(second));
+        for(String key:a) if(key.startsWith("android-arm64:")&&b.contains(key)) return true;
+        return false;
+    }
+
+    static void disableConflicts(JSONArray entries,JSONObject enabled) throws Exception {
+        for(int i=0;i<entries.length();++i) {
+            JSONObject other=entries.getJSONObject(i);
+            if(other!=enabled && conflicts(enabled,other)) other.put("enabled",false);
+        }
+    }
+
+    /** Newest enabled entry wins for legacy snapshots; the persisted index remains untouched. */
+    static JSONArray exclusive(JSONArray entries) throws Exception {
+        JSONArray result=new JSONArray(entries.toString());
+        HashSet<String> generations=new HashSet<>();
+        ArrayList<JSONObject> active=new ArrayList<>();
+        for(int i=result.length()-1;i>=0;--i) {
+            JSONObject entry=result.getJSONObject(i);
+            if(!generations.add(entry.getString("generation"))) throw new IOException("重复的模型包版本");
+            targetKey(entry);resourceKeys(entry);
+            if(entry.has("enabled")&&!(entry.get("enabled") instanceof Boolean)) throw new IOException("无效的启用状态");
+            boolean enabled=entry.optBoolean("enabled",true)&&supportsAndroid(entry);
+            if(enabled) for(JSONObject other:active) if(conflicts(entry,other)) {enabled=false;break;}
+            entry.put("enabled",enabled);
+            if(enabled) active.add(entry);
+        }
+        return result;
     }
 
     static String encode(Map<String,String> values) {

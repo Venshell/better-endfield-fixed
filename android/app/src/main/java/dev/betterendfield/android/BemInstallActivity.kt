@@ -39,6 +39,9 @@ class BemInstallActivity : ComponentActivity() {
 
         install = BemInstallState(applicationContext)
         install.refresh()
+        savedInstanceState?.getString(PENDING_EXTERNAL_URI)?.let {
+            install.restorePendingExternalUri(android.net.Uri.parse(it))
+        }
 
         setContent {
             BetterEndfieldTheme {
@@ -49,8 +52,26 @@ class BemInstallActivity : ComponentActivity() {
         // An explicit URI grant is still required; there is no arbitrary
         // filesystem path extra, and the picker result arrives through the
         // composition's launcher rather than onActivityResult.
-        if (Intent.ACTION_VIEW == intent.action) {
-            intent.data?.takeIf { "content" == it.scheme }?.let { install.startFromViewIntent(it) }
+        if (savedInstanceState == null) handleImportIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleImportIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        install.pendingExternalUri?.let { outState.putString(PENDING_EXTERNAL_URI, it.toString()) }
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun handleImportIntent(intent: Intent) {
+        try {
+            BemImportRequest.fromIntent(intent)?.let { install.startFromViewIntent(it) }
+        } catch (error: BemImportRequest.Rejection) {
+            BemInstaller.status = getString(error.messageId)
+            install.refresh()
         }
     }
 
@@ -66,5 +87,6 @@ class BemInstallActivity : ComponentActivity() {
 
     private companion object {
         const val POLL_INTERVAL_MS = 500L
+        const val PENDING_EXTERNAL_URI = "pending_external_bem_uri"
     }
 }

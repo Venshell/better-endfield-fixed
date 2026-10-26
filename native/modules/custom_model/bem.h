@@ -105,6 +105,7 @@ struct BemPayloadSource {
 // BEMv1 resources lowered into the established native upload representation.
 struct BemComponent {
     bool skip_validation = false;
+    bool static_mesh = false; // BEM 1.4 MeshRenderer + MeshFilter, no skin/palette.
     BemComponentHeaderRaw info{};
     std::array<std::vector<uint8_t>, 3> streams;
     std::vector<uint8_t> indices;
@@ -153,9 +154,22 @@ struct BemPocData {
     std::shared_ptr<const BemPayloadSource> payload_source;
 };
 
+struct BemSelectionMetadata;
+struct BemResourceInfo {
+    std::string id, name, asset_path;
+    std::vector<std::string> platforms;
+    uint32_t lod = 0;
+    std::vector<uint32_t> component_ids; // Manifest-global IDs, lowered per load.
+};
 struct BemPackageInfo {
     uint16_t minor = 0;
     std::string package_id, name, author, version, character_id;
+    // character_id remains the owner ID for legacy UI integrations.
+    std::string target_kind = "character", target_id;
+    std::vector<std::string> resource_keys;
+    std::vector<BemResourceInfo> resources;
+    std::vector<std::string> component_resources, component_paths;
+    std::vector<bool> component_static;
     std::string world_resource, ui_resource, default_appearance;
     std::string default_options, option_groups_json, selection_constraints_json;
     // BEM 1.3 position morph controls. Saved values are UInt32 ticks, not floats.
@@ -164,7 +178,20 @@ struct BemPackageInfo {
     std::vector<std::vector<uint32_t>> parameter_frame_values;
     std::vector<std::string> appearances, component_names;
     std::vector<uint32_t> original_counts;
+    // Validated manifest for metadata-only management/selection. No payload bytes.
+    std::string manifest_json;
+    std::shared_ptr<const BemSelectionMetadata> selection_metadata;
 };
+struct BemSelection {
+    std::string options, parameters, parameters_saved;
+    std::vector<std::string> available_groups, available_parameters;
+};
+// Management reads exactly the header and manifest, never the payload directory.
+// Extent/decoded-byte validation remains the responsibility of the existing loader.
+bool ReadBemManagementInfo(const std::filesystem::path&, BemPackageInfo&, std::string& error,
+    bool skip_validation = false);
+bool ResolveBemSelection(const BemPackageInfo&, std::string_view options,
+    std::string_view parameters_saved, BemSelection&, std::string& error);
 struct BemLoadStats {
     std::vector<uint32_t> payload_ids;
     uint64_t decoded_cache_peak_bytes = 0, decoded_cache_remaining_bytes = 0;
@@ -180,7 +207,8 @@ struct BemLoadPlan {
 };
 bool ReadBemLoadPlan(const std::filesystem::path&, BemLoadPlan&, std::string& error,
     std::string_view appearance = {}, bool skip_validation = false,
-    std::string_view parameters = {}, bool defer_texture_payloads = false);
+    std::string_view parameters = {}, bool defer_texture_payloads = false,
+    std::string_view resource_id = {});
 bool ReadBemPackageInfo(const std::filesystem::path&, BemPackageInfo&, std::string& error, bool skip_validation = false);
 bool ResolveBemParameters(const BemPackageInfo&, std::string_view requested,
     std::string& canonical, std::string& error);
@@ -190,11 +218,13 @@ constexpr int32_t kIndexElementSize = 2;
 
 
 bool ParseBem(std::span<const uint8_t> bytes, BemPocData& output, std::string& error,
-    bool skip_validation = false, bool loading_optimization = false);
+    bool skip_validation = false, bool loading_optimization = false,
+    std::string_view resource_id = {});
 bool LoadBem(const std::filesystem::path& path, BemPocData& output, std::string& error,
     std::string_view appearance = {}, BemLoadStats* stats = nullptr, bool skip_validation = false,
     bool loading_optimization = false, std::string_view parameters = {},
-    uint64_t max_decoded_reservation = UINT64_MAX, bool defer_texture_payloads = false);
+    uint64_t max_decoded_reservation = UINT64_MAX, bool defer_texture_payloads = false,
+    std::string_view resource_id = {});
 // Reads and decodes one deferred texture entry (streaming Zstd; the stored
 // bytes are never held whole). `output` receives exactly info.data_size bytes.
 bool DecodeBemTexturePayload(const BemPayloadSource& source, const BemTexture& texture,

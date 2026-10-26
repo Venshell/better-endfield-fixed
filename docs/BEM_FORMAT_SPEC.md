@@ -1,5 +1,7 @@
 # BEM 格式规范（1.0–1.3）
 
+1.4 的显式多资源目标与静态网格扩展见 [BEM 1.4 格式合同](BEM_V1_4_SPEC.md)。本页继续定义 1.0–1.3，不代表 Android 运行时已能消费 1.4。
+
 BEM（Better Endfield Model）是《终末地》角色模型替换包，扩展名 `.bem`。共用原生读取器与 Android 安装器读取同一个文件。本文沿用上游 1.0–1.3 格式合同；各版本只在下文标注的地方不同。制作流程与本仓库 Android 验收边界见 [创作者指南](BEM_CREATOR_GUIDE.md)。
 
 参考实现：写入与校验 `tools/CustomModel/bem_v1.py`、`bem_v11.py`、`bem_v13.py`；读取 `native/modules/custom_model/bem.cpp`。

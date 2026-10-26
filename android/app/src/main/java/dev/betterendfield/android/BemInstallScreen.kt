@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
@@ -18,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -26,6 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +54,7 @@ fun BemInstallScreen(state: BemInstallState) {
         if (uri != null) state.import(uri)
     }
     var pendingRemoval by remember { mutableStateOf<BemPackage?>(null) }
+    var discardDraft by remember { mutableStateOf(false) }
 
     Surface(
         color = Be.Colors.background,
@@ -78,23 +82,42 @@ fun BemInstallScreen(state: BemInstallState) {
                 ) {}
 
                 PrimaryButton(
-                    text = "导入 BEM 包",
+                    text = "导入 BEM / ZIP",
                     onClick = { picker.launch(arrayOf("*/*")) },
                     enabled = !state.busy,
                 )
+                if (state.pendingExternalUri != null) {
+                    GhostButton(
+                        text = stringResource(R.string.bem_retry_external_import),
+                        onClick = { state.retryPendingExternalImport() },
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(stringResource(R.string.bem_pending_external_import), color = Be.Colors.textSecondary)
+                }
 
                 GhostButton(
-                    text = "保存模型选择",
+                    text = stringResource(R.string.bem_save_selection),
                     onClick = { state.saveAll() },
-                    enabled = !state.busy && state.packages.isNotEmpty(),
+                    enabled = !state.busy && state.indexBroken == null && !state.indexConflict && state.packages.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 GhostButton(
                     text = stringResource(R.string.bem_disable_all),
                     onClick = { state.disableAll() },
-                    enabled = !state.busy && state.indexBroken == null && state.packages.any { it.enabled },
+                    enabled = !state.busy && state.indexBroken == null && !state.indexConflict && state.packages.any { it.enabled },
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                if (state.indexConflict) {
+                    StatusBlock(stringResource(R.string.bem_draft_conflict))
+                    GhostButton(
+                        text = stringResource(R.string.bem_reload_latest),
+                        onClick = { discardDraft = true },
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
                 PanelCard {
                     ListCaption(stringResource(R.string.bem_storage_title))
@@ -154,7 +177,7 @@ fun BemInstallScreen(state: BemInstallState) {
                 } else if (state.packages.isEmpty()) {
                     PanelCard {
                         Text(
-                            text = "还没有模型包\n点击上方「导入 BEM 包」添加模型。",
+                            text = "还没有模型包\n点击上方「导入 BEM / ZIP」添加模型。",
                             color = Be.Colors.textSecondary,
                             fontSize = 14.sp,
                             lineHeight = 21.sp,
@@ -190,6 +213,66 @@ fun BemInstallScreen(state: BemInstallState) {
     }
 
     val target = pendingRemoval
+    val bundle = state.pendingBundle
+    if (bundle != null) {
+        val selected = remember(bundle) { mutableStateListOf<Boolean>().also { list ->
+            bundle.packages.forEach { list.add(!bundle.deselected.contains(it.report.optString("generation"))) }
+        } }
+        AlertDialog(
+            onDismissRequest = { state.cancelBundle(bundle) },
+            containerColor = Be.Colors.panelHigh,
+            titleContentColor = Be.Colors.textPrimary,
+            textContentColor = Be.Colors.textSecondary,
+            title = { Text("导入 ZIP 中的模型包") },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    bundle.packages.forEachIndexed { position, prepared ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = selected[position], onCheckedChange = {
+                                selected[position] = it
+                                val generation = prepared.report.optString("generation")
+                                if (it) bundle.deselected.remove(generation) else bundle.deselected.add(generation)
+                            })
+                            Column(Modifier.weight(1f)) {
+                                Text(prepared.report.optString("name", prepared.item.name), color = Be.Colors.textPrimary)
+                                Text(prepared.report.optString("target_id", prepared.report.optString("character_id")),
+                                    color = Be.Colors.textSecondary, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    if (bundle.issues.isNotEmpty()) {
+                        Text("未通过校验：\n" + bundle.issues.joinToString("\n"),
+                            color = Be.Colors.danger, fontSize = 11.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { state.importSelected(bundle, selected.toList()) }) {
+                    Text("导入所选", color = Be.Colors.accent)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { state.cancelBundle(bundle) }) {
+                    Text("取消", color = Be.Colors.textSecondary)
+                }
+            },
+        )
+    }
+    if (discardDraft) {
+        AlertDialog(
+            onDismissRequest = { discardDraft = false },
+            containerColor = Be.Colors.panelHigh,
+            title = { Text(stringResource(R.string.bem_reload_latest)) },
+            text = { Text(stringResource(R.string.bem_discard_draft_hint)) },
+            confirmButton = { TextButton(onClick = {
+                state.discardDraftAndReload()
+                discardDraft = false
+            }) { Text(stringResource(R.string.bem_discard_draft)) } },
+            dismissButton = { TextButton(onClick = { discardDraft = false }) {
+                Text(stringResource(R.string.bem_keep_draft))
+            } },
+        )
+    }
     if (target != null) {
         AlertDialog(
             onDismissRequest = { pendingRemoval = null },

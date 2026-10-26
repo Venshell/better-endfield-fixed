@@ -22,6 +22,9 @@
     <string name="custom_model_title">第三方模型替换</string>
     <string name="custom_model_install">安装 / 管理 BEM 模型包</string>
     <string name="bem_install_restart_hint">保存选择后，下次启动游戏生效。</string>
+    <string name="overlay_model_restart_hint">模型选择保存后，请重新启动游戏使其生效。</string>
+    <string name="overlay_model_restart_detail">更改后需重启游戏</string>
+    <string name="overlay_fov_delivery_hint">改动会尝试送达当前游戏；实际生效以运行日志为准</string>
     <string name="diagnostics_eyebrow">DIAGNOSTICS</string>
     <string name="diagnostics_title">运行状态</string>
     <string name="diagnostics_framework">框架入口：libxposed API 102</string>
@@ -308,4 +311,22 @@
     <string name="about_modules_note">战斗统计、寻访与音乐模块只存在于桌面构建，Android 侧不注册。</string>
     <string name="about_upstream">上游与来源</string>
     <string name="about_upstream_value">基于 Dr-hydra/Better-Endfield 派生，独立维护；第一人称相机参照 RenoDX Endfield Enhancer（MIT）。</string>
+    <string name="bem_retry_external_import">继续导入待处理文件</string>
+    <string name="bem_pending_external_import">此前从文件管理器打开的文件尚未导入。</string>
+    <string name="bem_import_request_action">请一次打开或分享一个 BEM 或 ZIP 文件。</string>
+    <string name="bem_import_request_not_file">分享内容不是文件，请使用文件管理器的「打开方式」。</string>
+    <string name="bem_import_request_multiple">请一次选择一个 BEM 或 ZIP 文件，不支持文本或批量分享。</string>
+    <string name="bem_import_request_malformed">无法读取文件打开请求，请从文件管理器重新打开。</string>
+    <string name="bem_import_request_uri">请通过文件管理器分享本地 BEM 或 ZIP 文件；不接受文件路径或网络链接。</string>
+    <string name="bem_import_request_conflict">文件打开请求包含不同的文件地址，请一次选择一个文件。</string>
+    <string name="bem_index_changed">模型列表已更新，请重新读取后保存。</string>
+    <string name="bem_index_read_failed">模型列表读取失败：%1$s</string>
+    <string name="bem_selection_saved">全部设置已保存，重启游戏后生效。</string>
+    <string name="bem_selection_failed">保存失败：%1$s</string>
+    <string name="bem_save_selection">保存模型选择</string>
+    <string name="bem_draft_conflict">其他入口已更新模型列表。以下为保留的未保存草稿；保存与全部停用已暂停。</string>
+    <string name="bem_reload_latest">读取最新设置</string>
+    <string name="bem_discard_draft_hint">将放弃当前未保存的草稿，读取其他入口已保存的设置。</string>
+    <string name="bem_discard_draft">放弃草稿并读取</string>
+    <string name="bem_keep_draft">保留草稿</string>
 </resources>

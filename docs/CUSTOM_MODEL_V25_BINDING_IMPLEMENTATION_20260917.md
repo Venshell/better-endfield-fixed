@@ -6,7 +6,7 @@
 > 下文 UInt16 限制是初始实现阶段的记录。
 
 > 庄方宜 world/UI 八个目标 renderer 已完成实机采集，首个真实转换包已生成并部署。
-> 当前证据、材质适配取舍及待实机项目见[庄方宜验证记录](CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION_20260917.md)。
+> 当前证据、材质适配取舍及待实机项目见[庄方宜验证记录](archive/CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION_20260917.md)。
 
 ## 当前交付状态
 
@@ -153,7 +153,7 @@ draw 必须连续且完整覆盖输出 IB；骨骼和材质必须引用包内组
 
 洁尔佩塔包含自定义骨骼 Shader、按 pass 分流和跨 IB 绘制，通用 hash/LOD 入口仍会拒绝。
 后续新增明确审阅的源程序配方入口，将本样本的默认绘制归并后复用相同 BEMPC25 输出，
-见[洁尔佩塔测试包记录](CUSTOM_MODEL_GILBERTA_VALIDATION_20260917.md)。
+见[洁尔佩塔测试包记录](archive/CUSTOM_MODEL_GILBERTA_VALIDATION_20260917.md)。
 不执行 RabbitFX 或 Shader；Hash/LOD 命名本身不代表使用同一种骨架机制。
 
 ## 验证与剩余项

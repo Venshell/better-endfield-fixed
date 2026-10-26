@@ -9,11 +9,15 @@ on:
       - '.github/workflows/android-build.yml'
       - 'android/**'
       - 'native/**'
+      - 'tools/AndroidPort/**'
+      - 'tools/CustomModel/**'
   pull_request:
     paths:
       - '.github/workflows/android-build.yml'
       - 'android/**'
       - 'native/**'
+      - 'tools/AndroidPort/**'
+      - 'tools/CustomModel/**'
   workflow_dispatch:
 
 # Nothing here writes to the repository: the job compiles and uploads an
@@ -24,7 +28,25 @@ permissions:
   contents: read
 
 jobs:
+  port-host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install BEM test dependency
+        run: python -m pip install zstandard==0.25.0
+      - name: Run Android port host gate
+        run: python -B tools/AndroidPort/run_host_gate.py --work-dir "${{ runner.temp }}/port-host"
+
   build:
+    needs: port-host
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

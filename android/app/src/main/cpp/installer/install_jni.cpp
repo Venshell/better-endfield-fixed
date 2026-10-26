@@ -1,9 +1,14 @@
 #include "texture_install.h"
+#include "mod_registry.h"
 #include <jni.h>
 #include <atomic>
 #include <stdexcept>
 namespace { std::atomic_bool cancelled{false},busy{false};
 struct Utf {JNIEnv* env;jstring value;const char* data;Utf(JNIEnv* e,jstring v):env(e),value(v),data(e->GetStringUTFChars(v,nullptr)) {if(!data) throw std::runtime_error("Cannot read JNI string");}~Utf(){env->ReleaseStringUTFChars(value,data);}};
+void RequireAndroidResource(const BetterEndfield::CustomModel::BemPackageInfo& info) {
+    if(info.minor>=4 && BetterEndfield::CustomModel::SelectResourceBindings(info,"android-arm64").empty())
+        throw std::runtime_error("BEM 1.4 package has no Android ARM64 resource");
+}
 }
 extern "C" JNIEXPORT void JNICALL Java_dev_betterendfield_android_BemInstaller_cancelNative(JNIEnv*,jclass) {
     cancelled=true;betterendfield::CancelTextureCompression();
@@ -15,13 +20,23 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
         using namespace BetterEndfield::CustomModel;
         BemPackageInfo info; std::string error;
         if(!ReadBemPackageInfo(input.data,info,error)) throw std::runtime_error(error);
+        RequireAndroidResource(info);
         auto selections=info.appearances;
         if(info.minor) selections.push_back(info.default_options);
         for(const auto& appearance:selections) {
-            BemPocData parsed;
-            if(!LoadBem(input.data,parsed,error,appearance)) throw std::runtime_error(error);
+            if(info.minor>=4) {
+                for(const auto& resource:info.resources) {
+                    BemPocData parsed;
+                    if(!LoadBem(input.data,parsed,error,appearance,nullptr,false,false,{},UINT64_MAX,false,resource.id))
+                        throw std::runtime_error(error);
+                }
+            } else {
+                BemPocData parsed;
+                if(!LoadBem(input.data,parsed,error,appearance)) throw std::runtime_error(error);
+            }
         }
         BemJson report={{"package_id",info.package_id},{"character_id",info.character_id},{"name",info.name},
+            {"target_kind",info.target_kind},{"target_id",info.target_id},{"resource_keys",info.resource_keys},
             {"bytes",std::filesystem::file_size(input.data)},{"bem_minor",info.minor}};
         if(info.minor) {report["default_options"]=info.default_options;
             report["option_groups"]=BemJson::parse(info.option_groups_json);
@@ -38,6 +53,10 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
     struct Guard {~Guard(){busy=false;}} guard; cancelled=false;
     try {
         Utf input(env,src),output(env,dst),mapping(env,rules);
+        BetterEndfield::CustomModel::BemPackageInfo info; std::string metadata_error;
+        if(!BetterEndfield::CustomModel::ReadBemPackageInfo(input.data,info,metadata_error))
+            throw std::runtime_error(metadata_error);
+        RequireAndroidResource(info);
         auto table=BetterEndfield::CustomModel::BemJson::parse(mapping.data);
         auto checkpoint=[] {if(cancelled.load()) throw std::runtime_error("Installation cancelled");};
         auto progressMethod=env->GetStaticMethodID(owner,"conversionProgress","(Ljava/lang/String;IIIIF)V");

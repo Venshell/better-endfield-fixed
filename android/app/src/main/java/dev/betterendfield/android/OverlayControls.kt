@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -43,13 +44,15 @@ internal fun OverlaySection(title: String, content: @Composable () -> Unit) {
 internal fun OverlayAction(
     title: String,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(
         modifier.fillMaxWidth().height(42.dp)
+            .alpha(if (enabled) 1f else 0.45f)
             .background(Be.Colors.overlayRow, RoundedCornerShape(11.dp))
             .border(1.dp, Be.Colors.outline, RoundedCornerShape(11.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = title },
         contentAlignment = Alignment.Center,
     ) {
@@ -62,10 +65,11 @@ internal fun OverlayAction(
 internal fun OverlayActionRow(
     first: String, firstClick: () -> Unit,
     second: String, secondClick: () -> Unit,
+    secondEnabled: Boolean = true,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        OverlayAction(first, Modifier.weight(1f), firstClick)
-        OverlayAction(second, Modifier.weight(1f), secondClick)
+        OverlayAction(first, Modifier.weight(1f), onClick = firstClick)
+        OverlayAction(second, Modifier.weight(1f), enabled = secondEnabled, onClick = secondClick)
     }
 }
 

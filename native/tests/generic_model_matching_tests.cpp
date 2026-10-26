@@ -18,6 +18,20 @@ Match Find(std::span<const Candidate> candidates,const Request& request) {
     return SelectUnique(candidates,request,[](const auto&) { return true; });
 }
 void PathChecks() {
+    Check(ClonePathEvidenceAvailable(true,2,2),"complete clone path evidence rejected");
+    Check(!ClonePathEvidenceAvailable(false,0,0),"clone without renderer path accepted");
+    Check(!ClonePathEvidenceAvailable(true,2,1),"partial clone bone paths accepted");
+    std::vector<PathObject> nodes{{"Root/A",&renderer_a},{"Root/B",&renderer_b}};
+    std::vector<std::string> wanted{"Root/B","Root/A"};
+    std::vector<void*> resolved;
+    Check(ResolveUniquePaths(nodes,wanted,resolved) && resolved==std::vector<void*>({&renderer_b,&renderer_a}),
+        "clone paths did not resolve in saved bone order");
+    nodes.push_back({"Root/A",&proxy});
+    Check(!ResolveUniquePaths(nodes,wanted,resolved) && resolved.empty(),"ambiguous clone path accepted");
+    nodes.pop_back();wanted[1]="Root/Missing";
+    Check(!ResolveUniquePaths(nodes,wanted,resolved) && resolved.empty(),"missing clone path accepted");
+    wanted[1]=wanted[0];
+    Check(!ResolveUniquePaths(nodes,wanted,resolved) && resolved.empty(),"duplicate saved bone path accepted");
     std::unordered_map<void*,void*> parents{{&root,&outer},{&renderer_a,&lod},{&lod,&mesh_all},{&mesh_all,&root}};
     std::unordered_map<void*,std::string> names{{&renderer_a,"Body_lod0"},{&lod,"lod0"},{&mesh_all,"Mesh_all"}};
     auto path=[&] { return CheckedRelativePath(&root,&renderer_a,[&](void* p) {return parents[p];},

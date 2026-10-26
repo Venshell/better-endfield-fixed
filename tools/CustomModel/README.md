@@ -9,13 +9,35 @@
 旧运行时 PoC 已移至 [research/custom-model](../../research/custom-model/README.md)；
 本目录保留仍被当前转换流程使用的代码，包括名称带 `poc` 的转换器。
 
+## BEM 1.4 定向目标草稿
+
+`build_bem14_target.py` 将同版本原生角色元数据与作者显式填写的资源规格合成目标 profile，并可输出仅含 `keep` 规则的可编辑项目。规格必须写明资源资产路径、Android 平台、LOD 与必要时的 renderer 精确路径；工具拒绝快照不一致、缺少精确接收器和不完整离线引用。输入大小上限为元数据 512 MiB、规格 1 MiB。生成物明确标记 `runtime_verified=false`、`conversion_ready=false`，不可据此宣称模型已能在游戏中显示。
+
+```powershell
+python tools/CustomModel/build_bem14_target.py D:/CodexData/native-metadata.json --spec D:/CodexData/android-target-spec.json --output D:/CodexData/android-target-profile.json --project D:/CodexData/android-target-project.json
+```
+
+`bem_upload_report.py` 可对已生成的 `.bem` 计算所选配置的几何与贴图字节估算，不解码全部 payload。报告是包内容与引用场景，**不是 GPU 实际驻留量**；输出通过原子写入保存且不能覆盖输入包。
+
+```powershell
+python tools/CustomModel/bem_upload_report.py D:/CodexData/model.bem --output D:/CodexData/model-upload-report.json
+```
+
+## Android LOD 关系候选表
+
+`generate_android_lod_relations.py` 可将**独立采集**的 Android UI LOD0 组件资料与 Android LOD1 目录交叉匹配，输出待运行时核实的 JSON 候选表。调用时须显式提供 `--native-catalog`、`--android-catalog`、`--snapshot` 和 `--output`。源目录中的每份角色资料必须声明 `platform: "android-arm64"` 且版本相同；目标目录须声明 `platform: "Android"`、同一 `manifestVersion` 及 `characters[].modelAssets[].path`。本地 `tools/CustomModel/catalog` 的历史 Windows 资料会被拒绝，不能冒充 Android 证据。输出标记 `candidate-requires-runtime-validation`，不代表模型在 Android 已可加载或显示。目前未接入原生生成头及运行时，需待 Android 目录和匹配合同核实后再接线。
+
+```powershell
+python tools/CustomModel/generate_android_lod_relations.py --native-catalog D:/CodexData/android-ui-lod0-catalog --android-catalog D:/CodexData/android-character-catalog.json --snapshot MANIFEST_VERSION --output D:/CodexData/android-lod-relations.candidates.json
+```
+
 ## ComponentN 自动转换
 
 `bem_tool.py convert SOURCE -o OUTPUT.bem` 在角色资料和标准声明完整时不再需要配方。
 女管理员已跑通无配方转换；佩丽卡只依据游戏资源接入资料，不引入样包专用规则。
-1.1.3 已接入 32 角色、370 个可复用 LOD0 部件，补齐 360 个单子网格入口与 1,181 项纹理身份。原生资料与 EFMI 原资源对应分开记录，不能把入库数量当作任意源包兼容数量。范围及官方来源见[角色资料说明](../../docs/BEM_CHARACTER_CATALOG_20260919.md)和[EFMI 身份补全](../../docs/BEM_EFMI_IDENTITIES_20260920.md)。
-规则、证据及限制见 `docs/BEM_COMPONENTN_AUTOMATION_20260919.md`。资料放在 `catalog/`，由工具自动匹配。
-逐绘制段和 RabbitFX 的样本分层、自动化边界见 `docs/BEM_PER_DRAW_COMPATIBILITY_20260920.md` 与 `docs/BEM_RABBITFX_COMPATIBILITY_20260920.md`。当前只做识别和报告，尚未放行 RabbitFX Stable Textures 的通用转换。
+1.1.3 已接入 32 角色、370 个可复用 LOD0 部件，补齐 360 个单子网格入口与 1,181 项纹理身份。原生资料与 EFMI 原资源对应分开记录，不能把入库数量当作任意源包兼容数量。范围及官方来源见[角色资料说明](../../docs/BEM_CHARACTER_CATALOG_20260919.md)和[EFMI 身份补全](../../docs/archive/BEM_EFMI_IDENTITIES_20260920.md)。
+规则、证据及限制见 `docs/archive/BEM_COMPONENTN_AUTOMATION_20260919.md`。资料放在 `catalog/`，由工具自动匹配。
+逐绘制段和 RabbitFX 的样本分层、自动化边界见 `docs/archive/BEM_PER_DRAW_COMPATIBILITY_20260920.md` 与 `docs/archive/BEM_RABBITFX_COMPATIBILITY_20260920.md`。当前只做识别和报告，尚未放行 RabbitFX Stable Textures 的通用转换。
 
 ## 通用原生角色资料解析器
 
@@ -33,7 +55,7 @@ bones/bindposes、材质与贴图绑定。已读取佩丽卡和庄方宜，缺�
 `finalize_native_profile.py` 结合真实观测、原生纹理字节和显式材质配方生成最终 profile，
 区分资料核实的 `verified` 与实机渲染的 `render_verified`。准备阶段草稿仍不自动放行。
 `runtime_native_probe.py arm/collect` 配合一次性资源交付探针采集 world/UI 原生声明与材质绑定，
-用户操作及开发命令见 [运行时探测](../../docs/CUSTOM_MODEL_RUNTIME_PROBE_20260917.md)。
+用户操作及开发命令见 [运行时探测](../../docs/archive/CUSTOM_MODEL_RUNTIME_PROBE_20260917.md)。
 
 ## Hash/LOD 格式的新入口（2026-09-17）
 
@@ -41,13 +63,13 @@ bones/bindposes、材质与贴图绑定。已读取佩丽卡和庄方宜，缺�
 `convert_hash_lod.py`，不套用下文的 ComponentN 转换器。现支持在已核实的 schema=2
 profile 下输出 BEMPC25：默认绘制段、独立材质来源、合并骨架及 16 位输入骨骼索引重映射。
 庄方宜首个默认状态测试包已生成并部署，四组件、七项纹理，用户已确认整体显示正常。
-生成命令、材质取舍和验证范围见[庄方宜验证记录](../../docs/CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION_20260917.md)。
+生成命令、材质取舍和验证范围见[庄方宜验证记录](../../docs/archive/CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION_20260917.md)。
 洁尔佩塔默认外观已通过 `convert_reviewed_draws.py` 和明确审阅的源程序配方生成测试包，
 跨入口绘制归并到现有运行时。此入口严格核对主 INI 和五份骨骼 Shader 的有效文本，
 不解释任意 GPU 程序。2026-09-18 用户指定 P 键另一套服装并放宽索引限制，
 新增 `gilberta-12.outfit-b.reviewed.json`，大组件用 UInt32 索引，已部署；
 不支持运行时面板切换。当前状态见[Outfit B 修正记录](../../docs/CUSTOM_MODEL_GILBERTA_OUTFIT_B_20260918.md)。
-详见 [独立转换器与样本检查](../../docs/CUSTOM_MODEL_HASH_LOD_CONVERTER_20260917.md)。
+详见 [独立转换器与样本检查](../../docs/archive/CUSTOM_MODEL_HASH_LOD_CONVERTER_20260917.md)。
 
 ```powershell
 python tools/CustomModel/convert_hash_lod.py path/to/extracted-mod --report artifacts/hash-lod-report.json

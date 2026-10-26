@@ -12,15 +12,13 @@ import java.util.*;
 
 final class ThirdPartyModuleStore {
     static final String KEY="third_party_runtime";
-    /** An empty manager index must not start a permanent game-process bridge. */
+    /** An installed module may be enabled while the game is running. */
     static String selectedRuntimeIndex(SharedPreferences settings) {
         String encoded=settings.getString(KEY,"");
         if(encoded==null || encoded.isEmpty())return "";
         try {
             JSONArray modules=new JSONObject(encoded).getJSONArray("modules");
-            for(int i=0;i<modules.length();++i)
-                if(modules.getJSONObject(i).getBoolean("enabled"))return encoded;
-            return "";
+            return modules.length()>0 ? encoded : "";
         } catch(Exception invalid) {return encoded;} // Keep invalid data visible to preparation diagnostics.
     }
     static File root(Context context) {return new File(context.getFilesDir(),"third-party");}
@@ -104,7 +102,9 @@ final class ThirdPartyModuleStore {
                 while((count=input.read(buffer))!=-1){bytes+=count;if(bytes>ThirdPartyModulePackage.LIMIT)throw new IOException("模块 ZIP 超过 256 MiB");output.write(buffer,0,count);}output.getFD().sync();
             }
             JSONObject manifest=ThirdPartyModulePackage.extract(archive,directory);String id=manifest.getString("id");
-            String remote="tpm-"+generation+".zip";FrameworkSettings.publishThirdParty(archive,remote);
+            String remote="tpm-"+generation+".zip";
+            if(!FrameworkSettings.awaitConnection(()->{})) throw new IOException("等待框架服务连接超时");
+            FrameworkSettings.publishThirdParty(archive,remote);
             synchronized(ThirdPartyModuleStore.class) {
                 JSONObject index=index(context);String previous=index.toString();JSONArray modules=index.getJSONArray("modules");JSONObject old=null;int position=modules.length();
                 for(int i=0;i<modules.length();++i)if(modules.getJSONObject(i).getString("id").equalsIgnoreCase(id)){old=modules.getJSONObject(i);position=i;break;}

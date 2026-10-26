@@ -2,7 +2,11 @@
 #include "core/log.h"
 #include <array>
 #include <chrono>
+#include <charconv>
 #include <cstring>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 
 namespace betterendfield {
@@ -105,6 +109,76 @@ bool AndroidMeshRollbackTest() { return rollback_test; }
 bool AndroidPipelineLodEnabled() { return pipeline_lod_enabled; }
 bool AndroidNpcParametersEnabled() { return npc_parameters_enabled; }
 bool AndroidInspectionEnabled() { return inspection_enabled; }
+std::string AndroidTextureMipRequestToken() {
+    const char* diagnostics = std::getenv("BETTER_ENDFIELD_DIAGNOSTICS_PATH");
+    if (!diagnostics) return {};
+    const size_t path_size = strnlen(diagnostics, 4097);
+    if (path_size == 0 || path_size > 4096) return {};
+    try {
+        const auto directory = std::filesystem::path(diagnostics).parent_path();
+        if (!directory.is_absolute()) return {};
+        std::ifstream input(directory / "betterendfield-texture-mips.request", std::ios::binary);
+        if (!input) return {};
+        std::array<char, 129> buffer{};
+        input.read(buffer.data(), buffer.size());
+        const auto size = input.gcount();
+        if (size <= 0 || size > 128) return {};
+        const std::string text(buffer.data(), static_cast<size_t>(size));
+        const auto newline = text.find('\n');
+        if (newline == std::string::npos) return {};
+        auto magic = text.substr(0, newline);
+        if (!magic.empty() && magic.back() == '\r') magic.pop_back();
+        if (magic != "BE_TEXTURE_MIPS_V1") return {};
+        auto token = text.substr(newline + 1);
+        if (!token.empty() && token.back() == '\n') token.pop_back();
+        if (!token.empty() && token.back() == '\r') token.pop_back();
+        if (token.empty() || token.size() > 64) return {};
+        for (const unsigned char c : token)
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '-' || c == '_')) return {};
+        return token;
+    } catch (const std::filesystem::filesystem_error&) { return {}; }
+}
+void* AndroidLodStreamingOffsetEntry() {
+    return runtime ? runtime->ResolveIcall("UnityEngine.HyperGryph.HGLODStreamingSystem::SetArtTagLODStreamingOffset") : nullptr;
+}
+void* AndroidTextureBudgetSetterEntry() {
+    return runtime ? runtime->ResolveIcall("UnityEngine.QualitySettings::set_streamingMipmapsMemoryBudget") : nullptr;
+}
+void* AndroidTextureBudgetGetterEntry() {
+    return runtime ? runtime->ResolveIcall("UnityEngine.QualitySettings::get_streamingMipmapsMemoryBudget") : nullptr;
+}
+void* AndroidQualityLevelSetterEntry() {
+    return runtime ? runtime->ResolveIcall("UnityEngine.QualitySettings::SetQualityLevel") : nullptr;
+}
+void* AndroidQualityLevelGetterEntry() {
+    return runtime ? runtime->ResolveIcall("UnityEngine.QualitySettings::GetQualityLevel") : nullptr;
+}
+bool AndroidReadMemoryHeadroom(uint64_t& total_bytes,uint64_t& available_bytes) {
+    total_bytes=0;available_bytes=0;
+    std::ifstream input("/proc/meminfo");
+    bool total_seen=false,available_seen=false;
+    std::array<char,256> line{};
+    for(size_t scanned=0;scanned<64 && input.getline(line.data(),line.size());++scanned) {
+        std::string_view text(line.data());
+        const bool total=text.starts_with("MemTotal:"),available=text.starts_with("MemAvailable:");
+        if(!total && !available) continue;
+        text.remove_prefix(total?9:13);
+        const auto first=text.find_first_not_of(" \t");
+        if(first==text.npos) return false;
+        text.remove_prefix(first);
+        uint64_t value=0;
+        const auto parsed=std::from_chars(text.data(),text.data()+text.size(),value);
+        if(parsed.ec!=std::errc{} || parsed.ptr==text.data() || value>UINT64_MAX/1024) return false;
+        text.remove_prefix(static_cast<size_t>(parsed.ptr-text.data()));
+        const auto unit=text.find_first_not_of(" \t");
+        if(unit==text.npos || text.substr(unit)!="kB") return false;
+        if(total) {total_bytes=value*1024;total_seen=true;}
+        else {available_bytes=value*1024;available_seen=true;}
+        if(total_seen && available_seen) break;
+    }
+    return total_seen && available_seen && total_bytes>0 && available_bytes<=total_bytes;
+}
 
 bool AndroidAuditMaterialCopy(void* original,void* copy) {
     try {

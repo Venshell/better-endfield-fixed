@@ -30,13 +30,49 @@ std::string FileTimeIdentity(std::filesystem::file_time_type time) {
 }
 }
 std::span<const CharacterAdapter> CharacterAdapters() { return {}; }
+std::vector<ResourceBinding> SelectResourceBindings(const BemPackageInfo& package,
+    std::string_view platform) {
+    std::vector<ResourceBinding> result;
+    if (package.minor < 4) return result;
+    for (const auto& resource : package.resources) {
+        if (std::find(resource.platforms.begin(), resource.platforms.end(), platform) == resource.platforms.end())
+            continue;
+        result.push_back({package.package_id, resource.id, resource.name, resource.asset_path,
+                          resource.lod, resource.component_ids});
+    }
+    return result;
+}
 const EnabledMod* ModRegistry::Match(std::string_view resource) const {
     resource=ResourceBaseName(resource);
     for(const auto& mod:enabled) if(resource==mod.adapter->world_resource||resource==mod.adapter->ui_resource) return &mod;
     return nullptr;
 }
-bool ParseModRegistry(std::string_view ini,const std::filesystem::path& root,ModRegistry& output,std::string& error) {
-    output={}; error.clear();
+std::vector<std::string> ChangedResourceNames(const ModRegistry& before,const ModRegistry& after) {
+    const auto selections=[](const ModRegistry& registry) {
+        std::map<std::string,std::string> result;
+        for(const auto& mod:registry.enabled) {
+            if(!mod.adapter) continue;
+            for(const char* resource:{mod.adapter->world_resource,mod.adapter->ui_resource})
+                if(resource && *resource) result.insert_or_assign(resource,mod.selection_key);
+        }
+        return result;
+    };
+    const auto old=selections(before),current=selections(after);
+    std::vector<std::string> changed;
+    for(const auto& [name,key]:old) {
+        const auto found=current.find(name);
+        if(found==current.end()||found->second!=key) changed.push_back(name);
+    }
+    for(const auto& [name,key]:current) if(!old.contains(name)) changed.push_back(name);
+    std::sort(changed.begin(),changed.end());
+    return changed;
+}
+bool ParseModRegistryImpl(std::string_view ini,const std::filesystem::path& root,ModRegistry& output,
+    std::string& error,bool resource_mode,std::string_view platform) {
+    error.clear();
+    if(resource_mode && platform!="android-arm64" && platform!="windows-x64") {
+        error="Unsupported BEM resource platform"; return false;
+    }
     try {
         if(ini.size()>1024*1024) {error="Runtime configuration exceeds 1 MiB";return false;}
         if(ini.starts_with("\xef\xbb\xbf")) ini.remove_prefix(3);
@@ -66,6 +102,9 @@ bool ParseModRegistry(std::string_view ini,const std::filesystem::path& root,Mod
         }
         if(parsed.skip_validation) parsed.diagnostics.push_back("Developer mode: model validation disabled; crashes and incorrect rendering are possible.");
         std::set<std::string> roles,resources,conflicts;
+        std::set<std::string> package_ids,resource_conflicts;
+        std::map<std::string,std::string> resource_owners;
+        std::map<std::string,std::string> role_owners;
         for(const auto& [name,values]:sections) {
             if(!name.starts_with("Mod.")) continue;
             auto get=[&](const char* key) {auto i=values.find(key);return i==values.end()?std::string{}:i->second;};
@@ -78,6 +117,10 @@ bool ParseModRegistry(std::string_view ini,const std::filesystem::path& root,Mod
             if(path.is_relative()) path=root/path;
             BemPackageInfo info; std::string why;
             if(!ReadBemPackageInfo(path,info,why,parsed.skip_validation)) {parsed.diagnostics.push_back("Package refused: "+name+": "+why);continue;}
+            if(!resource_mode && info.minor>=4) {
+                parsed.diagnostics.push_back("Package refused: "+name+": BEM 1.4 requires a resource-aware runtime");
+                continue;
+            }
             auto appearance=info.minor?get("options"):get("appearance");
             if(appearance.empty()) appearance=info.minor?info.default_options:info.default_appearance;
             if(!info.minor && std::find(info.appearances.begin(),info.appearances.end(),appearance)==info.appearances.end()) {
@@ -88,8 +131,59 @@ bool ParseModRegistry(std::string_view ini,const std::filesystem::path& root,Mod
                 parsed.diagnostics.push_back("Parameters removed or invalid; using package defaults: "+name+": "+why);
                 parameters=info.default_parameters;
             }
-            if(!roles.insert(info.character_id).second || resources.contains(info.world_resource)||resources.contains(info.ui_resource)) {
+            if(resource_mode && info.minor>=4) {
+                auto bindings=SelectResourceBindings(info,platform);
+                if(bindings.empty()) {
+                    parsed.diagnostics.push_back("Package has no resource for "+std::string(platform)+": "+info.package_id);
+                    continue;
+                }
+                if(!package_ids.insert(info.package_id).second) resource_conflicts.insert(info.package_id);
+                std::error_code file_error;
+                const auto stamp=std::filesystem::last_write_time(path,file_error);
+                const auto bytes=std::filesystem::file_size(path,file_error);
+                const auto canonical=path.lexically_normal();
+                const std::string key=canonical.string()+"\n"+appearance+"\n"+parameters+"\n"+
+                    (parsed.skip_validation?"unchecked":"checked")+"\n"+
+                    FileTimeIdentity(stamp)+":"+std::to_string(bytes);
+                for(const auto& binding:bindings) {
+                    auto [owner,inserted]=resource_owners.emplace(binding.name,info.package_id);
+                    if(!inserted) {resource_conflicts.insert(owner->second);resource_conflicts.insert(info.package_id);}
+                    auto own=std::make_shared<OwnedCharacterAdapter>();
+                    own->id=info.target_id; own->world=binding.name; own->ui=binding.name;
+                    own->resource_id=binding.id; own->asset_path=binding.asset_path;
+                    own->names.reserve(binding.component_ids.size());
+                    own->receiver_paths.reserve(binding.component_ids.size());
+                    for(auto id:binding.component_ids) {
+                        own->names.push_back(info.component_names.at(id));
+                        own->receiver_paths.push_back(info.component_paths.at(id));
+                    }
+                    for(size_t i=0;i<binding.component_ids.size();++i) {
+                        const auto id=binding.component_ids[i];
+                        own->components.push_back({own->names[i].c_str(),info.original_counts.at(id),
+                            own->receiver_paths[i].c_str(),info.component_static.at(id)});
+                    }
+                    own->adapter={own->id.c_str(),own->world.c_str(),own->ui.c_str(),"",false,
+                        own->components,own->resource_id.c_str(),own->asset_path.c_str(),binding.lod,true};
+                    parsed.enabled.push_back({&own->adapter,canonical,appearance,parsed.skip_validation,
+                        parsed.loading_optimization,key+"\nresource:"+binding.id,parameters,binding.id,info.package_id});
+                    parsed.owned_adapters.push_back(std::move(own));
+                }
+                continue;
+            }
+            if(!resource_mode && (!roles.insert(info.character_id).second ||
+                resources.contains(info.world_resource)||resources.contains(info.ui_resource))) {
                 conflicts.insert(info.character_id); parsed.diagnostics.push_back("Conflicting enabled package: "+info.character_id); continue;
+            }
+            if(resource_mode) {
+                if(!package_ids.insert(info.package_id).second) resource_conflicts.insert(info.package_id);
+                auto [role_owner,role_inserted]=role_owners.emplace(info.character_id,info.package_id);
+                if(!role_inserted) {
+                    resource_conflicts.insert(role_owner->second);resource_conflicts.insert(info.package_id);
+                }
+                for(const auto& resource_name:std::set<std::string>{info.world_resource,info.ui_resource}) {
+                    auto [owner,inserted]=resource_owners.emplace(resource_name,info.package_id);
+                    if(!inserted) {resource_conflicts.insert(owner->second);resource_conflicts.insert(info.package_id);}
+                }
             }
             resources.insert(info.world_resource); resources.insert(info.ui_resource);
             auto own=std::make_shared<OwnedCharacterAdapter>(); own->id=info.character_id;
@@ -104,11 +198,41 @@ bool ParseModRegistry(std::string_view ini,const std::filesystem::path& root,Mod
                 (parsed.skip_validation?"unchecked":"checked")+"\n"+
                 (parsed.loading_optimization?"optimized":"normal")+"\n"+
                 FileTimeIdentity(stamp)+":"+std::to_string(bytes);
-            parsed.enabled.push_back({&own->adapter,canonical,appearance,parsed.skip_validation,parsed.loading_optimization,key,parameters});
+            parsed.enabled.push_back({&own->adapter,canonical,appearance,parsed.skip_validation,
+                parsed.loading_optimization,key,parameters,{},info.package_id});
             parsed.owned_adapters.push_back(std::move(own));
         }
-        std::erase_if(parsed.enabled,[&](const auto& m){return conflicts.contains(m.adapter->id);});
+        std::erase_if(parsed.enabled,[&](const auto& m){return resource_mode?
+            resource_conflicts.contains(m.package_id):conflicts.contains(m.adapter->id);});
+        for(const auto& id:resource_conflicts) parsed.diagnostics.push_back("Conflicting enabled package: "+id);
         output=std::move(parsed);return true;
     } catch(const std::exception& e) {error=e.what();return false;}
+}
+std::shared_ptr<const OwnedCharacterAdapter> ModRegistry::RetainAdapter(
+    const CharacterAdapter* adapter) const {
+    for (const auto& owner:owned_adapters)
+        if (&owner->adapter==adapter) return owner;
+    return {};
+}
+bool ParseModRegistry(std::string_view ini,const std::filesystem::path& root,ModRegistry& output,std::string& error) {
+    return ParseModRegistryImpl(ini,root,output,error,false,{});
+}
+bool ParseResourceModRegistry(std::string_view ini,const std::filesystem::path& root,ModRegistry& output,
+    std::string& error,std::string_view platform) {
+    return ParseModRegistryImpl(ini,root,output,error,true,platform);
+}
+bool PrepareResourceRegistryUpdate(std::string_view ini,const std::filesystem::path& root,
+    std::string_view platform,const ModRegistry& active,RegistryUpdatePlan& output,std::string& error) {
+    RegistryUpdatePlan prepared;
+    if(!ParseResourceModRegistry(ini,root,prepared.candidate,error,platform)) return false;
+    if(prepared.candidate.hot_switch!=active.hot_switch ||
+        prepared.candidate.skip_validation!=active.skip_validation ||
+        prepared.candidate.fast_loading!=active.fast_loading) {
+        error="Runtime model flags changed; restart required";return false;
+    }
+    for(const auto& message:prepared.candidate.diagnostics)
+        if(!message.starts_with("Developer mode:")) {error=message;return false;}
+    prepared.changed_resources=ChangedResourceNames(active,prepared.candidate);
+    output=std::move(prepared);error.clear();return true;
 }
 }

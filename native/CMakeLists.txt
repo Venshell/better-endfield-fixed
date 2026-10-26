@@ -222,10 +222,32 @@ add_executable(BetterEndfield.CustomModelBindingTests EXCLUDE_FROM_ALL
 better_endfield_target_defaults(BetterEndfield.CustomModelBindingTests)
 target_link_libraries(BetterEndfield.CustomModelBindingTests PRIVATE BetterEndfield.CustomModelCore)
 
+add_executable(BetterEndfield.AsyncLoadingTests EXCLUDE_FROM_ALL
+    tests/async_loading/scheduler_tests.cpp)
+better_endfield_target_defaults(BetterEndfield.AsyncLoadingTests)
+target_link_libraries(BetterEndfield.AsyncLoadingTests PRIVATE BetterEndfield.CustomModelCore)
+
+add_executable(BetterEndfield.AndroidTextureBudgetPolicyTests EXCLUDE_FROM_ALL
+    tests/android_texture_budget_policy_tests.cpp)
+better_endfield_target_defaults(BetterEndfield.AndroidTextureBudgetPolicyTests)
+
+add_executable(BetterEndfield.AndroidTextureBudgetRuntimeTests EXCLUDE_FROM_ALL
+    tests/android_texture_budget_runtime_tests.cpp)
+better_endfield_target_defaults(BetterEndfield.AndroidTextureBudgetRuntimeTests)
+
+add_executable(BetterEndfield.AndroidTextureStreamingDiagnosticsTests EXCLUDE_FROM_ALL
+    tests/android_texture_streaming_diagnostics_tests.cpp)
+better_endfield_target_defaults(BetterEndfield.AndroidTextureStreamingDiagnosticsTests)
+
 add_executable(BetterEndfield.BemV13MorphTests EXCLUDE_FROM_ALL
     tests/bem_v13_morph_tests.cpp)
 better_endfield_target_defaults(BetterEndfield.BemV13MorphTests)
 target_link_libraries(BetterEndfield.BemV13MorphTests PRIVATE BetterEndfield.CustomModelCore)
+
+add_executable(BetterEndfield.BemV14Tests EXCLUDE_FROM_ALL
+    tests/bem_v14_tests.cpp)
+better_endfield_target_defaults(BetterEndfield.BemV14Tests)
+target_link_libraries(BetterEndfield.BemV14Tests PRIVATE BetterEndfield.CustomModelCore)
 
 add_executable(BetterEndfield.CameraFollowTests EXCLUDE_FROM_ALL
     tests/camera_follow_tests.cpp)

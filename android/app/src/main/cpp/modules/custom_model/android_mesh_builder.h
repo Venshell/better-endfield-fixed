@@ -3,6 +3,7 @@
 #include "bem.h"
 #include <vector>
 #include <array>
+#include <cstdint>
 
 namespace betterendfield {
 // Private, same-binary platform boundary; does not extend BE_HostApiV1.
@@ -13,6 +14,13 @@ bool AndroidMeshRollbackTest();
 bool AndroidPipelineLodEnabled();
 bool AndroidNpcParametersEnabled();
 bool AndroidInspectionEnabled();
+std::string AndroidTextureMipRequestToken();
+void* AndroidLodStreamingOffsetEntry();
+void* AndroidTextureBudgetSetterEntry();
+void* AndroidTextureBudgetGetterEntry();
+void* AndroidQualityLevelSetterEntry();
+void* AndroidQualityLevelGetterEntry();
+bool AndroidReadMemoryHeadroom(uint64_t& total_bytes,uint64_t& available_bytes);
 void AndroidAuditNormalTexture(void* texture,const std::string& name);
 bool AndroidAuditMaterialCopy(void* original, void* copy);
 void AndroidAuditTextureColorSpace(void* original, void* replacement, const std::string& name);
