@@ -217,6 +217,8 @@ bool CustomModelModule::InitializeSharedReplacement(const std::string& config) {
     const auto configured_appearances=ConfigStrings(ConfigValue(config,"appearances"));
     const auto configured_options=ConfigStrings(ConfigValue(config,"options"));
     const auto configured_parameters=ConfigStrings(ConfigValue(config,"parameters"));
+    const auto configured_drivers=ConfigStrings(ConfigValue(config,"drivers"));
+    const auto drivers_single=ConfigValue(config,"drivers");
     for (size_t i = 0; i < package_paths_.size(); ++i) {
         replacement_config_ += "[Mod.android" + std::to_string(i) + "]\nenabled=true\npackage=" +
             package_paths_[i].string() + "\n";
@@ -227,6 +229,10 @@ bool CustomModelModule::InitializeSharedReplacement(const std::string& config) {
             replacement_config_ += "options=" + configured_options[i] + "\n";
         if(i<configured_parameters.size() && !configured_parameters[i].empty())
             replacement_config_ += "parameters=" + configured_parameters[i] + "\n";
+        if(i<configured_drivers.size() && !configured_drivers[i].empty())
+            replacement_config_ += "drivers=" + configured_drivers[i] + "\n";
+        else if(i==0 && configured_drivers.empty() && !drivers_single.empty())
+            replacement_config_ += "drivers=" + drivers_single + "\n";
     }
     host_ = {};
     host_.abi_version = BETTER_ENDFIELD_MODULE_ABI_V1; host_.context = this;
