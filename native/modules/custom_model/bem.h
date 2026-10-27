@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "material_overrides.h"
 namespace BetterEndfield::CustomModel {
 constexpr uint32_t kMaxBemComponents = 64;
 // BEM 1.2 limits; 1.0/1.1 packages keep their own tighter limits in bem.cpp.
@@ -102,6 +103,51 @@ struct BemPayloadSource {
     int64_t write_time = 0;
 };
 
+// Section 10 sparse position record as stored in a deformation frame payload.
+// Vertex indices are mesh-local and are validated against the mesh vertex count
+// at load time, so the runtime sampler can apply them without re-reading the
+// package or re-validating each frame.
+struct BemMorphDelta {
+    uint32_t vertex;
+    float dx, dy, dz;
+};
+struct BemMorphFrame {
+    uint32_t tick = 0;
+    bool neutral = false;  // authored as "neutral": no payload, no displacement
+    std::vector<BemMorphDelta> deltas;
+};
+// One `mesh_deformations` channel lowered onto the mesh it belongs to. The
+// parameter tick domain is copied from the manifest so a normalised driver
+// weight can be mapped onto the frame ladder without the JSON again.
+struct BemMorphChannel {
+    std::string parameter;
+    uint32_t min_tick = 0, max_tick = 0, step = 1, neutral_tick = 0;
+    std::vector<BemMorphFrame> frames;  // ascending by tick
+    // Frames and weights the load-time parameter tick selected. A driver that
+    // takes over one parameter replays these for every channel it does not
+    // drive, so the authored pose of the other sliders survives playback.
+    std::vector<std::pair<uint32_t, float>> settled;
+};
+
+// Runtime morph source for one component: the channels plus the position stream
+// as delivered by the package. `base` is kept whole because a partial
+// vertex-buffer upload writes contiguous bytes and the stride between two
+// touched vertices also carries skin and UV data that must stay intact.
+struct BemMorphSet {
+    std::vector<BemMorphChannel> channels;
+    std::vector<uint32_t> vertices;  // ascending, union over every channel
+    uint32_t stream = 0, offset = 0, stride = 0;
+    std::vector<uint8_t> base;
+};
+
+// Adds one channel's weighted deltas into `accumulated`, which holds 3 floats
+// per entry of BemMorphSet::vertices. A negative weight replays the load-time
+// weights, which is how a paused driver hands its parameter back. Kept free of
+// engine calls and of exceptions: it runs inside the render tick and is unit
+// tested directly.
+void SampleMorphChannel(const BemMorphChannel& channel, const BemMorphSet& set,
+    float range_low, float range_high, float weight, std::vector<float>& accumulated);
+
 // BEMv1 resources lowered into the established native upload representation.
 struct BemComponent {
     bool skip_validation = false;
@@ -117,6 +163,7 @@ struct BemComponent {
     struct KeepMaterialOverride { uint32_t material_slot, material_crc; uint64_t textures; };
     std::vector<BoneSource> bones;
     std::vector<Draw> draws;
+    std::vector<BemMaterialOverrides> draw_material_overrides;
     std::vector<KeepMaterialOverride> keep_material_overrides;
     std::vector<std::string> keep_material_names;
     std::vector<std::array<int32_t,4>> attributes;
@@ -126,6 +173,10 @@ struct BemComponent {
     std::vector<std::vector<std::string>> bone_aliases;
     // Alias names split by resource: [0] world, [1] UI.
     std::vector<std::array<std::vector<std::string>,2>> bone_aliases_by_resource;
+    // Sections 10 and 13 runtime morph source. Null unless this mesh owns at
+    // least one mesh_deformations channel; shared because a component can be
+    // built into more than one live mesh (world and UI) with identical samples.
+    std::shared_ptr<const BemMorphSet> morph;
     bool BoneNameMatches(size_t i, std::string_view name) const {
         if (bone_names[i] == name) return true;
         if (i < bone_aliases.size())
@@ -148,6 +199,7 @@ struct BemPocData {
     BemFileHeader header{};
     std::vector<BemComponent> components;
     std::vector<BemTexture> textures;
+    BemRootOffset root_offset;
     bool skip_validation = false; // Developer option, never read from a package.
     bool loading_optimization = false; // Experimental runtime option, never read from a package.
     // Set only for deferred texture payloads. Metadata only (path/size/time).
@@ -225,6 +277,11 @@ bool LoadBem(const std::filesystem::path& path, BemPocData& output, std::string&
     bool loading_optimization = false, std::string_view parameters = {},
     uint64_t max_decoded_reservation = UINT64_MAX, bool defer_texture_payloads = false,
     std::string_view resource_id = {});
+// Writes one payload's decoded bytes to `output` (binary BEM and ZIP alike).
+// Used for self-contained driver sound effects: the payload is materialised
+// once on disk because both platform audio backends need a file path.
+bool ExtractBemPayload(const std::filesystem::path& package, uint32_t payload_id,
+    const std::filesystem::path& output, std::string& error);
 // Reads and decodes one deferred texture entry (streaming Zstd; the stored
 // bytes are never held whole). `output` receives exactly info.data_size bytes.
 bool DecodeBemTexturePayload(const BemPayloadSource& source, const BemTexture& texture,

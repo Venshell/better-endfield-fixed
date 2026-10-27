@@ -113,7 +113,8 @@ bool ParseModRegistryImpl(std::string_view ini,const std::filesystem::path& root
             if(!enabled) continue;
             auto file=get("package");
             auto path=std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(file.data()),file.size()));
-            if(file.empty()||path.extension()!=".bem") {parsed.diagnostics.push_back("Refused non-BEMv1 package: "+name);continue;}
+            auto ext = path.extension();
+            if(file.empty()||(ext!=".bem"&&ext!=".zip"&&ext!=".BEM"&&ext!=".ZIP")) {parsed.diagnostics.push_back("Refused non-BEMv1 package: "+name);continue;}
             if(path.is_relative()) path=root/path;
             BemPackageInfo info; std::string why;
             if(!ReadBemPackageInfo(path,info,why,parsed.skip_validation)) {parsed.diagnostics.push_back("Package refused: "+name+": "+why);continue;}
@@ -127,6 +128,7 @@ bool ParseModRegistryImpl(std::string_view ini,const std::filesystem::path& root
                 parsed.diagnostics.push_back("Appearance removed; using package default: "+name);appearance=info.default_appearance;
             }
             std::string parameters;
+            std::string drivers = get("drivers");
             if(!ResolveBemParameters(info,get("parameters"),parameters,why)) {
                 parsed.diagnostics.push_back("Parameters removed or invalid; using package defaults: "+name+": "+why);
                 parameters=info.default_parameters;
@@ -164,8 +166,14 @@ bool ParseModRegistryImpl(std::string_view ini,const std::filesystem::path& root
                     }
                     own->adapter={own->id.c_str(),own->world.c_str(),own->ui.c_str(),"",false,
                         own->components,own->resource_id.c_str(),own->asset_path.c_str(),binding.lod,true};
-                    parsed.enabled.push_back({&own->adapter,canonical,appearance,parsed.skip_validation,
-                        parsed.loading_optimization,key+"\nresource:"+binding.id,parameters,binding.id,info.package_id});
+                    // Name every member: a positional aggregate initializer silently
+                    // shifted resource_id into drivers when the struct gained a field.
+                    EnabledMod mod;
+                    mod.adapter=&own->adapter; mod.package=canonical; mod.appearance=appearance;
+                    mod.skip_validation=parsed.skip_validation; mod.loading_optimization=parsed.loading_optimization;
+                    mod.selection_key=key+"\nresource:"+binding.id; mod.parameters=parameters; mod.drivers=drivers;
+                    mod.resource_id=binding.id; mod.package_id=info.package_id;
+                    parsed.enabled.push_back(std::move(mod));
                     parsed.owned_adapters.push_back(std::move(own));
                 }
                 continue;
@@ -198,8 +206,14 @@ bool ParseModRegistryImpl(std::string_view ini,const std::filesystem::path& root
                 (parsed.skip_validation?"unchecked":"checked")+"\n"+
                 (parsed.loading_optimization?"optimized":"normal")+"\n"+
                 FileTimeIdentity(stamp)+":"+std::to_string(bytes);
-            parsed.enabled.push_back({&own->adapter,canonical,appearance,parsed.skip_validation,
-                parsed.loading_optimization,key,parameters,{},info.package_id});
+            // Name every member: a positional aggregate initializer silently
+            // shifted resource_id into drivers when the struct gained a field.
+            EnabledMod mod;
+            mod.adapter=&own->adapter; mod.package=canonical; mod.appearance=appearance;
+            mod.skip_validation=parsed.skip_validation; mod.loading_optimization=parsed.loading_optimization;
+            mod.selection_key=key; mod.parameters=parameters; mod.drivers=drivers;
+            mod.resource_id={}; mod.package_id=info.package_id;
+            parsed.enabled.push_back(std::move(mod));
             parsed.owned_adapters.push_back(std::move(own));
         }
         std::erase_if(parsed.enabled,[&](const auto& m){return resource_mode?

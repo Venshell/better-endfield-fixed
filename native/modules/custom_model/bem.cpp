@@ -2,6 +2,7 @@
 #include "bem_rewrite.h"
 #include "../../shared/third_party/nlohmann/json.hpp"
 #include "../../shared/third_party/zstd/lib/zstd.h"
+#include "../../shared/third_party/miniz/miniz.h" 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -45,6 +46,62 @@ std::string Id(const J& j) {
         (c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c=='.';}),"Invalid stable ID");
     Check(s[0]!='.' && s[0]!='-' && s[0]!='_',"Invalid stable ID start"); return s;
 }
+BemRootOffset ReadRootOffset(const J& manifest, bool skip_validation = false) {
+    BemRootOffset result;
+    const char* key = manifest.contains("root_offset") ? "root_offset" : (manifest.contains("visual_root_offset") ? "visual_root_offset" : nullptr);
+    if (!key) return result;
+    const auto& p = manifest.at(key);
+    if (!p.is_object() || !p.contains("path")) {
+        if (!skip_validation) throw std::runtime_error("Invalid root offset format");
+        return result;
+    }
+    result.path = p.at("path").get<std::string>();
+    if (!ValidVisualPath(result.path)) {
+        if (!skip_validation) throw std::runtime_error("Invalid root offset path");
+        return result;
+    }
+    float squared = 0.0f;
+    if (p.contains("translation") && p.at("translation").is_array() && p.at("translation").size() == 3) {
+        const auto& arr = p.at("translation");
+        for (size_t i = 0; i < 3; ++i) {
+            float f = arr[i].get<float>();
+            if (!std::isfinite(f)) {
+                if (!skip_validation) throw std::runtime_error("Nonfinite root translation");
+                f = 0.0f;
+            }
+            result.translation[i] = f;
+            squared += f * f;
+        }
+    } else if (p.contains("translation_bits") && p.at("translation_bits").is_array() && p.at("translation_bits").size() == 3) {
+        const auto& arr = p.at("translation_bits");
+        for (size_t i = 0; i < 3; ++i) {
+            uint32_t bits = arr[i].get<uint32_t>();
+            float f = 0.0f;
+            std::memcpy(&f, &bits, sizeof(float));
+            if (!std::isfinite(f)) {
+                if (!skip_validation) throw std::runtime_error("Nonfinite root translation bits");
+                f = 0.0f;
+            }
+            result.translation[i] = f;
+            squared += f * f;
+        }
+    } else {
+        if (!skip_validation) throw std::runtime_error("root_offset missing translation");
+    }
+    const float max_squared = skip_validation ? 1.0f : 0.040001f;
+    if (squared > max_squared) {
+        if (!skip_validation) throw std::runtime_error("Root offset translation exceeds maximum limit (0.2m)");
+        float len = std::sqrt(squared);
+        if (len > 1e-4f) {
+            float scale = std::sqrt(max_squared) / len;
+            result.translation[0] *= scale;
+            result.translation[1] *= scale;
+            result.translation[2] *= scale;
+        }
+    }
+    return result;
+}
+
 uint32_t Crc(std::string_view s) {
     uint32_t n=0xffffffff;
     for(auto b:s) { n^=static_cast<uint8_t>(b); for(int i=0;i<8;++i) n=(n>>1)^(0xedb88320u & (0u-(n&1))); }
@@ -102,6 +159,15 @@ ParameterTicks ParseParameters(const J& definitions,std::string_view requested,s
     for(const auto& [id,_]:saved) Check(result.contains(id),"Unknown parameter");
     return result;
 }
+static size_t ZipReadFunc(void *pOpaque, mz_uint64 file_ofs, void *pBuf, size_t n) {
+    auto* read_fn = static_cast<const std::function<std::vector<uint8_t>(uint64_t, size_t)>*>(pOpaque);
+    if (!read_fn || !(*read_fn)) return 0;
+    auto bytes = (*read_fn)(file_ofs, n);
+    if (bytes.empty()) return 0;
+    std::memcpy(pBuf, bytes.data(), bytes.size());
+    return bytes.size();
+}
+
 struct Container {
     bool manifestOnly=false;
     bool skip_validation=false;
@@ -122,49 +188,226 @@ struct Container {
     std::function<std::vector<uint8_t>(uint64_t,size_t)> read;
     BemPackageInfo info;
     J parameters=J::array();
+    bool is_zip = false;
+    mz_zip_archive zip{};
+    std::vector<int> zip_payload_file_indices;
+    std::string zip_prefix;
+    ~Container() {
+        if (is_zip) {
+            mz_zip_reader_end(&zip);
+        }
+    }
     void Open(uint64_t size) {
-        Check(size>=sizeof(Header),"Invalid BEM file size");
-        Validate(size<=2ull*1024*MiB,"Invalid BEM file size");
-        auto raw=read(0,sizeof(Header)); Header h{}; std::memcpy(&h,raw.data(),sizeof(h));
-        Check(std::memcmp(h.magic,"BEM\0PKG\0",8)==0 && h.major==1 && h.minor<=4 && h.size==sizeof(h) && !h.flags,
-            "Only BEM 1.0/1.1/1.2/1.3/1.4 packages are supported");
-        minor=h.minor; limits=LimitsFor(minor);
-        if(skip_validation) {
-            limits.choices=SIZE_MAX; limits.rules=SIZE_MAX; limits.textures=kMaxBemTextures;
-            limits.textureBytes=UINT32_MAX; limits.budget=UINT64_MAX; limits.directory=UINT32_MAX;
+        Check(size >= 4, "Invalid BEM file size");
+        // Read the whole header, not just the 8-byte signature: the version check below
+        // inspects every field, and a short probe would copy uninitialised heap bytes.
+        auto probe = read(0, std::min<uint64_t>(size, sizeof(Header)));
+        Check(probe.size() >= 4, "Cannot read package signature");
+
+        if (probe.size() >= 8 && std::memcmp(probe.data(), "BEM\0PKG\0", 8) == 0) {
+            Check(size>=sizeof(Header),"Invalid BEM file size");
+            Validate(size<=2ull*1024*MiB,"Invalid BEM file size");
+            Header h{}; std::memcpy(&h,probe.data(),sizeof(h));
+            Check(std::memcmp(h.magic,"BEM\0PKG\0",8)==0 && h.major==1 && h.minor<=5 && h.size==sizeof(h) && !h.flags,
+                "Only BEM 1.0/1.1/1.2/1.3/1.4/1.5 packages are supported");
+            minor=h.minor; limits=LimitsFor(minor);
+            if(skip_validation) {
+                limits.choices=SIZE_MAX; limits.rules=SIZE_MAX; limits.textures=kMaxBemTextures;
+                limits.textureBytes=UINT32_MAX; limits.budget=UINT64_MAX; limits.directory=UINT32_MAX;
+            }
+            Check(h.file==size && h.manifest>0 && h.manifest<=size-sizeof(h) &&
+                uint64_t(h.count)<=(size-sizeof(h)-h.manifest)/sizeof(Entry),"Invalid BEM directory sizes");
+            Validate(h.manifest<=4*MiB && h.count<=limits.directory,"Invalid BEM directory sizes");
+            if(manifestOnly) Check(h.count<=65536 && h.manifest<=16*MiB,"Management metadata exceeds limit");
+            auto json=read(sizeof(h),static_cast<size_t>(h.manifest));
+            std::vector<std::set<std::string>> keys;
+            auto callback=[&](int depth,nlohmann::json::parse_event_t event,J& value) {
+                Check(depth<=48,"Manifest nesting exceeds 48");
+                if(event==J::parse_event_t::object_start) keys.emplace_back();
+                if(event==J::parse_event_t::key) Check(keys.back().insert(value.get<std::string>()).second,"Duplicate manifest key");
+                if(event==J::parse_event_t::object_end) keys.pop_back();
+                return true;
+            };
+            manifest=J::parse(json.begin(),json.end(),callback);
+            if(manifestOnly) {
+                directory.resize(h.count);
+                Metadata(); return;
+            }
+            auto table=read(sizeof(h)+h.manifest,h.count*sizeof(Entry)); directory.resize(h.count);
+            if(!table.empty()) std::memcpy(directory.data(),table.data(),table.size());
+            uint64_t end=sizeof(h)+h.manifest+table.size();
+            for(const auto& e:directory) {
+                Check(e.codec<=1 && !e.reserved && e.offset==end && e.stored>0 &&
+                    e.decoded>0 && e.stored<=size-end,"Invalid payload extent/codec/budget");
+                Validate(e.stored<=Budget && e.decoded<=Budget,"Invalid payload extent/codec/budget");
+                Check(e.codec || e.stored==e.decoded,"Raw payload size differs"); end+=e.stored;
+            }
+            Check(end==size,"Trailing or missing BEM bytes");
+            Metadata();
+            return;
         }
-        Check(h.file==size && h.manifest>0 && h.manifest<=size-sizeof(h) &&
-            uint64_t(h.count)<=(size-sizeof(h)-h.manifest)/sizeof(Entry),"Invalid BEM directory sizes");
-        Validate(h.manifest<=4*MiB && h.count<=limits.directory,"Invalid BEM directory sizes");
-        if(manifestOnly) Check(h.count<=65536 && h.manifest<=16*MiB,"Management metadata exceeds limit");
-        auto json=read(sizeof(h),static_cast<size_t>(h.manifest));
-        // Reject duplicate keys, including nested objects, instead of accepting last-wins metadata.
-        std::vector<std::set<std::string>> keys;
-        auto callback=[&](int depth,nlohmann::json::parse_event_t event,J& value) {
-            Check(depth<=48,"Manifest nesting exceeds 48");
-            if(event==J::parse_event_t::object_start) keys.emplace_back();
-            if(event==J::parse_event_t::key) Check(keys.back().insert(value.get<std::string>()).second,"Duplicate manifest key");
-            if(event==J::parse_event_t::object_end) keys.pop_back();
-            return true;
-        };
-        manifest=J::parse(json.begin(),json.end(),callback);
-        if(manifestOnly) {
-            // Metadata validates payload references against count; it does not
-            // inspect extents or decode bytes. Bound allocation even in developer mode.
-            directory.resize(h.count);
-            Metadata(); return;
+
+        if (probe[0] == 'P' && probe[1] == 'K' && probe[2] == 3 && probe[3] == 4) {
+            is_zip = true;
+            std::memset(&zip, 0, sizeof(zip));
+            zip.m_pRead = ZipReadFunc;
+            zip.m_pIO_opaque = &this->read;
+            Check(mz_zip_reader_init(&zip, size, 0) != 0, "Corrupt or invalid ZIP package");
+
+            mz_uint num_files = mz_zip_reader_get_num_files(&zip);
+            int manifest_file_index = -1;
+            bool has_bem_files = false;
+            for (mz_uint i = 0; i < num_files; ++i) {
+                mz_zip_archive_file_stat stat;
+                if (!mz_zip_reader_file_stat(&zip, i, &stat)) continue;
+                std::string name(stat.m_filename);
+                for (char& c : name) if (c == '\\') c = '/';
+                if (name.size() >= 4 && (name.ends_with(".bem") || name.ends_with(".BEM"))) {
+                    has_bem_files = true;
+                }
+                if (name == "manifest.json") {
+                    manifest_file_index = static_cast<int>(i);
+                    zip_prefix.clear();
+                } else if (name.ends_with("/manifest.json") && manifest_file_index < 0) {
+                    auto first_slash = name.find('/');
+                    if (first_slash != std::string::npos && first_slash == name.rfind('/')) {
+                        manifest_file_index = static_cast<int>(i);
+                        zip_prefix = name.substr(0, first_slash + 1);
+                    }
+                }
+            }
+            Check(manifest_file_index >= 0, has_bem_files ? 
+                "ZIP contains BEM bundle members, not a single BEM model manifest" : 
+                "ZIP package is missing manifest.json");
+
+            size_t manifest_size = 0;
+            void* pManifest = mz_zip_reader_extract_to_heap(&zip, manifest_file_index, &manifest_size, 0);
+            Check(pManifest != nullptr, "Failed to extract manifest.json from ZIP");
+            std::string manifest_str(reinterpret_cast<const char*>(pManifest), manifest_size);
+            mz_free(pManifest);
+
+            manifest = J::parse(manifest_str);
+
+            // A ZIP container carries no binary header, so the minor version must come from
+            // the manifest: an explicit format_version wins, otherwise the presence of
+            // version-specific fields decides, and declared capabilities can only raise it.
+            // The default used to be 1, which rejected every BEM 1.0 package because 1.x
+            // manifests are then required to carry option_groups.
+            minor = 0;
+            if (manifest.contains("format_version") && manifest["format_version"].is_string()) {
+                std::string fv = manifest["format_version"].get<std::string>();
+                if (fv.starts_with("1.")) {
+                    try { minor = static_cast<uint16_t>(std::stoi(fv.substr(2))); } catch (...) {}
+                }
+            } else {
+                if (manifest.contains("option_groups")) minor = std::max<uint16_t>(minor, 1);
+                if (manifest.contains("texture_slots")) minor = std::max<uint16_t>(minor, 2);
+                if (manifest.contains("parameters") || manifest.contains("mesh_deformations"))
+                    minor = std::max<uint16_t>(minor, 3);
+                if (manifest.contains("resources")) minor = std::max<uint16_t>(minor, 4);
+                if (manifest.contains("root_offset") || manifest.contains("drivers"))
+                    minor = std::max<uint16_t>(minor, 5);
+            }
+            if (manifest.contains("required_capabilities") && manifest["required_capabilities"].is_array()) {
+                for (const auto& cap : manifest["required_capabilities"]) {
+                    // Both the documented capability names and the early prototype spellings
+                    // are honoured here; Metadata() keeps validating against the documented set.
+                    if (cap == "material-overrides-v1" || cap == "root-offset-v1" || cap == "dynamic-drivers-v1")
+                        minor = std::max<uint16_t>(minor, 5);
+                    else if (cap == "multi-resource-targets" || cap == "static-meshes" ||
+                             cap == "multi-resource-v1" || cap == "static-mesh-v1")
+                        minor = std::max<uint16_t>(minor, 4);
+                    else if (cap == "body-parameters" || cap == "mesh-position-deltas")
+                        minor = std::max<uint16_t>(minor, 3);
+                    else if (cap == "texture-slots" || cap == "resource-bone-aliases")
+                        minor = std::max<uint16_t>(minor, 2);
+                    else if (cap == "composable-options" || cap == "keep-material-textures")
+                        minor = std::max<uint16_t>(minor, 1);
+                }
+            }
+            limits = LimitsFor(minor);
+            if (skip_validation) {
+                limits.choices = SIZE_MAX; limits.rules = SIZE_MAX; limits.textures = kMaxBemTextures;
+                limits.textureBytes = UINT32_MAX; limits.budget = UINT64_MAX; limits.directory = UINT32_MAX;
+            }
+
+            std::map<std::string, int> name_to_zip_idx;
+            for (mz_uint i = 0; i < num_files; ++i) {
+                mz_zip_archive_file_stat stat;
+                if (!mz_zip_reader_file_stat(&zip, i, &stat)) continue;
+                std::string name(stat.m_filename);
+                for (char& c : name) if (c == '\\') c = '/';
+                if (!zip_prefix.empty() && name.starts_with(zip_prefix)) {
+                    name = name.substr(zip_prefix.size());
+                }
+                name_to_zip_idx[name] = static_cast<int>(i);
+            }
+
+            uint32_t max_payload_id = 0;
+            bool found_any_payload = false;
+            auto inspect_payload = [&](const J& ref) {
+                if (ref.is_number_integer()) {
+                    uint32_t pid = ref.get<uint32_t>();
+                    max_payload_id = std::max(max_payload_id, pid);
+                    found_any_payload = true;
+                }
+            };
+
+            for (const auto& mesh : manifest.value("meshes", J::array())) {
+                for (const auto& s : mesh.value("streams", J::array())) if (s.contains("payload")) inspect_payload(s["payload"]);
+                if (mesh.contains("indices")) inspect_payload(mesh["indices"]);
+                for (const auto& d : mesh.value("draws", J::array())) if (d.contains("indices")) inspect_payload(d["indices"]);
+            }
+            for (const auto& t : manifest.value("textures", J::array())) if (t.contains("payload")) inspect_payload(t["payload"]);
+            for (const auto& ch : manifest.value("mesh_deformations", J::array())) {
+                for (const auto& f : ch.value("frames", J::array())) if (f.contains("payload")) inspect_payload(f["payload"]);
+            }
+            for (const auto& app : manifest.value("appearances", J::array())) if (app.contains("preview")) inspect_payload(app["preview"]);
+            // Section 13 driver sound effects reference their audio payload the same
+            // way, so a ZIP container must register those payload ids too.
+            for (const auto& driver : manifest.value("drivers", J::array())) {
+                if (!driver.is_object()) continue;
+                if (driver.contains("sound") && driver["sound"].is_object() &&
+                    driver["sound"].contains("payload")) inspect_payload(driver["sound"]["payload"]);
+            }
+
+            size_t total_payloads = found_any_payload ? (max_payload_id + 1) : 0;
+            directory.resize(total_payloads);
+            zip_payload_file_indices.resize(total_payloads, -1);
+
+            for (uint32_t pid = 0; pid < total_payloads; ++pid) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "payloads/%04u.bin", pid);
+                std::string c1 = buf;
+                snprintf(buf, sizeof(buf), "payloads/%u.bin", pid);
+                std::string c2 = buf;
+                snprintf(buf, sizeof(buf), "%u.bin", pid);
+                std::string c3 = buf;
+
+                int zip_idx = -1;
+                if (auto it = name_to_zip_idx.find(c1); it != name_to_zip_idx.end()) zip_idx = it->second;
+                else if (auto it = name_to_zip_idx.find(c2); it != name_to_zip_idx.end()) zip_idx = it->second;
+                else if (auto it = name_to_zip_idx.find(c3); it != name_to_zip_idx.end()) zip_idx = it->second;
+
+                if (zip_idx >= 0) {
+                    mz_zip_archive_file_stat stat;
+                    mz_zip_reader_file_stat(&zip, zip_idx, &stat);
+                    Entry e{};
+                    e.codec = 0;
+                    e.reserved = 0;
+                    e.offset = static_cast<uint64_t>(zip_idx);
+                    e.stored = stat.m_comp_size;
+                    e.decoded = stat.m_uncomp_size;
+                    directory[pid] = e;
+                    zip_payload_file_indices[pid] = zip_idx;
+                }
+            }
+
+            Metadata();
+            return;
         }
-        auto table=read(sizeof(h)+h.manifest,h.count*sizeof(Entry)); directory.resize(h.count);
-        if(!table.empty()) std::memcpy(directory.data(),table.data(),table.size());
-        uint64_t end=sizeof(h)+h.manifest+table.size();
-        for(const auto& e:directory) {
-            Check(e.codec<=1 && !e.reserved && e.offset==end && e.stored>0 &&
-                e.decoded>0 && e.stored<=size-end,"Invalid payload extent/codec/budget");
-            Validate(e.stored<=Budget && e.decoded<=Budget,"Invalid payload extent/codec/budget");
-            Check(e.codec || e.stored==e.decoded,"Raw payload size differs"); end+=e.stored;
-        }
-        Check(end==size,"Trailing or missing BEM bytes");
-        Metadata();
+
+        Check(false, "Unrecognized package signature; expected BEM binary or ZIP package");
     }
     // Fixed texture index, or {"slot":id} (BEM 1.2) resolved per selection.
     void TextureRefs(const J& refs,const std::string& message) const {
@@ -189,6 +432,7 @@ struct Container {
         if(minor>=2) caps.insert({"texture-slots","resource-bone-aliases"});
         if(minor>=3) caps.insert({"body-parameters","mesh-position-deltas"});
         if(minor>=4) caps.insert({"multi-resource-targets","static-meshes"});
+        if(minor>=5) caps.insert({"material-overrides-v1", "root-offset-v1", "dynamic-drivers-v1"});
         bool composable=false,fixed=false,keepTextureCapability=false,slotCapability=false,aliasCapability=false;
         std::set<std::string> declared;
         for(const auto& c:m.at("required_capabilities")) {auto cap=S(c);Validate(caps.contains(cap),"Unsupported required capability");
@@ -199,14 +443,18 @@ struct Container {
         Validate(minor?composable&&!fixed:!composable,"BEM capability/version mismatch");
         const auto& t=m.at("target"); Validate(S(t.at("platform"))=="windows-x64","Unsupported target platform");
         Id(t.at("profile_id")); Id(t.at("revision"));
-        if(minor>=4) {
+        // The target structure, not the header minor version, picks the parsing
+        // route: 1.5 extends 1.3, and the 1.4 explicit resource targets remain an
+        // optional branch that only applies when the target actually carries them.
+        const bool explicit_targets=t.contains("resources");
+        if(explicit_targets) {
             Check(declared.contains("multi-resource-targets"),"Multi-resource capability is required");
             ReadResourceTargets(t,info);
             const bool hasStatic=std::any_of(info.component_static.begin(),info.component_static.end(),[](bool value){return value;});
             Check(!hasStatic || declared.contains("static-meshes"),"Static mesh capability is required");
         } else {
-            Check(!t.contains("resources") && !t.contains("kind") && !t.contains("id"),"Resource targets require BEM 1.4");
-            Check(!declared.contains("multi-resource-targets") && !declared.contains("static-meshes"),"BEM 1.4 capability in older package");
+            Check(!t.contains("kind") && !t.contains("id"),"Mixed target structure");
+            Check(!declared.contains("multi-resource-targets") && !declared.contains("static-meshes"),"Resource capability without explicit resource targets");
             info.character_id=Id(t.at("character_id")); info.target_id=info.character_id;
             info.world_resource=Id(t.at("world_resource")); info.ui_resource=Id(t.at("ui_resource"));
             Validate(info.world_resource!=info.ui_resource,"Duplicate resource roots");
@@ -219,8 +467,8 @@ struct Container {
         for(size_t i=0;i<cs.size();++i) {
             const auto& c=cs[i]; auto name=S(c.at("mesh_name")); auto count=U(c.at("original_index_count"));
             Check(U(c.at("id"))==i && count,"Invalid target identity");
-            Validate(names.insert(minor>=4?info.component_resources[i]+":"+name:name).second && count%3==0,"Invalid target identity");
-            if(minor<4) Check(!c.contains("renderer_kind") && !c.contains("resource") && !c.contains("renderer_path"),"Resource components require BEM 1.4");
+            Validate(names.insert(explicit_targets?info.component_resources[i]+":"+name:name).second && count%3==0,"Invalid target identity");
+            if(!explicit_targets) Check(!c.contains("renderer_kind") && !c.contains("resource") && !c.contains("renderer_path"),"Resource components require explicit resource targets");
             Check(c.at("bone_names").is_array() && c.at("materials").is_array(),"Invalid target donor tables");
             Validate(c.at("bone_names").size()<=65536 && c.at("materials").size()<=256,"Invalid target donor tables");
             if(c.contains("bone_name_aliases")) {
@@ -327,10 +575,11 @@ struct Container {
         Validate(!hasKeepTextures || keepTextureCapability,"Keep material override capability mismatch");
         Check(m.at("meshes").is_array() && m.at("textures").is_array(),"Invalid resource tables");
         Validate(m.at("meshes").size()<=4096 && m.at("textures").size()<=4096,"Invalid resource tables");
-        if(minor>=4) ValidateResourceMeshes(m,info);
+        if(explicit_targets) ValidateResourceMeshes(m,info);
+        if(m.contains("root_offset")||m.contains("visual_root_offset")) ReadRootOffset(m,skip_validation);
         for(const auto& mesh:m.at("meshes")) {
-            const bool isStatic=minor>=4 && RendererStatic(mesh);
-            Check(minor>=4 || !mesh.contains("renderer_kind"),"Renderer kind requires BEM 1.4");
+            const bool isStatic=explicit_targets && RendererStatic(mesh);
+            Check(explicit_targets || !mesh.contains("renderer_kind"),"Renderer kind requires explicit resource targets");
             Check(!isStatic || declared.contains("static-meshes"),"Static mesh capability is required");
             Check(mesh.at("streams").is_array() && (isStatic ? !mesh.at("streams").empty() && mesh.at("streams").size()<=3 : mesh.at("streams").size()==3),"Invalid stream count for renderer kind");
             for(const auto& s:mesh.at("streams")) Check(U(s.at("payload"))<directory.size(),"Missing stream payload");
@@ -408,6 +657,25 @@ struct Container {
             }
             Validate(m.at("mesh_deformations").empty() || declared.contains("mesh-position-deltas"),"Position delta capability mismatch");
         }
+        // Section 13 sound attachments. The payload holds encoded audio, so only
+        // its presence and size can be checked here; the platform decoder is the
+        // authority on whether the bytes are playable.
+        if(m.contains("drivers")) {
+            Check(minor>=5 && m.at("drivers").is_array(),"Driver sound attachments require BEM 1.5");
+            for(const auto& driver:m.at("drivers")) {
+                if(!driver.is_object() || !driver.contains("sound")) continue;
+                const auto& sound=driver.at("sound");
+                Check(sound.is_object(),"Invalid driver sound object");
+                Check(U(sound.at("payload"))<directory.size(),"Missing driver sound payload");
+                const auto id=U(sound.at("payload"));
+                if(!manifestOnly) Check(directory[id].decoded>=16 && directory[id].decoded<=32ull*MiB,
+                    "Driver sound payload extent is outside 16 B..32 MiB");
+                if(sound.contains("gain")) {const auto gain=sound.at("gain").get<float>();
+                    Check(std::isfinite(gain) && gain>=0.0f && gain<=2.0f,"Driver sound gain must be inside [0,2]");}
+                if(sound.contains("offset_seconds")) {const auto offset=sound.at("offset_seconds").get<double>();
+                    Check(std::isfinite(offset) && offset>=0.0 && offset<=60.0,"Driver sound offset must be inside [0,60] s");}
+            }
+        }
         auto selection=std::make_shared<BemSelectionMetadata>();
         selection->manifest=J::object();
         for(const auto* key:{"appearances","option_groups","component_rules","selection_constraints","texture_slots"})
@@ -418,6 +686,44 @@ struct Container {
     std::map<uint32_t,std::vector<uint8_t>> cache;
     std::map<uint32_t,size_t> payloadUses;
     uint64_t cacheBytes=0;
+    // Stored bytes of one payload, container-agnostic. In a ZIP container the directory
+    // offset field holds the entry index, so a raw file read would return the wrong bytes;
+    // rewriting a package therefore has to go through here, not through read().
+    std::vector<uint8_t> Stored(uint32_t id) {
+        Check(id<directory.size(),"Missing payload");
+        const auto& e=directory[id];
+        if(!is_zip) return read(e.offset,static_cast<size_t>(e.stored));
+        int zip_idx=(id<zip_payload_file_indices.size())?zip_payload_file_indices[id]:-1;
+        Check(zip_idx>=0,"ZIP payload entry missing");
+        // The ZIP directory records compressed and decoded extents; a rewritten package
+        // stores payloads raw, so the buffer must be sized by the decoded extent.
+        std::vector<uint8_t> bytes(static_cast<size_t>(e.decoded));
+        Check(mz_zip_reader_extract_to_mem(&zip,zip_idx,bytes.data(),bytes.size(),0)!=0,
+            "Failed to decompress ZIP payload entry");
+        return bytes;
+    }
+    // Container-agnostic payload decode without any bookkeeping.
+    std::vector<uint8_t> DecodePayloadBytes(uint32_t id) {
+        const auto& e=directory[id];
+        std::vector<uint8_t> bytes;
+        if (is_zip) {
+            bytes.resize(static_cast<size_t>(e.decoded));
+            int zip_idx = (id < zip_payload_file_indices.size()) ? zip_payload_file_indices[id] : -1;
+            Check(zip_idx >= 0, "ZIP payload entry missing");
+            mz_bool ok = mz_zip_reader_extract_to_mem(&zip, zip_idx, bytes.data(), bytes.size(), 0);
+            Check(ok != 0, "Failed to decompress ZIP payload entry");
+        } else {
+            bytes = read(e.offset,static_cast<size_t>(e.stored));
+            if(e.codec) {
+                Check(ZSTD_findFrameCompressedSize(bytes.data(),bytes.size())==bytes.size() &&
+                    ZSTD_getFrameContentSize(bytes.data(),bytes.size())==e.decoded,"Zstd frame extent/content size differs");
+                std::vector<uint8_t> result(static_cast<size_t>(e.decoded));
+                auto n=ZSTD_decompress(result.data(),result.size(),bytes.data(),bytes.size());
+                Check(!ZSTD_isError(n) && n==result.size(),"Invalid Zstd payload"); bytes=std::move(result);
+            }
+        }
+        return bytes;
+    }
     const std::vector<uint8_t>& Payload(const J& reference,uint64_t expected) {
         auto id=U(reference); Check(id<directory.size(),"Missing payload"); const auto& e=directory[id];
         Check(e.decoded==expected,"Payload decoded size differs from resource description");
@@ -425,14 +731,7 @@ struct Container {
         const uint64_t decodedBudget=limits.budget;
         Check(decoded<=decodedBudget-e.decoded,"Selected appearance exceeds decoded payload budget"); decoded+=e.decoded;
         if(stats) stats->payload_ids.push_back(id);
-        auto bytes=read(e.offset,static_cast<size_t>(e.stored));
-        if(e.codec) {
-            Check(ZSTD_findFrameCompressedSize(bytes.data(),bytes.size())==bytes.size() &&
-                ZSTD_getFrameContentSize(bytes.data(),bytes.size())==e.decoded,"Zstd frame extent/content size differs");
-            std::vector<uint8_t> result(static_cast<size_t>(e.decoded));
-            auto n=ZSTD_decompress(result.data(),result.size(),bytes.data(),bytes.size());
-            Check(!ZSTD_isError(n) && n==result.size(),"Invalid Zstd payload"); bytes=std::move(result);
-        }
+        std::vector<uint8_t> bytes=DecodePayloadBytes(id);
         cacheBytes+=bytes.size();
         if(stats) {
             stats->decoded_cache_peak_bytes=std::max(stats->decoded_cache_peak_bytes,cacheBytes);
@@ -536,14 +835,20 @@ struct Container {
         }
         return result;
     }
-    void ApplyMorph(uint32_t mesh,const ParameterTicks& ticks,BemComponent& component) {
-        const auto frames=MorphFrames(mesh,ticks); if(frames.empty()) return;
+    // Stream index and in-stride byte offset of the mesh's Float32 XYZ position.
+    // Section 10 requires exactly one, so a second one is a package error.
+    std::pair<uint32_t,uint32_t> MorphAttribute(uint32_t mesh) const {
         uint32_t stream=0,offset=0;bool found=false;
         for(const auto& attribute:manifest.at("meshes").at(mesh).at("attributes")) if(U(attribute.at(0))==0) {
             Check(!found && U(attribute.at(1))==0 && U(attribute.at(2))==3,"Position deformations require one Float32 XYZ position attribute");
             stream=U(attribute.at(3));offset=U(attribute.at(4));found=true;
         }
         Check(found && stream<3,"Missing morph position stream");
+        return {stream,offset};
+    }
+    void ApplyMorph(uint32_t mesh,const ParameterTicks& ticks,BemComponent& component) {
+        const auto frames=MorphFrames(mesh,ticks); if(frames.empty()) return;
+        const auto attribute=MorphAttribute(mesh);const auto stream=attribute.first,offset=attribute.second;
         const uint32_t strides[]{component.info.stride0,component.info.stride1,component.info.stride2};
         Check(offset<=strides[stream] && 12<=strides[stream]-offset,"Morph position attribute exceeds stream stride");
         // Each load starts with immutable package bytes. Channels only add position
@@ -576,6 +881,95 @@ struct Container {
             ReleasePayload(id);
         }
     }
+    // Lowers every mesh_deformations channel of `mesh` into a self-contained
+    // sample set and snapshots the unmorphed position stream. Runs once per
+    // load, before ApplyMorph; the driver runtime then never parses again.
+    // Returns null when this mesh has no deformation channels, which is the
+    // normal case for every package that predates 1.3.
+    std::shared_ptr<BemMorphSet> CaptureMorph(uint32_t mesh,const BemComponent& component,const ParameterTicks& ticks) {
+        if(!manifest.contains("mesh_deformations")) return nullptr;
+        bool present=false;
+        for(const auto& channel:manifest.at("mesh_deformations")) if(U(channel.at("mesh"))==mesh) {present=true;break;}
+        if(!present) return nullptr;
+        const auto attribute=MorphAttribute(mesh);const auto stream=attribute.first,offset=attribute.second;
+        const uint32_t strides[]{component.info.stride0,component.info.stride1,component.info.stride2};
+        Check(offset<=strides[stream] && 12<=strides[stream]-offset,"Morph position attribute exceeds stream stride");
+        const auto& source=component.streams[stream];
+        Check(source.size()>=size_t(component.info.vertex_count)*strides[stream],"Position stream is shorter than the vertex count");
+
+        auto morph=std::make_shared<BemMorphSet>();
+        morph->stream=stream;morph->offset=offset;morph->stride=strides[stream];
+        std::map<std::string,std::array<uint32_t,4>> domains;
+        if(manifest.contains("parameters")) for(const auto& parameter:manifest.at("parameters"))
+            domains.emplace(parameter.at("id").get<std::string>(),std::array<uint32_t,4>{
+                U(parameter.at("min")),U(parameter.at("max")),U(parameter.at("step")),U(parameter.at("neutral"))});
+        for(const auto& channel:manifest.at("mesh_deformations")) {
+            if(U(channel.at("mesh"))!=mesh) continue;
+            BemMorphChannel lowered;lowered.parameter=channel.at("parameter").get<std::string>();
+            const auto domain=domains.find(lowered.parameter);
+            if(domain!=domains.end()) {
+                lowered.min_tick=domain->second[0];lowered.max_tick=domain->second[1];
+                lowered.step=domain->second[2]?domain->second[2]:1;lowered.neutral_tick=domain->second[3];
+            }
+            for(const auto& frame:channel.at("frames")) {
+                BemMorphFrame lowered_frame;lowered_frame.tick=U(frame.at("value"));lowered_frame.neutral=frame.value("neutral",false);
+                if(!lowered_frame.neutral) {
+                    const auto id=U(frame.at("payload"));
+                    // Transient decode: capture must not disturb the planned
+                    // payload closure or the streaming cache.
+                    const auto bytes=DecodePayloadBytes(id);
+                    uint32_t jsonLength=0;Check(bytes.size()>=4,"Truncated position delta header");
+                    std::memcpy(&jsonLength,bytes.data(),4);
+                    const auto count=U(frame.at("count"));
+                    Check(jsonLength>0 && jsonLength<=MiB && uint64_t(jsonLength)+4+uint64_t(count)*16==bytes.size(),"Position delta payload extent differs");
+                    const auto header=J::parse(bytes.begin()+4,bytes.begin()+4+jsonLength);
+                    Check(header.is_object() && header.size()==2 && U(header.at("count"))==count &&
+                        S(header.at("encoding"))=="sparse-position-f32","Position delta header differs from frame");
+                    lowered_frame.deltas.reserve(count);
+                    std::set<uint32_t> seen;
+                    for(uint32_t n=0;n<count;++n) {
+                        const auto* record=bytes.data()+4+jsonLength+size_t(n)*16;
+                        BemMorphDelta delta{};std::memcpy(&delta.vertex,record,4);
+                        std::memcpy(&delta.dx,record+4,4);std::memcpy(&delta.dy,record+8,4);std::memcpy(&delta.dz,record+12,4);
+                        Check(delta.vertex<component.info.vertex_count && seen.insert(delta.vertex).second,
+                            "Position delta vertex is outside mesh or duplicated");
+                        Check(std::isfinite(delta.dx) && std::isfinite(delta.dy) && std::isfinite(delta.dz),"Non-finite morph delta");
+                        lowered_frame.deltas.push_back(delta);
+                    }
+                }
+                lowered.frames.push_back(std::move(lowered_frame));
+            }
+            if(!lowered.frames.empty()) {
+                // Load-time weights, computed the same way MorphFrames blends a
+                // tick but clamped rather than fatal: the runtime keeps these so
+                // a driver taking over another parameter leaves this one alone.
+                const auto tick=ticks.find(lowered.parameter);
+                if(tick!=ticks.end()) {
+                    const auto value=tick->second;
+                    auto right=std::lower_bound(lowered.frames.begin(),lowered.frames.end(),value,
+                        [](const BemMorphFrame& frame,uint32_t probe){return frame.tick<probe;});
+                    if(right==lowered.frames.end()) right=std::prev(lowered.frames.end());
+                    if(right->tick==value) lowered.settled.push_back({uint32_t(right-lowered.frames.begin()),1.0f});
+                    else if(right!=lowered.frames.begin()) {
+                        const auto& left=*(right-1);
+                        const double blend=double(value-left.tick)/double(right->tick-left.tick);
+                        if(blend<1.0) lowered.settled.push_back({uint32_t((right-1)-lowered.frames.begin()),float(1.0-blend)});
+                        if(blend>0.0) lowered.settled.push_back({uint32_t(right-lowered.frames.begin()),float(blend)});
+                    }
+                }
+                morph->channels.push_back(std::move(lowered));
+            }
+        }
+        if(morph->channels.empty()) return nullptr;
+
+        std::set<uint32_t> touched;
+        for(const auto& channel:morph->channels) for(const auto& frame:channel.frames)
+            for(const auto& delta:frame.deltas) touched.insert(delta.vertex);
+        morph->vertices.assign(touched.begin(),touched.end());
+        morph->base=source;
+        return morph;
+    }
+
     void Decode(std::string_view requested,BemPocData& out,std::string_view parameterSelection={},BemLoadPlan* plan=nullptr,std::string_view resourceSelection={}) {
         // A 1.4 package must never be treated as a single legacy character resource.
         Check(minor<4 || !resourceSelection.empty(),"BEM 1.4 requires a resource-aware runtime");
@@ -585,7 +979,7 @@ struct Container {
         std::map<uint32_t,uint32_t> componentMap;
         if(!resourceSelection.empty()) {
             const auto resource=std::find_if(info.resources.begin(),info.resources.end(),[&](const auto& r){return r.id==resourceSelection;});
-            Check(minor>=4 && resource!=info.resources.end(),"Unknown resource selection");
+            Check(!info.resources.empty() && resource!=info.resources.end(),"Unknown resource selection");
             for(const auto id:resource->component_ids) componentMap.emplace(id,static_cast<uint32_t>(componentMap.size()));
             J selected=J::array();
             for(const auto& op:selection.operations) if(componentMap.contains(U(op.at("target")))) selected.push_back(op);
@@ -709,7 +1103,7 @@ struct Container {
         };
         for(const auto& op:selection.operations) {
             BemComponent c; c.skip_validation=skip_validation; auto cid=U(op.at("target")); c.info.component_id=localComponent(cid); c.info.original_index_count=info.original_counts[cid];
-            c.static_mesh=minor>=4 && info.component_static.at(cid);
+            c.static_mesh=!info.component_static.empty() && info.component_static.at(cid);
             const auto action=S(op.at("operation"));
             if(action!="replace") {
                 c.info.flags=kComponentFlagNoGeometry|(action=="hide"?kComponentFlagHidden:0);
@@ -770,7 +1164,13 @@ struct Container {
                 std::vector<std::array<int32_t,4>>{{12,4,4,2},{13,6,4,2}};
             Validate(c.static_mesh || skinAttributes==expectedSkin,"Unsupported skin declaration");
             c.layout_crc=Crc(std::string_view(reinterpret_cast<const char*>(c.attributes.data()),c.attributes.size()*16));
-            ApplyMorph(U(op.at("mesh")),ticks,c);
+            // Capture before morphing so `base` is the authored position; the
+            // load-time frame weights travel with each channel so a driver can
+            // take over one parameter and hand it back on pause.
+            const auto morphMesh=U(op.at("mesh"));
+            auto morphSource=CaptureMorph(morphMesh,c,ticks);
+            ApplyMorph(morphMesh,ticks,c);
+            if(morphSource) c.morph=std::move(morphSource);
             auto indexBytes=uint64_t(h.index_count)*h.index_element_size; reserve(indexBytes);
             if(minor) {
                 if(loading_optimization && chosenDraws.size()==1)
@@ -821,12 +1221,77 @@ struct Container {
                 Check(count && donor<info.component_names.size() && slot<m.at("target").at("components").at(donor).at("materials").size(),"Material reference outside donor table");
                 Validate(start==end && count%3==0 && slot<256 && m.at("target").at("components").at(donor).at("materials").at(slot)==name,"Invalid material draw"); end+=count;
                 const auto mask=selectTextures(d.at("textures"),"Duplicate draw texture");
-                c.draws.push_back({start,count,localComponent(donor),slot,Crc(name),0,mask}); c.material_names.push_back(name);
+                BemMaterialOverrides overrides;
+                if(d.contains("material_overrides")) {
+                    const auto& ov=d.at("material_overrides");
+                    Check(ov.is_object(),"material_overrides must be an object");
+                    if(ov.contains("floats")) {
+                        const auto& fl=ov.at("floats"); Check(fl.is_object(),"floats must be an object");
+                        Validate(fl.size()<=(skip_validation?128u:32u),"Too many float overrides");
+                        for(auto it=fl.begin();it!=fl.end();++it) {
+                            Validate(ValidOverrideProperty(it.key(),skip_validation),"Invalid float property name");
+                            float val=it.value().get<float>();
+                            Validate(ValidOverrideFloat(val,skip_validation),"Invalid float value");
+                            if(skip_validation) val=std::clamp(val,-128.0f,128.0f);
+                            overrides.floats.emplace_back(it.key(),val);
+                        }
+                    }
+                    if(ov.contains("colors")) {
+                        const auto& cl=ov.at("colors"); Check(cl.is_object(),"colors must be an object");
+                        Validate(cl.size()<=(skip_validation?64u:16u),"Too many color overrides");
+                        for(auto it=cl.begin();it!=cl.end();++it) {
+                            Validate(ValidOverrideProperty(it.key(),skip_validation),"Invalid color property name");
+                            const auto& arr=it.value(); Check(arr.is_array()&&arr.size()==4,"Color must have 4 channels");
+                            std::array<float,4> cval{arr[0].get<float>(),arr[1].get<float>(),arr[2].get<float>(),arr[3].get<float>()};
+                            for(float& ch:cval) {
+                                Validate(std::isfinite(ch)&&(skip_validation||(ch>=0.0f&&ch<=8.0f)),"Invalid color channel value");
+                                if(skip_validation) ch=std::clamp(ch,0.0f,8.0f);
+                            }
+                            overrides.colors.emplace_back(it.key(),cval);
+                        }
+                    }
+                    if(ov.contains("vectors")) {
+                        const auto& vl=ov.at("vectors"); Check(vl.is_object(),"vectors must be an object");
+                        Validate(vl.size()<=(skip_validation?32u:8u),"Too many vector overrides");
+                        for(auto it=vl.begin();it!=vl.end();++it) {
+                            Validate(ValidOverrideProperty(it.key(),skip_validation),"Invalid vector property name");
+                            const auto& arr=it.value(); Check(arr.is_array()&&arr.size()==4,"Vector must have 4 components");
+                            std::array<float,4> vval{arr[0].get<float>(),arr[1].get<float>(),arr[2].get<float>(),arr[3].get<float>()};
+                            for(float& vh:vval) {
+                                Validate(std::isfinite(vh)&&(skip_validation||(vh>=-65536.0f&&vh<=65536.0f)),"Invalid vector component value");
+                                if(skip_validation) vh=std::clamp(vh,-65536.0f,65536.0f);
+                            }
+                            overrides.vectors.emplace_back(it.key(),vval);
+                        }
+                    }
+                    if(ov.contains("disable_keywords")) {
+                        const auto& dk=ov.at("disable_keywords"); Check(dk.is_array(),"disable_keywords must be an array");
+                        Validate(dk.size()<=(skip_validation?64u:16u),"Too many disable_keywords");
+                        for(const auto& kw:dk) {
+                            std::string kws=kw.get<std::string>();
+                            Validate(ValidOverrideKeyword(kws,skip_validation),"Invalid keyword in disable_keywords");
+                            overrides.disable_keywords.push_back(std::move(kws));
+                        }
+                    }
+                    if(ov.contains("enable_keywords")) {
+                        const auto& ek=ov.at("enable_keywords"); Check(ek.is_array(),"enable_keywords must be an array");
+                        Validate(ek.size()<=(skip_validation?64u:16u),"Too many enable_keywords");
+                        for(const auto& kw:ek) {
+                            std::string kws=kw.get<std::string>();
+                            Validate(ValidOverrideKeyword(kws,skip_validation),"Invalid keyword in enable_keywords");
+                            overrides.enable_keywords.push_back(std::move(kws));
+                        }
+                    }
+                }
+                c.draws.push_back({start,count,localComponent(donor),slot,Crc(name),0,mask});
+                c.draw_material_overrides.push_back(std::move(overrides));
+                c.material_names.push_back(name);
             }
             Validate(end==h.index_count,"Draws must partition IB"); h.reserved0=static_cast<uint32_t>(c.bones.size()); h.reserved1=static_cast<uint32_t>(c.draws.size());
             out.components.push_back(std::move(c));
         }
         out.header.texture_count=static_cast<uint32_t>(out.textures.size());
+        out.root_offset=ReadRootOffset(m,skip_validation);
         Check(!loading_optimization || (payloadUses.empty() && cache.empty() && cacheBytes==0),
             "Selected payload consumers were not exhausted");
     }
@@ -895,6 +1360,47 @@ bool ResolveBemSelection(const BemPackageInfo& info,std::string_view requested,
         out=std::move(result); return true;
     } catch(const std::exception& e) {error=e.what(); return false;}
 }
+void SampleMorphChannel(const BemMorphChannel& channel,const BemMorphSet& set,
+                        float range_low,float range_high,float weight,
+                        std::vector<float>& accumulated) {
+    if(accumulated.size()!=set.vertices.size()*3 || channel.frames.empty()) return;
+    std::pair<uint32_t,float> resolved[2];size_t count=0;
+    if(weight<0.0f) {
+        // Restore path: the frame weights the load-time tick selected.
+        for(const auto& entry:channel.settled) if(count<2) resolved[count++]=entry;
+    } else {
+        // Weight maps onto the parameter tick domain first (section 13 `range`),
+        // then onto the authored frame ladder. Both ends are clamped: an odd
+        // authoring decision must not become a crash inside the render tick.
+        const double span=double(channel.max_tick-channel.min_tick);
+        const float position=range_low+(range_high-range_low)*(weight<0.0f?0.0f:weight);
+        long long tick=static_cast<long long>(channel.min_tick)+std::llround(span*double(position));
+        tick=std::clamp<long long>(tick,channel.frames.front().tick,channel.frames.back().tick);
+        auto right=std::lower_bound(channel.frames.begin(),channel.frames.end(),static_cast<uint32_t>(tick),
+            [](const BemMorphFrame& frame,uint32_t probe){return frame.tick<probe;});
+        if(right==channel.frames.end()) right=std::prev(channel.frames.end());
+        if(right->tick==static_cast<uint32_t>(tick)) resolved[count++]={uint32_t(right-channel.frames.begin()),1.0f};
+        else if(right!=channel.frames.begin()) {
+            const auto& left=*(right-1);
+            const double blend=double(tick-left.tick)/double(right->tick-left.tick);
+            if(blend<1.0) resolved[count++]={uint32_t((right-1)-channel.frames.begin()),float(1.0-blend)};
+            if(blend>0.0) resolved[count++]={uint32_t(right-channel.frames.begin()),float(blend)};
+        }
+    }
+    for(size_t i=0;i<count;++i) {
+        if(resolved[i].second==0.0f || resolved[i].first>=channel.frames.size()) continue;
+        const auto& frame=channel.frames[resolved[i].first];
+        if(frame.neutral) continue;
+        for(const auto& delta:frame.deltas) {
+            const auto local=std::lower_bound(set.vertices.begin(),set.vertices.end(),delta.vertex);
+            if(local==set.vertices.end() || *local!=delta.vertex) continue;
+            const size_t base=size_t(local-set.vertices.begin())*3;
+            accumulated[base]+=resolved[i].second*delta.dx;
+            accumulated[base+1]+=resolved[i].second*delta.dy;
+            accumulated[base+2]+=resolved[i].second*delta.dz;
+        }
+    }
+}
 bool ResolveBemParameters(const BemPackageInfo& info,std::string_view requested,std::string& canonical,std::string& error) {
     canonical.clear();error.clear();
     try { ParseParameters(info.parameter_groups_json.empty()?J::array():J::parse(info.parameter_groups_json),requested,&canonical);return true; }
@@ -934,6 +1440,22 @@ bool LoadBem(const std::filesystem::path& path,BemPocData& out,std::string& erro
     }
     parsed.payload_source=std::move(source);
     out=std::move(parsed); return true;
+}
+bool ExtractBemPayload(const std::filesystem::path& package,uint32_t payload_id,
+    const std::filesystem::path& output,std::string& error) {
+    return File(package,error,[&](Container& c){
+        Check(payload_id<c.directory.size(),"Missing payload");
+        const auto bytes=c.DecodePayloadBytes(payload_id);
+        Check(!bytes.empty(),"Payload is empty");
+        std::error_code fs_error;
+        if(auto parent=output.parent_path(); !parent.empty())
+            std::filesystem::create_directories(parent,fs_error);
+        std::ofstream out(output,std::ios::binary|std::ios::trunc);
+        Check(bool(out),"Cannot write the audio cache file");
+        out.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+        Check(bool(out),"Cannot write the audio cache file");
+    },false,false,false,false);
 }
 bool DecodeBemTexturePayload(const BemPayloadSource& source,const BemTexture& texture,std::vector<uint8_t>& out,std::string& error) {
     out.clear(); error.clear();
@@ -1019,10 +1541,23 @@ bool RewriteBemTextures(const std::filesystem::path& input,const std::filesystem
         auto copy=[&](BemJson& ref) {
             auto old=U(ref); auto it=copied.find(old);
             if(it==copied.end()) { checkpoint(); const auto& e=c.directory.at(old);
-                it=copied.emplace(old,append(e.codec,e.decoded,c.read(e.offset,static_cast<size_t>(e.stored)))).first; }
+                auto bytes=c.Stored(old); auto codec=e.codec;
+                // ZIP payloads are stored raw, so an installed package would balloon.
+                // Compress them here to keep the rewritten package at normal size.
+                if(!codec && !bytes.empty()) {
+                    std::vector<uint8_t> packed(ZSTD_compressBound(bytes.size()));
+                    auto written=ZSTD_compress(packed.data(),packed.size(),bytes.data(),bytes.size(),9);
+                    if(!ZSTD_isError(written) && written<bytes.size()) {
+                        packed.resize(written); bytes.swap(packed); codec=1;
+                    }
+                }
+                it=copied.emplace(old,append(codec,e.decoded,bytes)).first; }
             ref=it->second;
         };
         auto manifest=c.manifest;
+        // A ZIP container has no binary header, so a packer may record the version in the
+        // manifest instead. The rewritten binary carries it in the header, so drop the hint.
+        if(c.is_zip) manifest.erase("format_version");
         for(auto& mesh:manifest["meshes"]) {
             for(auto& stream:mesh["streams"]) copy(stream["payload"]);
             if(c.minor) for(auto& draw:mesh["draws"]) copy(draw["indices"]);
@@ -1043,7 +1578,19 @@ bool RewriteBemTextures(const std::filesystem::path& input,const std::filesystem
             Check(bytes.size()<=c.limits.textureBytes,"Texture exceeds format limit");
             transform(c.manifest,texture,bytes);
             Check(!bytes.empty() && bytes.size()<=c.limits.textureBytes,"Converted texture exceeds format limit");
-            texture["payload"]=append(0,bytes.size(),bytes);
+            if(texture == original) {
+                copy(texture["payload"]);
+            } else {
+                size_t bound = ZSTD_compressBound(bytes.size());
+                std::vector<uint8_t> compressed(bound);
+                size_t cSize = ZSTD_compress(compressed.data(), compressed.size(), bytes.data(), bytes.size(), 3);
+                if (!ZSTD_isError(cSize) && cSize < bytes.size()) {
+                    compressed.resize(cSize);
+                    texture["payload"] = append(1, bytes.size(), compressed);
+                } else {
+                    texture["payload"] = append(0, bytes.size(), bytes);
+                }
+            }
             converted.emplace(key,texture);
             changes.push_back({{"name",texture.at("original_name")},{"source_format",original.at("format")},
                 {"format",texture.at("format")},{"bytes",bytes.size()}});
@@ -1068,8 +1615,10 @@ bool RewriteBemTextures(const std::filesystem::path& input,const std::filesystem
         for(const auto& appearance:validationSelections) {
             const auto validate=[&](std::string_view resource) {
                 checkpoint();BemPocData parsed;std::string failure;
-                Check(LoadBem(output,parsed,failure,appearance,nullptr,false,false,{},UINT64_MAX,false,resource),
-                    "Installed validation: "+failure);
+                // Evaluate the load before building the message: argument evaluation order is
+                // unspecified, so inlining it would report an empty failure string.
+                const bool loaded=LoadBem(output,parsed,failure,appearance,nullptr,false,false,{},UINT64_MAX,false,resource);
+                Check(loaded,"Installed validation: "+failure);
             };
             if(c.minor>=4) for(const auto& resource:c.info.resources) validate(resource.id);
             else validate({});

@@ -43,6 +43,7 @@ struct EnabledMod {
     bool loading_optimization = false;
     std::string selection_key;
     std::string parameters;
+    std::string drivers;
     std::string resource_id, package_id;
 };
 struct OwnedCharacterAdapter {
