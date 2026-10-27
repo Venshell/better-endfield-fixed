@@ -135,6 +135,14 @@ bool ParseModRegistryImpl(std::string_view ini,const std::filesystem::path& root
             }
             if(resource_mode && info.minor>=4) {
                 auto bindings=SelectResourceBindings(info,platform);
+#if defined(__ANDROID__)
+                // A weapon authored only for the desktop keeps its
+                // platform-neutral resource names installable; the runtime
+                // resolves them through the sibling-LOD matcher.
+                if(bindings.empty() && info.target_kind=="weapon") {
+                    bindings=SelectResourceBindings(info,"windows-x64");
+                }
+#endif
                 if(bindings.empty()) {
                     parsed.diagnostics.push_back("Package has no resource for "+std::string(platform)+": "+info.package_id);
                     continue;

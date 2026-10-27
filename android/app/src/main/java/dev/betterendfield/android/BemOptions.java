@@ -98,9 +98,24 @@ final class BemOptions {
         return keys;
     }
 
+    static String targetKind(JSONObject entry) throws Exception {
+        String kind=entry.optInt("bem_minor",0)>=4?entry.getString("target_kind"):
+            entry.optString("target_kind","character");
+        if(!kind.equals("character")&&!kind.equals("weapon")) throw new IOException("无效的模型目标类别");
+        return kind;
+    }
+
     static boolean supportsAndroid(JSONObject entry) throws Exception {
         if(entry.optInt("bem_minor",0)<4) return true;
         for(String key:resourceKeys(entry)) if(key.startsWith("android-arm64:")) return true;
+        // A weapon authored for the desktop can still be delivered when its
+        // resource names are platform-neutral: the runtime resolves them on the
+        // device and refuses only names marked android_unavailable.
+        if(targetKind(entry).equals("weapon")) {
+            for(String key:resourceKeys(entry)) {
+                if(key.startsWith("windows-x64:")&&!key.endsWith(":android_unavailable")) return true;
+            }
+        }
         return false;
     }
 
@@ -112,6 +127,14 @@ final class BemOptions {
         Set<String> a=resourceKeys(first),b=resourceKeys(second);
         if(a.isEmpty()||b.isEmpty()) return targetKey(first).equals(targetKey(second));
         for(String key:a) if(key.startsWith("android-arm64:")&&b.contains(key)) return true;
+        // Two weapons conflict when they target the same resource name on any
+        // platform, so a desktop-authored weapon suppresses its Android twin.
+        if(targetKind(first).equals("weapon")&&targetKind(second).equals("weapon")) {
+            for(String ka:a) for(String kb:b) {
+                int sa=ka.indexOf(':'),sb=kb.indexOf(':');
+                if(sa>=0&&sb>=0&&ka.substring(sa+1).equals(kb.substring(sb+1))) return true;
+            }
+        }
         return false;
     }
 

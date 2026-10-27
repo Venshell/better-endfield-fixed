@@ -1841,6 +1841,15 @@ struct PreparedBinding {
     // Authored BEM 1.5 per-slot overrides for the keep path, applied by
     // CopyMaterials right after each slot copy.
     std::vector<BemMaterialOverrides> material_overrides;
+    // A weapon's LOD siblings share one logical part: the matched renderer
+    // receives the mesh, the other LOD levels broadcast the same mesh so the
+    // swap survives the game's own LOD transitions.
+    struct SiblingStaticRenderer {
+        void* renderer=nullptr;
+        void* original_mesh=nullptr;
+        void* original_materials=nullptr;
+    };
+    std::vector<SiblingStaticRenderer> sibling_static_renderers;
     bool original_enabled=true;
     bool custom_enabled=true;
 #if defined(__ANDROID__)
@@ -2070,6 +2079,15 @@ bool ApplyPreparedBinding(PreparedBinding& binding) {
     if (binding.custom_bones && !SetRendererBones(binding.renderer,binding.custom_bones)) return false;
     if (binding.custom_mesh!=binding.original_mesh && !SetSharedMesh(binding.renderer,binding.custom_mesh)) return false;
     if (!ApplyRendererMaterials(binding.renderer,binding.custom_materials)) return false;
+    // Broadcast the delivered mesh to the LOD siblings of a static receiver so
+    // every level shows the replacement. Best-effort per sibling: a refused
+    // level degrades to the original at that LOD instead of failing the swap.
+    for (const auto& sibling:binding.sibling_static_renderers) {
+        if (sibling.renderer) {
+            SetSharedMesh(sibling.renderer,binding.custom_mesh);
+            ApplyRendererMaterials(sibling.renderer,binding.custom_materials);
+        }
+    }
     bool read=false;
     return SetRendererEnabled(binding.renderer,binding.custom_enabled) &&
         GetRendererEnabled(binding.renderer,read) && read==binding.custom_enabled;
@@ -2079,6 +2097,12 @@ bool RestorePreparedBinding(PreparedBinding& binding) {
     const bool mesh=SetSharedMesh(binding.renderer,binding.original_mesh);
     const bool bones=!binding.custom_bones || SetRendererBones(binding.renderer,binding.original_bones);
     const bool materials=ApplyRendererMaterials(binding.renderer,binding.original_materials);
+    for (const auto& sibling:binding.sibling_static_renderers) {
+        if (sibling.renderer) {
+            SetSharedMesh(sibling.renderer,sibling.original_mesh);
+            ApplyRendererMaterials(sibling.renderer,sibling.original_materials);
+        }
+    }
     bool read=false;
     const bool enabled=SetRendererEnabled(binding.renderer,binding.original_enabled) &&
         GetRendererEnabled(binding.renderer,read) && read==binding.original_enabled;
@@ -2117,6 +2141,7 @@ bool PrepareResource(const CharacterAdapter& adapter,const BemPocData& bem,void*
     void* renderers=Invoke(Contract("game_object.renderers"),asset,args);
     const int count=ArrayLength(renderers);
     if (!renderers || count<=0 || count>4096) return false;
+    std::string matched_path;
 #if defined(__ANDROID__)
     const std::string resource_name(ResourceBaseName(ObjectName(asset)));
     std::vector<GenericMatching::Candidate> candidates;
@@ -2166,14 +2191,25 @@ bool PrepareResource(const CharacterAdapter& adapter,const BemPocData& bem,void*
                 GenericMatching::Region::Lod0,identity.indices,true,
             adapter.explicit_resource?identity.receiver_path:std::string_view{},adapter.explicit_resource};
         const auto match=GenericMatching::SelectUnique(candidates,request,[&](const auto& candidate) {
-            return !adapter.explicit_resource ||
-                identity.static_mesh==IsStaticRenderer(candidate.renderer);
+            if (!adapter.explicit_resource) return true;
+            if (identity.static_mesh!=IsStaticRenderer(candidate.renderer)) return false;
+            if (identity.receiver_path &&
+                std::string_view(identity.receiver_path)==candidate.key.path) return true;
+#if defined(__ANDROID__)
+            // A weapon authored for the desktop LOD0 world may only exist here
+            // as its LOD1 sibling; the manifest names the desktop path.
+            if (GenericMatching::SiblingLodPathMatches(
+                    identity.receiver_path ? std::string_view(identity.receiver_path) : std::string_view{},
+                    candidate.key.path)) return true;
+#endif
+            return false;
         });
         if (match.status!=GenericMatching::MatchStatus::Matched) {
             Log("Android UI renderer identity unavailable or ambiguous: "+std::string(identity.name));
             return false;
         }
         matched=candidates[match.index].renderer;
+        matched_path=candidates[match.index].key.path;
         used_receivers.push_back(matched);
         if (!GenericMatching::DistinctReceivers(used_receivers)) {
             Log("Android UI components share a renderer"); return false;
@@ -2195,7 +2231,14 @@ bool PrepareResource(const CharacterAdapter& adapter,const BemPocData& bem,void*
         binding.component_id=component.info.component_id; binding.renderer=matched;
         binding.original_mesh=GetRendererMesh(matched);
         binding.custom_mesh=binding.original_mesh;
-        if (!binding.original_mesh || ObjectName(binding.original_mesh)!=identity.name ||
+        bool sibling_matched=false;
+#if defined(__ANDROID__)
+        sibling_matched = adapter.explicit_resource && identity.receiver_path &&
+            GenericMatching::SiblingLodPathMatches(
+                std::string_view(identity.receiver_path),std::string_view(matched_path));
+#endif
+        if (!binding.original_mesh ||
+            (ObjectName(binding.original_mesh)!=identity.name && !sibling_matched) ||
             !GetRendererEnabled(matched,binding.original_enabled)) return false;
         int32_t submeshes=0; uint64_t indices=0;
         if (!InvokeValue(Contract("mesh.get_sub_mesh_count"),binding.original_mesh,nullptr,submeshes) ||
@@ -2210,6 +2253,31 @@ bool PrepareResource(const CharacterAdapter& adapter,const BemPocData& bem,void*
         binding.custom_enabled=hidden?false:binding.original_enabled;
         binding.original_materials=Invoke(Contract("renderer.get_shared_materials"),matched,nullptr);
         binding.original_bones=GetRendererBones(matched);
+#if defined(__ANDROID__)
+        // Broadcast receivers: every other static renderer whose path names the
+        // same logical part at a different LOD level. They keep the original
+        // mesh until Apply broadcasts the delivered one; the manifest names the
+        // desktop LOD0 path, so a weapon's Android LOD1 twin matches by leaf.
+        if (adapter.explicit_resource && component.static_mesh && identity.receiver_path) {
+            std::vector<void*> receivers{matched};
+            for (const auto& candidate:candidates) {
+                if (candidate.renderer==matched || !candidate.renderer) continue;
+                if (candidate.key.path.empty()) continue;
+                if (std::find(receivers.begin(),receivers.end(),candidate.renderer)!=receivers.end()) continue;
+                if (!IsStaticRenderer(candidate.renderer)) continue;
+                if (GenericMatching::SiblingLodPathMatches(
+                        std::string_view(identity.receiver_path),candidate.key.path)) {
+                    PreparedBinding::SiblingStaticRenderer sibling;
+                    sibling.renderer=candidate.renderer;
+                    sibling.original_mesh=GetRendererMesh(candidate.renderer);
+                    sibling.original_materials=Invoke(Contract("renderer.get_shared_materials"),candidate.renderer,nullptr);
+                    binding.sibling_static_renderers.push_back(sibling);
+                    receivers.push_back(candidate.renderer);
+                    Log("Weapon sibling receiver: path="+candidate.key.path);
+                }
+            }
+        }
+#endif
         // Authored 1.5 draw overrides land on the keep-material slots they name.
         // The draw path applies its own per-draw overrides in PrepareDrawMaterials.
         for (size_t d = 0; d < component.draws.size(); ++d) {
