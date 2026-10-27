@@ -3,6 +3,7 @@
 #define BCDEC_IMPLEMENTATION
 #include "bcdec.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -56,7 +57,17 @@ std::vector<uint8_t> decode(const uint8_t* source,int format,unsigned w,unsigned
             for(unsigned by=0;by<4 && y+by<h;++by) for(unsigned bx=0;bx<4 && x+bx<w;++bx) {
                 auto* p=pixels.data()+(size_t(y+by)*w+x+bx)*4;unsigned i=by*4+bx;
                 if(format==26) {p[0]=block[i];p[1]=p[2]=0;}
-                else if(format==27) {p[0]=block[i*2];p[1]=block[i*2+1];p[2]=0;}
+                else if(format==27) {
+                    // BC5 stores only XY; reconstruct Z so the decoded RGBA is a
+                    // complete tangent-space normal before any re-compression.
+                    float x_val = block[i*2] * (2.0f / 255.0f) - 1.0f;
+                    float y_val = block[i*2+1] * (2.0f / 255.0f) - 1.0f;
+                    float z_val = std::sqrt(std::max(0.0f, 1.0f - x_val*x_val - y_val*y_val));
+                    p[0]=block[i*2];
+                    p[1]=block[i*2+1];
+                    p[2]=uint8_t(std::lround((z_val + 1.0f) * 127.5f));
+                    p[3]=255;
+                }
                 else std::memcpy(p,block+i*4,4);
             }
         }
@@ -92,6 +103,47 @@ std::vector<uint8_t> decodeScaled(const uint8_t* source,int format,unsigned w,un
 }
 constexpr size_t kInstalledTextureLimit=64ull*1024*1024;
 constexpr unsigned kInstalledTextureSize=8192;
+
+// Heuristics for an unsigned normal-map candidate. A package that declares
+// semantic/normal_encoding is always trusted; the content heuristics catch
+// desktop-authored packages that ship normals without the metadata.
+bool DetectNormalCandidate(const J& texture, const uint8_t* source, int format, unsigned w, unsigned h) {
+    if(format==27) return true; // BC5 is 100% 2-channel normal map
+    std::string semantic=texture.value("semantic","");
+    std::string encoding=texture.value("normal_encoding","");
+    if(semantic=="normal" || encoding=="xy-unorm") return true;
+
+    std::string name=texture.value("original_name","");
+    for(auto& c:name) c=(char)std::tolower((unsigned char)c);
+    if(name.find("_n.")!=std::string::npos || name.find("_n_")!=std::string::npos ||
+       name.find("_norm")!=std::string::npos || name.find("_bump")!=std::string::npos ||
+       (name.size()>=2 && name.compare(name.size()-2,2,"_n")==0)) {
+        return true;
+    }
+
+    if((format==25 || format==4) && w>=16 && h>=16 && source!=nullptr) {
+        alignas(16) uint8_t block[64]{};
+        if(format==25) {
+            bcdec_bc7(source,block,16);
+            unsigned bDead=0,rgNormal=0;
+            for(int i=0;i<16;++i) {
+                uint8_t r=block[i*4], g=block[i*4+1], b=block[i*4+2];
+                if(b<=5) bDead++;
+                if(r>=90 && r<=165 && g>=90 && g<=165) rgNormal++;
+            }
+            if(bDead>=14 && rgNormal>=10) return true;
+        } else if(format==4) {
+            unsigned bDead=0,rgNormal=0;
+            for(size_t i=0;i+3<size_t(w)*h*4 && i<64*4;i+=4) {
+                uint8_t r=source[i], g=source[i+1], b=source[i+2];
+                if(b<=5) bDead++;
+                if(r>=90 && r<=165 && g>=90 && g<=165) rgNormal++;
+            }
+            if(bDead>=14 && rgNormal>=10) return true;
+        }
+    }
+    return false;
+}
 }
 void CancelTextureCompression() {
     std::lock_guard<std::mutex> lock(activeMutex);
@@ -112,20 +164,22 @@ void ConvertInstalledTexture(const J& manifest,J& texture,std::vector<uint8_t>& 
     }
     std::string encoding=texture.value("normal_encoding",std::string{});
     std::string semantic=texture.value("semantic",std::string{});
-    bool normal=semantic=="normal";
+    bool normal=semantic=="normal" || DetectNormalCandidate(texture,bytes.data(),format,w,h);
     auto character=manifest.at("target").at("character_id").get<std::string>();
     auto name=texture.at("original_name").get<std::string>();
     const J* rule=nullptr;
     if(rules.contains(character) && rules.at(character).contains(name)) {rule=&rules.at(character).at(name);normal=true;}
-    // Known original material slots establish semantics; never infer from a filename suffix.
-    if(encoding.empty() && rule) {
+    // Known original material slots establish semantics; the content heuristics
+    // above extend the same inference to unsigned desktop packages.
+    if(encoding.empty() && normal) {
         if(format==27) encoding="xy-unorm";
         else if(format==4) encoding="xyz-unorm"; // already adapted RGBA source
-        else if(format==25) encoding=rule->value("bc7_encoding",std::string{});
+        else if(format==25) encoding=rule?rule->value("bc7_encoding","xy-unorm"):"xy-unorm";
+        else encoding="xy-unorm";
     }
     require(!normal || !encoding.empty(),"Normal slot has no verified source encoding; add normal_encoding metadata");
     require(encoding.empty() || encoding=="xy-unorm" || encoding=="xyz-unorm","Unsupported normal encoding");
-    if(!encoding.empty()) {normal=true;require(!srgb,"Normal texture must be linear");}
+    if(!encoding.empty()) {normal=true;srgb=false;}
     if(format==63) {
         require(!normal,"Single-channel normal unsupported");
         require(installable,"R8 texture exceeds the Android 8192/64 MiB install limit");return;
@@ -197,5 +251,66 @@ void ConvertInstalledTexture(const J& manifest,J& texture,std::vector<uint8_t>& 
         texture["android_install_mip_skip"]=skip;
     }
     if(normal) {texture["semantic"]="normal";texture["normal_encoding"]="xyz-unorm";}
+}
+
+bool RepairNormalTexture(const J& manifest,J& texture,std::vector<uint8_t>& bytes,bool astc,
+    const std::function<void()>& checkpoint,
+    const std::function<void(unsigned, unsigned, float)>& progress) {
+    (void)manifest;
+    const auto w=texture.at("width").get<unsigned>(), h=texture.at("height").get<unsigned>(), mips=texture.at("mips").get<unsigned>();
+    int format=texture.at("format").get<int>();
+    if(!DetectNormalCandidate(texture,bytes.data(),format,w,h)) {
+        return false; // Leave non-normal texture completely untouched!
+    }
+    std::string encoding=texture.value("normal_encoding",std::string{});
+    if(encoding=="xyz-unorm" && (format==48 || format==4)) {
+        return false; // Already repaired
+    }
+    require(w && h && w<=32768 && h<=32768 && mips && mips<=16,"Invalid texture dimensions");
+    size_t size=0;for(unsigned m=0;m<mips;++m) size+=mipSize(format,std::max(w>>m,1u),std::max(h>>m,1u));
+    require(size==bytes.size(),"Texture mip byte count mismatch");
+
+    unsigned block=4; // Linear normal map always 4x4
+    astcenc_config config{};
+    std::unique_ptr<astcenc_context,decltype(&astcenc_context_free)> context(nullptr,astcenc_context_free);
+    if(astc) {
+        check(astcenc_config_init(ASTCENC_PRF_LDR,block,block,1,ASTCENC_PRE_FAST,0,&config));
+        config.progress_callback=reportProgress;
+        astcenc_context* raw=nullptr;check(astcenc_context_alloc(&config,1,&raw));context.reset(raw);
+    }
+    std::vector<uint8_t> output;size_t pos=0;
+    for(unsigned m=0;m<mips;++m) {
+        checkpoint();
+        const auto sw=std::max(w>>m,1u),sh=std::max(h>>m,1u);
+        if(progress) progress(m+1,mips,0);
+        auto rgba=decode(bytes.data()+pos,format,sw,sh,checkpoint);pos+=mipSize(format,sw,sh);
+        // Ensure Z channel is mathematically reconstructed
+        for(size_t i=0;i<rgba.size();i+=4) {
+            float x=rgba[i]*(2.0f/255)-1,y=rgba[i+1]*(2.0f/255)-1;
+            rgba[i+2]=uint8_t(std::lround((std::sqrt(std::max(0.0f,1-x*x-y*y))+1)*127.5f));
+            rgba[i+3]=255;
+        }
+        size_t count=astc?size_t((sw+block-1)/block)*((sh+block-1)/block)*16:rgba.size();
+        require(output.size()+count<=kInstalledTextureLimit,"Repaired texture exceeds 64 MiB");
+        auto offset=output.size();output.resize(offset+count);
+        if(astc) {
+            void* slice=rgba.data();astcenc_image image{sw,sh,1,ASTCENC_TYPE_U8,&slice};
+            const astcenc_swizzle swizzle{ASTCENC_SWZ_R,ASTCENC_SWZ_G,ASTCENC_SWZ_B,ASTCENC_SWZ_A};
+            const std::function<void(float)> report=[&](float percent) {if(progress) progress(m+1,mips,percent);};
+            {
+                CompressionScope scope(context.get(),report);
+                checkpoint();
+                check(astcenc_compress_image(context.get(),&image,&swizzle,output.data()+offset,count,0));
+                checkpoint();
+            }
+            check(astcenc_compress_reset(context.get()));
+        } else std::memcpy(output.data()+offset,rgba.data(),count);
+        if(progress) progress(m+1,mips,100);
+    }
+    checkpoint();bytes=std::move(output);
+    texture["format"]=astc?48:4;
+    texture["semantic"]="normal";
+    texture["normal_encoding"]="xyz-unorm";
+    return true;
 }
 }

@@ -7,4 +7,8 @@ void ConvertInstalledTexture(const BetterEndfield::CustomModel::BemJson& manifes
     const BetterEndfield::CustomModel::BemJson& rules, bool astc,
     const std::function<void()>& checkpoint,
     const std::function<void(unsigned, unsigned, float)>& progress = {});
+bool RepairNormalTexture(const BetterEndfield::CustomModel::BemJson& manifest,
+    BetterEndfield::CustomModel::BemJson& texture, std::vector<uint8_t>& bytes, bool astc,
+    const std::function<void()>& checkpoint,
+    const std::function<void(unsigned, unsigned, float)>& progress = {});
 }
