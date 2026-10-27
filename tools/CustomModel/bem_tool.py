@@ -11,12 +11,21 @@ from pathlib import Path
 import bem_v1 as bem
 import bem_projects
 
-TOOL_VERSION = "1.5.2"
-FORMAT_VERSIONS = {0: '1.0', 1: '1.1', 2: '1.2', 3: '1.3', 4: '1.4'}
+TOOL_VERSION = "1.6.3"
+FORMAT_VERSIONS = {0: '1.0', 1: '1.1', 2: '1.2', 3: '1.3', 4: '1.4', 5: '1.5'}
 from convert_efmi_poc import Source
 from efmi_source import sections, analyze_source
 from efmi_lod_source import ENTRY, inspect_lod_source
 from source_classification import entry_family, classify
+
+
+def archive_backend_available():
+    """Slim distributions (the Android CLI) ship without the bundled 7-Zip backend."""
+    try:
+        import source_archive  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def inspect_source(path, explicit=None, *, prepared=None):
@@ -27,7 +36,14 @@ def inspect_source(path, explicit=None, *, prepared=None):
         return dict(format='BEMv' + version, format_version=version,
                     package=m, entries=[], issues=[], conversion_ready=False)
     if path.is_file() and path.suffix.lower() not in ('.zip','.rar','.7z'):
-        raise ValueError('ARCHIVE_FORMAT: 源 Mod 支持目录、ZIP、RAR 和 7z。')
+        formats = '目录、ZIP、RAR 和 7z' if archive_backend_available() else '目录和 ZIP（此发行版不含 RAR/7z 后端）'
+        raise ValueError(f'ARCHIVE_FORMAT: 源 Mod 支持{formats}。')
+    if path.suffix.lower() == '.zip' and bem_projects.has_package_manifest(path):
+        package = bem_projects.read_zip_package(path)
+        m = package['manifest']
+        return dict(format='BEM-ZIP-PACKAGE', format_version=str(m.get('format_version', '1.0')),
+                    package=m, entries=[], issues=[], conversion_ready=False,
+                    payload_count=len(package['payloads']), wrapper=package['prefix'])
     if path.suffix.lower() == '.zip' and bem_projects.has_bem_members(path):
         return bem_projects.inspect_bundle(path)
     src = Source(path)
@@ -251,12 +267,14 @@ def main(argv=None):
     if len(raw_argv) >= 2 and raw_argv[0] == 'workspace' and raw_argv[1] == 'init':
         raw_argv = ['init-workspace', *raw_argv[2:]]
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['inspect','convert','validate','pack','unpack','bundle','new-project','build',
-                                           'init-workspace','workspace-init'])
-    parser.add_argument('--version', action='version', version='BEM Tools '+TOOL_VERSION+' / BEM 1.0+1.1+1.2+1.3+1.4')
+    parser.add_argument('command',choices=['inspect','convert','validate','pack','pack-zip','unpack','bundle','new-project','build',
+                                           'init-workspace','workspace-init','target-profile'])
+    parser.add_argument('--version', action='version', version='BEM Tools '+TOOL_VERSION+' / BEM 1.0+1.1+1.2+1.3+1.4+1.5')
     parser.add_argument('source',type=Path)
     parser.add_argument('additional',type=Path,nargs='*',help='Additional BEM files for bundle only')
     parser.add_argument('--recipe',type=Path)
+    parser.add_argument('--spec', type=Path, help='Exact resource target specification for target-profile')
+    parser.add_argument('--project', type=Path, help='Optional keep-only project output for target-profile')
     parser.add_argument('--source',dest='workspace_source',type=Path,
                         help='Input source for init-workspace; positional source is the workspace directory')
     parser.add_argument('--deformations',type=Path,help='Author position-morph inputs saved in the export project')
@@ -272,11 +290,14 @@ def main(argv=None):
     parser.add_argument('--name')
     parser.add_argument('--author')
     parser.add_argument('--package-version')
+    parser.add_argument('--preview', type=Path, help='Optional preview.png embedded in a pack-zip package')
     args=parser.parse_args(raw_argv)
-    result=dict(tool_version=TOOL_VERSION,format_version='1.0/1.1/1.2/1.3/1.4',command=args.command,source=str(args.source),success=False,conversion_ready=False,render_verified=False,issues=[])
+    result=dict(tool_version=TOOL_VERSION,format_version='1.0/1.1/1.2/1.3/1.4/1.5',command=args.command,source=str(args.source),success=False,conversion_ready=False,render_verified=False,issues=[])
     report_path = args.report
     protected_paths = [args.source, *args.additional] + ([args.output] if args.output else []) + ([args.recipe] if args.recipe else [])
     if args.deformations: protected_paths.append(args.deformations)
+    if args.spec: protected_paths.append(args.spec)
+    if args.project: protected_paths.append(args.project)
     try:
         shape_input = args.deformations
         if shape_input is None and args.recipe and args.command == 'convert':
@@ -287,6 +308,8 @@ def main(argv=None):
             from bem_v13 import author_input_paths
             protected_paths.extend(author_input_paths(shape_input))
         bem.require(not args.additional or args.command=='bundle', 'Additional inputs are only valid for bundle')
+        bem.require(not (args.spec or args.project) or args.command == 'target-profile',
+                    'Spec/project arguments apply only to target-profile')
         bem.require(not (args.resource or args.platform) or args.command in ('inspect', 'validate'),
                     'Resource/platform filters apply only to inspect/validate')
         if args.report:
@@ -314,6 +337,10 @@ def main(argv=None):
             bem.require(report_path is None or report_path.resolve() not in {p.resolve() for p in protected_paths},
                         'Report cannot overwrite project/input/output/recipe')
             result.update(bem_tasks.build_task(task))
+        elif args.command == 'target-profile':
+            from build_bem14_target import create_profile
+            bem.require(args.spec and args.output, 'Target profile requires --spec and --output')
+            result.update(create_profile(args.source, args.spec, args.output, args.project))
         elif args.command=='inspect': result.update(inspect_source(args.source,args.ini))
         elif args.command=='validate':
             minor=bem.package_minor(args.source)
@@ -321,10 +348,12 @@ def main(argv=None):
             result.update(package=m,size=args.source.stat().st_size,format_version=FORMAT_VERSIONS[minor])
             if 'option_groups' in m:
                 result['selection_space']=selection_space
-        elif args.command in ('pack','unpack','bundle'):
+        elif args.command in ('pack','unpack','bundle','pack-zip'):
             bem.require(args.output, 'OUTPUT: 缺少输出路径')
             if args.command=='pack': result.update(bem_projects.pack_project(args.source,args.output,deformations=args.deformations))
             elif args.command=='unpack': result.update(bem_projects.unpack(args.source,args.output))
+            elif args.command=='pack-zip':
+                result.update(bem_projects.pack_zip(args.source,args.output,preview=args.preview))
             else: result.update(bem_projects.bundle([args.source,*args.additional],args.output))
         else:
             bem.require(args.output,'OUTPUT: 请选择输出文件')

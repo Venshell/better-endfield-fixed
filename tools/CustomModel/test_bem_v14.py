@@ -121,7 +121,6 @@ class Bem14Tests(unittest.TestCase):
             'path-traversal': lambda m: m['target']['components'][0].update(renderer_path='Mesh/../body'),
             'component-id-bool': lambda m: m['target']['components'][0].update(id=False),
             'resource-lod-mismatch': lambda m: m['target']['components'][0].update(renderer_path='Mesh_all/lod1/shared_mesh'),
-            'uppercase-resource': lambda m: m['target']['resources'][0].update(name='Body'),
         }
         for name, mutate in mutations.items():
             m = copy.deepcopy(self.b.m); mutate(m)

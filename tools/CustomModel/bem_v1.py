@@ -9,6 +9,7 @@ import re
 import struct
 import zlib
 from pathlib import Path
+import zstd_compat  # noqa: F401  - stdlib stand-in when the zstandard extension is absent
 import zstandard as zstd
 
 MAGIC = b'BEM\x00PKG\x00'
@@ -17,7 +18,8 @@ ENTRY = struct.Struct('<IIQQQ')
 LIMIT = 512 * 1024 * 1024
 ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$')
 CAPABILITIES = ['native-materials', 'palette-u8', 'indices-u32', 'fixed-appearances']
-SUPPORTED_CAPABILITIES = CAPABILITIES + ['texture-astc']
+SUPPORTED_CAPABILITIES = CAPABILITIES + ['texture-astc', 'material-overrides-v1', 'root-offset-v1',
+                                         'dynamic-drivers-v1']
 
 
 def require(ok, message):
@@ -57,17 +59,33 @@ def validate_manifest(m, payload_count, minor=None):
     """`minor` is the header minor; None validates composable content under the newest limits."""
     # Match native numeric/string bounds before Python indexing (negative indexes
     # must never silently select the last donor or resource).
-    def tree(value, depth=0):
+    def tree(value, depth=0, allow_float=False):
         require(depth <= 48, 'Manifest nesting exceeds 48')
         if isinstance(value, dict):
-            for v in value.values(): tree(v, depth+1)
+            for k, v in value.items():
+                tree(v, depth+1, allow_float or k in (
+                    'material_overrides', 'floats', 'colors', 'vectors', 'translation',
+                    # Section 13 clock parameters are fractional by nature and are
+                    # validated field by field in bem_v15.
+                    'drivers'))
         elif isinstance(value, list):
-            for v in value: tree(v, depth+1)
+            for v in value: tree(v, depth+1, allow_float)
         elif type(value) in (int, float):
-            require(type(value) is int and 0 <= value <= 0xffffffff, 'Manifest integers must be UInt32')
+            if allow_float and isinstance(value, (int, float)):
+                import math
+                require(math.isfinite(value), 'Manifest floats must be finite')
+            else:
+                require(type(value) is int and 0 <= value <= 0xffffffff, 'Manifest integers must be UInt32')
         elif isinstance(value, str):
             require('\0' not in value, 'NUL in manifest string')
     tree(m)
+    if minor == 5:
+        import bem_v15
+        return bem_v15.validate_manifest(m, payload_count, minor)
+    if minor is None:
+        import bem_v15
+        if bem_v15.used(m):
+            return bem_v15.validate_manifest(m, payload_count, minor)
     import bem_v14
     if minor == 4 or bem_v14.used(m):
         return bem_v14.validate_manifest(m, payload_count, minor)
@@ -226,7 +244,7 @@ def package_minor(path):
         h = f.read(HEADER.size)
     require(len(h) == HEADER.size, 'Truncated BEM header')
     magic, major, minor = HEADER.unpack(h)[:3]
-    require(magic == MAGIC and major == 1 and minor in (0, 1, 2, 3, 4), 'Unsupported BEM header/version')
+    require(magic == MAGIC and major == 1 and minor in (0, 1, 2, 3, 4, 5), 'Unsupported BEM header/version')
     return minor
 
 
@@ -236,7 +254,7 @@ def read_package(path, decode=True):
         h = f.read(HEADER.size)
         require(len(h) == HEADER.size, 'Truncated BEM header')
         magic, major, minor, hs, fs, ms, count, flags = HEADER.unpack(h)
-        require(magic == MAGIC and major == 1 and minor in (0, 1, 2, 3, 4) and hs == HEADER.size and not flags,
+        require(magic == MAGIC and major == 1 and minor in (0, 1, 2, 3, 4, 5) and hs == HEADER.size and not flags,
                 'Unsupported BEM header/version')
         require(fs == size and fs <= 2 * 1024**3 and 0 < ms <= 4 * 1024**2 and
                 count <= (16384 if minor >= 2 else 4096), 'Invalid BEM sizes')

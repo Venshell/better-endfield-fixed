@@ -31,6 +31,22 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(bem.read_package(self.root/'edit.bem')[0]['appearances'][0]['name'], '已编辑')
         p['payload_files'][0] = '../one.bem'; path.write_text(json.dumps(p), encoding='utf-8')
         with self.assertRaises(ValueError): projects.pack_project(path, self.root/'rejected.bem')
+    def test_pack_accepts_project_directory(self):
+        out = self.root/'editable'; projects.unpack(self.one, out)
+        from_dir = self.root/'from-dir.bem'; from_file = self.root/'from-file.bem'
+        projects.pack_project(out, from_dir)
+        projects.pack_project(out/'project.json', from_file)
+        self.assertEqual(from_dir.read_bytes(), from_file.read_bytes())
+        self.assertEqual(bem.read_package(from_dir), bem.read_package(self.one))
+    def test_pack_reports_unusable_project_input(self):
+        empty = self.root/'empty'; empty.mkdir()
+        with self.assertRaisesRegex(ValueError, 'contains no project.json'):
+            projects.pack_project(empty, self.root/'missing.bem')
+        with self.assertRaisesRegex(ValueError, 'does not exist'):
+            projects.pack_project(self.root/'nowhere', self.root/'missing.bem')
+        binary = self.root/'binary.bem'; binary.write_bytes(b'\x00\xff\xfe not json')
+        with self.assertRaisesRegex(ValueError, 'not readable JSON'):
+            projects.pack_project(binary, self.root/'missing.bem')
     def test_bundle_stored_members_and_stage(self):
         zip = self.root/'collection.zip'; projects.bundle([self.one,self.two], zip)
         with zipfile.ZipFile(zip) as z:
@@ -76,3 +92,43 @@ class ProjectTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class ZipPackageTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.root = Path(self.temp.name)
+        self.source = self.root/'model.bem'; fixture().write(self.source)
+    def tearDown(self): self.temp.cleanup()
+
+    def test_pack_zip_roundtrip_is_byte_identical(self):
+        package = self.root/'model.zip'
+        report = projects.pack_zip(self.source, package)
+        self.assertEqual(report['format'], 'BEM-ZIP-PACKAGE')
+        self.assertEqual(report['payload_count'], len(bem.read_package(self.source)[1]))
+        self.assertTrue(projects.has_package_manifest(package))
+        read = projects.read_zip_package(package)
+        self.assertEqual(read['prefix'], '')
+        self.assertEqual(read['manifest']['format_version'], '1.0')
+        # The package must survive a trip through an editable project unchanged.
+        project = self.root/'project'; projects.unpack(package, project)
+        rebuilt = self.root/'rebuilt.bem'; projects.pack_project(project/'project.json', rebuilt)
+        self.assertEqual(self.source.read_bytes(), rebuilt.read_bytes())
+
+    def test_wrapper_folder_is_unwrapped(self):
+        inner = self.root/'model.zip'; projects.pack_zip(self.source, inner)
+        wrapped = self.root/'wrapped.zip'
+        with zipfile.ZipFile(inner) as src, zipfile.ZipFile(wrapped, 'w') as dst:
+            for entry in src.infolist():
+                dst.writestr('MyModel/' + entry.filename, src.read(entry))
+        self.assertTrue(projects.has_package_manifest(wrapped))
+        self.assertEqual(projects.read_zip_package(wrapped)['prefix'], 'MyModel/')
+
+    def test_missing_payload_and_bundle_are_rejected(self):
+        broken = self.root/'broken.zip'
+        with zipfile.ZipFile(broken, 'w') as archive:
+            archive.writestr('manifest.json', json.dumps(dict(
+                package_id='p', target={}, meshes=[dict(streams=[dict(payload=0)])])))
+        with self.assertRaises(ValueError): projects.read_zip_package(broken)
+        bundle = self.root/'bundle.zip'; projects.bundle([self.source], bundle)
+        self.assertFalse(projects.has_package_manifest(bundle))
+        self.assertTrue(projects.has_bem_members(bundle))
