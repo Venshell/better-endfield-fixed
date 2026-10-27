@@ -41,6 +41,7 @@ final class BemInstaller {
     }
     static volatile PendingBundle pendingBundle;
     static native String convertNative(String input, String output, String rules, boolean astc) throws IOException;
+    static native String repairNormalsNative(String input, String output, boolean astc) throws IOException;
     static native String inspectNative(String input) throws IOException;
     static native void cancelNative();
     // Called on the native conversion worker, consumed by the management UI.
