@@ -37,6 +37,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "animation_driver.h"
 namespace BetterEndfield::CustomModel {
 namespace {
 constexpr char kModuleId[]="betterendfield.custom_model";
@@ -127,6 +128,31 @@ struct EngineBindings {
     bool resolved = false;
 };
 EngineBindings g_engine{};
+
+// UnityEngine.Mesh::SetNativeArrayForChannelImpl is the Android-retained icall
+// behind Mesh.SetVertices. Unlike a raw write into the native vertex buffer it
+// marks the channel dirty, refreshes the GPU copy and leaves every other
+// channel alone, so normals, UVs and the skin streams are never touched.
+using MeshSetNativeArrayForChannelFn = void(*)(void* mesh, int32_t channel, int32_t format,
+    int32_t dim, const void* values, int32_t array_size, int32_t values_start,
+    int32_t values_count, int32_t flags);
+struct {
+    MeshSetNativeArrayForChannelFn set_native_channel = nullptr;
+} g_channel;
+constexpr int kVertexUploadChannel = 0; // SetNativeArrayForChannelImpl (Android default)
+
+AnimationDriverHost g_animation_driver;
+// Immutable morph samples owned by the loaded component, keyed by live mesh ID.
+struct DynamicMeshRecord {
+    int32_t component_id = -1;
+    std::shared_ptr<const BemMorphSet> morph;
+};
+std::unordered_map<int32_t, DynamicMeshRecord> g_dynamic_meshes;
+// Set while the previous frame pushed driver weights into the meshes, so the
+// first frame carrying none restores the authored pose exactly once.
+bool g_driver_morph_active = false;
+std::unordered_set<void*> g_driver_dirty_meshes;
+void EnsureAnimationDriverLoaded();
 
 // Unboxed UnityEngine.Rendering.SubMeshDescriptor: Bounds, then six Int32.
 struct SubMeshDescriptorRaw {
@@ -950,6 +976,13 @@ bool ResolveEngineBindings() {
     HMODULE game = GetModuleHandleW(L"GameAssembly.dll");
     auto resolve = reinterpret_cast<ResolveIcallFn>(GetProcAddress(game,"il2cpp_resolve_icall"));
     g_engine.upload_mesh_data = reinterpret_cast<MeshUploadDataFn>(resolve ? resolve("UnityEngine.Mesh::UploadMeshDataImpl") : nullptr);
+    g_channel.set_native_channel = reinterpret_cast<MeshSetNativeArrayForChannelFn>(
+        resolve ? resolve("UnityEngine.Mesh::SetNativeArrayForChannelImpl") : nullptr);
+    Log("Android engine bindings: upload=" + std::to_string(g_engine.upload_mesh_data != nullptr) +
+        " channel=" + std::to_string(g_channel.set_native_channel != nullptr));
+    // Never gate model construction on the optional position channel setter: a
+    // missing icall must degrade to a static (non-animated) model, not to a
+    // refused replacement.
     g_engine.resolved = g_engine.upload_mesh_data != nullptr;
     return g_engine.resolved;
 #else
@@ -1509,6 +1542,21 @@ bool BuildMeshFromComponent(
         final_influences != source_native_influences)) {
         Log(label + " native skin field changed after upload; refusing.");
         DestroyUnityObject(mesh); return false;
+    }
+
+    // Section 10 samples captured at load. Registering them here is what lets a
+    // driver address this mesh later; without a record the tick has nothing to
+    // write into.
+    if (component.morph && !component.morph->channels.empty()) {
+        int32_t mesh_id = 0;
+        if (InvokeValue(Contract("object.instance_id"), mesh, nullptr, mesh_id) && mesh_id != 0) {
+            DynamicMeshRecord rec{};
+            rec.component_id = info.component_id;
+            rec.morph = component.morph;
+            g_dynamic_meshes[mesh_id] = std::move(rec);
+            Log(label + " registered morph source: " + std::to_string(component.morph->channels.size()) +
+                " channels, " + std::to_string(component.morph->vertices.size()) + " sampled vertices");
+        }
     }
 
     new_mesh = mesh;
@@ -2495,6 +2543,107 @@ struct CompletedResource {
     std::vector<CompletedBinding> bindings;
 };
 std::vector<CompletedResource> g_completed;
+
+// ---- Section 10/13 driver morph application ----
+struct DriverMorphValue {
+    const std::string* parameter=nullptr;
+    float range_low=0.0f,range_high=1.0f,weight=0.0f;
+};
+// Every live mesh that captured a morph source, resolved through the bindings
+// currently attached to the character.
+template <typename Fn>
+void ForEachMorphedMesh(Fn&& visit) {
+    for (const auto& completed:g_completed) {
+        void* root=completed.root.Get();
+        if (!root || !IsNativeObjectAlive(root)) continue;
+        for (const auto& binding:completed.bindings) {
+            const int32_t mesh_id=binding.mesh.instance_id;
+            if (mesh_id==0) continue;
+            const auto found=g_dynamic_meshes.find(mesh_id);
+            if (found==g_dynamic_meshes.end() || !found->second.morph) continue;
+            void* mesh=binding.mesh.Get();
+            if (!mesh || !IsNativeObjectAlive(mesh)) continue;
+            visit(mesh,*found->second.morph);
+        }
+    }
+}
+// Rebuilds the Position channel of a registered mesh from the captured base,
+// adds the sampled deltas and uploads the whole channel through the icall that
+// Android retains (Mesh::SetNativeArrayForChannelImpl). Every other channel is
+// byte-for-byte untouched, so shading and the skin streams stay intact.
+bool UploadMeshPositions(
+    void* mesh, const BemMorphSet& set, const std::vector<float>& accumulated,
+    const std::vector<uint32_t>& touched) {
+    if (!g_channel.set_native_channel || !mesh || set.stride <= 0) return false;
+    const size_t vertex_count = set.base.size() / size_t(set.stride);
+    if (!vertex_count || vertex_count > (size_t(1) << 24) || set.offset + 12 > set.stride) return false;
+
+    thread_local std::vector<float> positions;
+    positions.resize(vertex_count * 3);
+    const uint8_t* base = set.base.data();
+    for (size_t v = 0; v < vertex_count; ++v)
+        std::memcpy(positions.data() + v * 3, base + v * size_t(set.stride) + set.offset, 12);
+
+    for (size_t i = 0; i < touched.size(); ++i) {
+        const size_t index = touched[i];
+        if (index >= set.vertices.size()) continue;
+        const size_t vertex = set.vertices[index];
+        if (vertex >= vertex_count) continue;
+        float* position = positions.data() + vertex * 3;
+        const float* delta = accumulated.data() + index * 3;
+        for (int axis = 0; axis < 3; ++axis) position[axis] += delta[axis];
+    }
+    g_channel.set_native_channel(mesh, 0 /*Position*/, 0 /*Float32*/, 3,
+        positions.data(), static_cast<int32_t>(vertex_count), 0,
+        static_cast<int32_t>(vertex_count), 0 /*MeshUpdateFlags.Default*/);
+    if (g_engine.upload_mesh_data) g_engine.upload_mesh_data(mesh, false);
+    return true;
+}
+// Rebuilds the position stream of every registered mesh from its captured base
+// and uploads only when something moved. `values` empty means no driver is
+// playing, which restores the authored weights once and then idles.
+void ApplyDriverMorph(const std::vector<DriverMorphValue>& values) {
+    if (!g_driver_morph_active && values.empty()) return;
+    const bool had_work=g_driver_morph_active;
+    g_driver_morph_active=!values.empty();
+    if (!g_driver_morph_active && !had_work) return;
+
+    thread_local std::vector<float> accumulated;
+    thread_local std::vector<uint32_t> touched;
+
+    ForEachMorphedMesh([&](void* mesh,const BemMorphSet& set) {
+        if (set.vertices.empty() || set.channels.empty() || set.base.empty()) return;
+        // accumulated[] is indexed exactly like BemMorphSet::vertices, which is
+        // the layout SampleMorphChannel validates against.
+        accumulated.assign(set.vertices.size()*3,0.0f);
+        for (const auto& channel:set.channels) {
+            const DriverMorphValue* driven=nullptr;
+            for (const auto& value:values)
+                if (value.parameter && *value.parameter == channel.parameter) {driven=&value;break;}
+            // A negative weight is the restore sample: it replays whatever the
+            // load-time tick selected, so parameters no driver owns keep their
+            // authored pose while a neighbour is animated.
+            if (driven) SampleMorphChannel(channel,set,driven->range_low,driven->range_high,driven->weight,accumulated);
+            else SampleMorphChannel(channel,set,0.0f,1.0f,-1.0f,accumulated);
+        }
+        touched.clear();
+        for (size_t i=0;i<set.vertices.size();++i) {
+            const float* d=accumulated.data()+i*3;
+            if (d[0]!=0.0f || d[1]!=0.0f || d[2]!=0.0f) touched.push_back(static_cast<uint32_t>(i));
+        }
+        // An empty delta set is a legitimate frame: Stop restoring the authored
+        // pose, or a pingpong/sine sample at phase 0. For a mesh the driver has
+        // already displaced, the GPU still holds that pose, so the frame must be
+        // uploaded anyway -- skipping it is what left the mesh frozen after Stop.
+        const bool was_dirty = g_driver_dirty_meshes.contains(mesh);
+        if (touched.empty() && !was_dirty) return;
+        UploadMeshPositions(mesh, set, accumulated, touched);
+        // Record whether the device now holds a driver pose for this mesh.
+        if (touched.empty()) g_driver_dirty_meshes.erase(mesh);
+        else g_driver_dirty_meshes.insert(mesh);
+    });
+}
+
 #if defined(__ANDROID__)
 WeakObject g_android_test_world;
 #endif
@@ -3482,6 +3631,25 @@ void __fastcall ResourcePump(void* method) {
         if (!g_enabled.load()) return;
         ConstructionScope construction;
         const bool stop=g_stopping.load();
+        // Drivers advance on every pump tick while enabled. A driverless setup
+        // costs one registry scan and one empty morph pass.
+        EnsureAnimationDriverLoaded();
+        if (!stop && g_animation_driver.DriverCount() > 0) {
+            // Morph bindings are collected first and applied once after the tick:
+            // a mesh can be driven on several parameters at the same time, and
+            // section 10 sums their deltas over one base instead of layering
+            // uploads on top of each other.
+            std::vector<DriverMorphValue> morph_values;
+            DriverSink sink{};
+            sink.on_morph_parameter = [&](const std::string& param, float low, float high, float val) {
+                    morph_values.push_back(DriverMorphValue{&param, low, high, val});
+                };
+            g_animation_driver.Tick(0.016f, sink);
+            ApplyDriverMorph(morph_values);
+        }
+        else {
+            ApplyDriverMorph({});
+        }
 #if defined(__ANDROID__)
         // Mobile world resources start at LOD1. Preserve the game's LOD and
         // culling state; the Android adapter binds the actual resource LOD.
@@ -3509,6 +3677,53 @@ void __fastcall ResourcePump(void* method) {
         }
     } catch (const std::exception& error) { Log(std::string("Resource maintenance failed: ")+error.what()); }
     catch (...) { Log("Resource maintenance failed."); }
+}
+// Dynamic drivers live in the package manifest only. The sidecar .anim.json
+// route was a development vehicle and was never released, so there is no
+// compatibility surface to keep. A package whose manifest cannot be read is
+// retried on a timer instead of once per frame.
+void EnsureAnimationDriverLoaded() {
+    if (g_registry.enabled.empty()) return;
+    static std::string applied_overrides;
+    static std::string failed_package;
+    static uint64_t retry_at=0;
+    for (const auto& mod : g_registry.enabled) {
+        const std::string package=mod.package.string();
+        if (g_animation_driver.LoadedPath() != package) {
+            const uint64_t now=GetTickCount64();
+            if (failed_package==package && now<retry_at) continue;
+            BemPackageInfo info; std::string why;
+            if (ReadBemManagementInfo(mod.package, info, why, true) && !info.manifest_json.empty()) {
+                g_animation_driver.LoadFromManifest(info.manifest_json, package);
+                failed_package.clear();
+            } else {
+                failed_package=package; retry_at=now+5000;
+            }
+        }
+        // Apply driver play/pause states from mod.drivers (synchronized from the
+        // companion's registry text). Applied only when the text or the package
+        // changes, so it cannot stomp a control surface mid-gesture.
+        if (!mod.drivers.empty() && applied_overrides != package+"\n"+mod.drivers) {
+            applied_overrides = package+"\n"+mod.drivers;
+            std::string rem = mod.drivers;
+            while (!rem.empty()) {
+                auto amp = rem.find('&');
+                const std::string token = rem.substr(0, amp);
+                auto colon = token.find(':');
+                if (colon != std::string::npos) {
+                    const std::string id = token.substr(0, colon);
+                    const std::string state = token.substr(colon + 1);
+                    if (state == "play") g_animation_driver.SetPlaying(id, true);
+                    else if (state == "pause") g_animation_driver.Pause(id);
+                    else if (state == "stop") g_animation_driver.Stop(id);
+                }
+                rem = (amp == std::string::npos) ? "" : rem.substr(amp + 1);
+            }
+        }
+        // Only a loaded driver set ends the search: a paused set must not be
+        // replaced by the next package in the list.
+        if (g_animation_driver.DriverCount() > 0) break;
+    }
 }
 bool ReadRuntimeRegistry() {
     std::array<char,4096> catalog{};
@@ -3624,6 +3839,7 @@ BE_Result BE_CALL InitializeResourceModule(const BE_HostApiV1* host) {
     g_host=host;
     try {
         BeginProbeStatus();
+        g_animation_driver.SetLogger([](const std::string& msg){ Log(msg); });
         if (!ReadRuntimeRegistry() || !ResolveRuntimeContracts()) { WriteProbeStatus("initialization_failed"); return BE_Result_ContractMismatch; }
 #if defined(__ANDROID__)
         g_retire_hooks=host->release_module_hooks;
