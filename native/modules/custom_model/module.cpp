@@ -397,6 +397,11 @@ MethodContract g_methods[]{
     {"transform.local_to_world", {"UnityEngine.CoreModule.dll","UnityEngine","Transform","get_localToWorldMatrix",nullptr,"UnityEngine.Matrix4x4",0},false},
     {"probe.material_shader", {"UnityEngine.CoreModule.dll","UnityEngine","Material","get_shader",nullptr,"UnityEngine.Shader",0},false},
     {"material.copy", {"UnityEngine.CoreModule.dll","UnityEngine","Material",".ctor","UnityEngine.Material","System.Void",1},true},
+    {"material.set_float", {"UnityEngine.CoreModule.dll","UnityEngine","Material","SetFloat","System.String|System.Single","System.Void",2},false},
+    {"material.set_color", {"UnityEngine.CoreModule.dll","UnityEngine","Material","SetColor","System.String|UnityEngine.Color","System.Void",2},false},
+    {"material.set_vector", {"UnityEngine.CoreModule.dll","UnityEngine","Material","SetVector","System.String|UnityEngine.Vector4","System.Void",2},false},
+    {"material.disable_keyword", {"UnityEngine.CoreModule.dll","UnityEngine","Material","DisableKeyword","System.String","System.Void",1},false},
+    {"material.enable_keyword", {"UnityEngine.CoreModule.dll","UnityEngine","Material","EnableKeyword","System.String","System.Void",1},false},
     {"object.instance_id", {"UnityEngine.CoreModule.dll","UnityEngine","Object","GetInstanceID",nullptr,"System.Int32",0},true},
     {"object.get_hide_flags", {"UnityEngine.CoreModule.dll","UnityEngine","Object","get_hideFlags",nullptr,"UnityEngine.HideFlags",0},false},
     {"object.set_hide_flags", {"UnityEngine.CoreModule.dll","UnityEngine","Object","set_hideFlags","UnityEngine.HideFlags","System.Void",1},false},
@@ -1833,6 +1838,9 @@ struct PreparedBinding {
     void* original_bones=nullptr;
     void* custom_bones=nullptr;
     std::vector<std::string> bone_names;
+    // Authored BEM 1.5 per-slot overrides for the keep path, applied by
+    // CopyMaterials right after each slot copy.
+    std::vector<BemMaterialOverrides> material_overrides;
     bool original_enabled=true;
     bool custom_enabled=true;
 #if defined(__ANDROID__)
@@ -1841,6 +1849,53 @@ struct PreparedBinding {
     void* original_shadow_mesh=nullptr;
 #endif
 };
+// Property total for the per-component summary. Section 12 quotas allow up to
+// 352 properties on one draw under skip_validation, and a component can hold
+// 256 draws, so the summary reports one line per component instead of one per
+// material.
+size_t OverridePropertyCount(const BemMaterialOverrides& p) {
+    return p.floats.size() + p.colors.size() + p.vectors.size() +
+           p.disable_keywords.size() + p.enable_keywords.size();
+}
+bool ApplyMaterialOverrides(void* material, const BemMaterialOverrides& p, bool skip_validation = false) {
+    if (!material) return false;
+    for (const auto& [name, value] : p.floats) {
+        void* key = NewString(name.c_str());
+        void* args[]{key, (void*)&value};
+        if (!InvokeVoid(Contract("material.set_float"), material, args)) {
+            if (!skip_validation) return false;
+        }
+    }
+    for (const auto& [name, value] : p.colors) {
+        void* key = NewString(name.c_str());
+        void* args[]{key, (void*)value.data()};
+        if (!InvokeVoid(Contract("material.set_color"), material, args)) {
+            if (!skip_validation) return false;
+        }
+    }
+    for (const auto& [name, value] : p.vectors) {
+        void* key = NewString(name.c_str());
+        void* args[]{key, (void*)value.data()};
+        if (!InvokeVoid(Contract("material.set_vector"), material, args)) {
+            if (!skip_validation) return false;
+        }
+    }
+    for (const auto& name : p.disable_keywords) {
+        void* key = NewString(name.c_str());
+        void* args[]{key};
+        if (!InvokeVoid(Contract("material.disable_keyword"), material, args)) {
+            if (!skip_validation) return false;
+        }
+    }
+    for (const auto& name : p.enable_keywords) {
+        void* key = NewString(name.c_str());
+        void* args[]{key};
+        if (!InvokeVoid(Contract("material.enable_keyword"), material, args)) {
+            if (!skip_validation) return false;
+        }
+    }
+    return true;
+}
 bool CopyMaterials(PreparedBinding& binding) {
     binding.original_materials=Invoke(Contract("renderer.get_shared_materials"),binding.renderer,nullptr);
     const int count=ArrayLength(binding.original_materials);
@@ -1851,8 +1906,11 @@ bool CopyMaterials(PreparedBinding& binding) {
         void* source=ArrayValue(binding.original_materials,i);
         void* copy=source?NewAsset(g_material_class.class_info):nullptr;
         void* ctor[]{source}; void* slot[]{copy,&i};
-        if (!copy || !InvokeVoid(Contract("material.copy"),copy,ctor) ||
-            !InvokeVoid(Contract("array.set_value"),binding.custom_materials,slot) ||
+        if (!copy || !InvokeVoid(Contract("material.copy"),copy,ctor)) return false;
+        if (i < static_cast<int>(binding.material_overrides.size()) && !binding.material_overrides[i].empty()) {
+            if (!ApplyMaterialOverrides(copy, binding.material_overrides[i])) return false;
+        }
+        if (!InvokeVoid(Contract("array.set_value"),binding.custom_materials,slot) ||
             ArrayValue(binding.custom_materials,i)!=copy) return false;
     }
     return true;
@@ -1948,6 +2006,7 @@ bool PrepareDrawMaterials(const BemComponent& component,PreparedBinding& target,
     std::map<std::pair<size_t,void*>,void*> texture_cache;
     target.custom_materials=NewArrayLike(target.original_materials,static_cast<int>(component.draws.size()));
     if (!target.custom_materials) return false;
+    size_t override_draws=0,override_properties=0;
     for (size_t i=0;i<component.draws.size();++i) {
         const auto& draw=component.draws[i]; const auto* donor=FindPrepared(bindings,draw.material_component);
         if (!donor || draw.material_slot>=static_cast<uint32_t>(ArrayLength(donor->original_materials))) return false;
@@ -1960,7 +2019,19 @@ bool PrepareDrawMaterials(const BemComponent& component,PreparedBinding& target,
         if (!betterendfield::AndroidAuditMaterialCopy(material,copy)) return false;
 #endif
         if (!ApplyTextureMask(copy,draw.textures,bem,texture_cache)) return false;
+        if (i < component.draw_material_overrides.size() && !component.draw_material_overrides[i].empty()) {
+            const auto& overrides=component.draw_material_overrides[i];
+            if (!ApplyMaterialOverrides(copy, overrides, bem.skip_validation)) {
+                if (!bem.skip_validation) return false;
+            }
+            ++override_draws;
+            override_properties+=OverridePropertyCount(overrides);
+        }
     }
+    if (override_draws)
+        Log("Applied BEM 1.5 material overrides: C"+std::to_string(component.info.component_id)+
+            " draws="+std::to_string(override_draws)+
+            " properties="+std::to_string(override_properties));
     return true;
 }
 bool PrepareKeepMaterials(const BemComponent& component,PreparedBinding& target,const BemPocData& bem) {
@@ -2139,6 +2210,16 @@ bool PrepareResource(const CharacterAdapter& adapter,const BemPocData& bem,void*
         binding.custom_enabled=hidden?false:binding.original_enabled;
         binding.original_materials=Invoke(Contract("renderer.get_shared_materials"),matched,nullptr);
         binding.original_bones=GetRendererBones(matched);
+        // Authored 1.5 draw overrides land on the keep-material slots they name.
+        // The draw path applies its own per-draw overrides in PrepareDrawMaterials.
+        for (size_t d = 0; d < component.draws.size(); ++d) {
+            if (d < component.draw_material_overrides.size() && !component.draw_material_overrides[d].empty()) {
+                const uint32_t slot = component.draws[d].material_slot;
+                if (slot >= binding.material_overrides.size())
+                    binding.material_overrides.resize(slot + 1);
+                binding.material_overrides[slot] = component.draw_material_overrides[d];
+            }
+        }
         bindings.push_back(binding);
     }
     for (size_t i=0;i<bem.components.size();++i) {
