@@ -77,3 +77,32 @@ v4.0.4–v4.1.0 七次发布、BEM Tools 1.5.3→1.7.0、4.1.1 开发分支开�
 - 本文只重新 fetch 了上游引用并读取提交/diff 统计，没有合并、cherry-pick、rebase 或修改任何本地分支。
 - 上游 66 提交未逐个人工审读；分类基于提交标题与目录级 diff 统计，个别提交的实际内容可能与标题归类有出入，实施前应以具体 diff 为准。
 - 本地 main 与移植分支的未提交内容保持原样。
+
+## 7 cherry-pick 执行记录（2026-10-27/28）
+
+采用「只 cherry-pick 选定功能」方案。基线：105 条未提交改动先落成基线提交 `ce726823`（`.workbuddy/` 未吸入），备份分支 `backup/pre-upstream-pick-20261027`。
+
+### 7.1 已移植（4 个，均通过宿主门禁 + Debug 构建）
+
+| 上游提交 | 本地提交 | 冲突处理 |
+| --- | --- | --- |
+| `49403db1` VFS code version 4 无扩展字段解析 | `081d06ac` | 保留本地 v3 布局分支，合并出 `has_tag`(v≥4)/`has_extension`(v≥5) 双标志；接受版本集扩为 (3,4,5) |
+| `285a9e55` voice 预解析 native 卸载保护 | `b0c0c645` | 干净合入 |
+| `22963ac1` MMD 相机取景对齐 PC 绑定头部高度 | `67816a15` | 丢弃上游 4.0.1 发布文档（`docs/workspace/releases/`、CHANGELOG/README hunk）；测试文件保留本地 `BetterEndfield::` 命名空间，采纳 `assert(naturalHeight==0)` 新断言 |
+| `30fba648` 日志句柄常开 + 逐行 flush | `f65dddf6` | **部分采纳**：只取 `native/shared/host/logging.*`（句柄在 Initialize 打开、Write 逐行 flush，文件名保持本地 `BetterEndfield.log`）；module.cpp 的交易级聚合遥测是上游帧切片架构（F14/S6 域）的一部分，与本地同域另一套实现结构性冲突（15 处冲突），整体放弃，留待 S6 按本地架构重设计 |
+
+验证：`:app:verifyPortHost` 6 组 Java 90 项 + Python 26 项通过（改用系统 Python 3.14.6，见 §7.3）；`:app:assembleDebug` 成功（44 任务）。
+
+### 7.2 评估后跳过（依赖本地不存在的上游基座，不作为独立修复移植）
+
+| 上游提交 | 依赖缺口 | 处理 |
+| --- | --- | --- |
+| `996d6272`、`30c5e1ec` LOD 命名/LOD1 证据推导 | 本地 `generate_android_lod_relations.py` 是与上游不同的离线候选工具（无 `config/compatibility/`、workspace-config、`android_lod_relations.generated.h` 接线）；上游改为 1.5.3/1.6.3 双版本配置 | 规则差异（Purrche lod0 命名、per-character prefab LOD1 证据）登记为本地工具的待同步规则，不搬代码 |
+| `9dc5c9b9` 克隆领养 shadow proxy | 依赖 `model_clone_lineage.inc`（上游克隆继承体系，本地未有） | 归入将来的克隆继承功能域 |
+| `a617b158` Aurora 旧骨骼重映射保护 | 依赖 `aurora_legacy_compat.h` 与 `aurora_runtime_checks.inc` | 同上 |
+
+### 7.3 环境注记
+
+- 原 BEM Python 环境 `D:/CodexData/better-endfield-bem-env-20260926` 已不存在（D 盘清理），S1 文档中的门禁命令需改用系统 Python（`C:\Users\Vens_\AppData\Local\Microsoft\WindowsApps\python.exe`，3.14.6，四套件纯标准库可直接跑）；`-PportHostPython` 参数照旧传入新路径。
+- `D:/codexdata/bem-s1-20261011` 产物目录同样已不存在；S1 文档中的哈希记录仅为历史证据。
+- Gradle 用户目录仍为 `F:/CodexData/gradle-user-home`，可用。
