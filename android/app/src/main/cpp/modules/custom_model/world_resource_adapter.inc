@@ -35,6 +35,9 @@ bool PrepareAndroidWorldResource(const CharacterAdapter& adapter,std::string_vie
         }
         if (!path.empty() && !world_bones.emplace(path,bone).second) return false;
     }
+    // Components matched through the lod0 fallback rename their receiver for
+    // the rest of this transaction; the shadow pass reads the same map.
+    std::map<uint32_t,std::string> receiver_names;
     for (size_t i=0;i<sources.size();++i) {
         auto& source=sources[i];
         std::string target_name=adapter.components[source.component_id].name;
@@ -48,6 +51,27 @@ bool PrepareAndroidWorldResource(const CharacterAdapter& adapter,std::string_vie
             if (ObjectName(candidate)!=target_name || path!=std::string("Mesh_all/lod1/")+target_name) continue;
             if (renderer) return false;
             renderer=candidate;
+        }
+        // Purrche-style hats name their receiver "hat_lod0" on the desktop but
+        // ship only a "hat_lod1"-suffixed mesh under Mesh_all/lod0 on Android.
+        // Accept the lod0 renderer by its path and rewrite the adapter name so
+        // the rest of the keep/identity path sees a consistent target.
+        if (!renderer && target_name.ends_with("_lod1")) {
+            std::string lod0_target=target_name;
+            lod0_target.back()='0';
+            for (int j=0;j<count;++j) {
+                void* candidate=ArrayValue(renderers,j);
+                std::string path;
+                if (!ResourceRelativePath(asset,candidate,path)) return false;
+                if (path!=std::string("Mesh_all/lod0/")+lod0_target) continue;
+                if (renderer) return false;
+                renderer=candidate;
+                Log("Android world renderer fallback to lod0 accepted: "+lod0_target);
+            }
+            if (renderer) {
+                target_name=lod0_target;
+                receiver_names[source.component_id]=lod0_target;
+            }
         }
         if (!renderer) { Log("Android world renderer missing: "+target_name); return false; }
         if (!SameMeshSpace(source.renderer,renderer)) {
@@ -151,7 +175,10 @@ bool PrepareAndroidWorldResource(const CharacterAdapter& adapter,std::string_vie
     for (const auto& source:sources) {
         const auto& component=bem.components[source.component_id];
         if (source.custom_mesh==source.original_mesh && !(component.info.flags&kComponentFlagHidden)) continue;
-        std::string stem=adapter.components[source.component_id].name;
+        std::string stem=[&]() {
+            const auto found=receiver_names.find(source.component_id);
+            return found!=receiver_names.end()?found->second:std::string(adapter.components[source.component_id].name);
+        }();
         stem.resize(stem.size()-5); // Exact adapter name has the _lod0 suffix.
         const auto proxy_name=stem+"_shadowProxyMobile";
         for (int j=0;j<count;++j) {
