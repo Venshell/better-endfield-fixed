@@ -106,3 +106,37 @@ v4.0.4–v4.1.0 七次发布、BEM Tools 1.5.3→1.7.0、4.1.1 开发分支开�
 - 原 BEM Python 环境 `D:/CodexData/better-endfield-bem-env-20260926` 已不存在（D 盘清理），S1 文档中的门禁命令需改用系统 Python（`C:\Users\Vens_\AppData\Local\Microsoft\WindowsApps\python.exe`，3.14.6，四套件纯标准库可直接跑）；`-PportHostPython` 参数照旧传入新路径。
 - `D:/codexdata/bem-s1-20261011` 产物目录同样已不存在；S1 文档中的哈希记录仅为历史证据。
 - Gradle 用户目录仍为 `F:/CodexData/gradle-user-home`，可用。
+
+## 8 第二轮移植：BEM 1.5 / 驱动 / 武器 / 纹理（2026-10-28）
+
+用户确认「只 cherry-pick 选定功能」后继续。本批把 BEM 1.5 域整体落地：
+
+| 批次 | 本地提交 | 内容 |
+| --- | --- | --- |
+| 工具层 | `87dae414`、`a97439e7` | BEM Tools 1.6.3：`bem_v15.py`、`zstd_compat.py`、ZIP 容器（`bem_projects.py` pack-zip/inspect-bundle）、`bem_tool.py` 1.5 版本选择/`target-profile`、`bem_v1.py` 浮点白名单树校验、测试全量同步（255 项 OK）；`workspace_config.py` 从 3ef6ed35 恢复并解除 gitignore |
+| native 1.5 核心 | `123ed2b6` | `bem.cpp/bem.h` 上游 main 全量（1.5 头部、material_overrides 解析、root_offset、`BemMorphSet` 运行时源、ZIP 读取、`ExtractBemPayload`）+ `miniz` vendored + `mod_registry.cpp/h` 基线超集（RetainAdapter/RegistryUpdatePlan/ParseResourceModRegistry）+ 上游 drivers/zip 回植 + 本地 1.4 资源守卫三处重放 + `animation_driver.*` + 三个新测试文件（bem_v13_morph 扩展 / animation_driver / bem_v14_resource） |
+| Android 驱动管线 | `a92ebf47`、`a6d07f5e` | registry 文本 `drivers=` 键、install_jni 包报告 `drivers` 数组；`module.cpp` morph 注册（BuildMeshFromComponent）、`SetNativeArrayForChannelImpl` 通道上传、`ApplyDriverMorph`/`ForEachMorphedMesh`、pump tick（0.016s）+ `EnsureAnimationDriverLoaded`（含 ini `drivers=id:play|pause|stop` 覆写）+ `SetLogger` 初始化 |
+| 材质覆盖 | `b0ed2dbe` | 5 个 material 契约、`ApplyMaterialOverrides`/`OverridePropertyCount`、draw 路径（PrepareDrawMaterials）与 keep 路径（CopyMaterials + PreparedBinding.material_overrides 填充） |
+| BEM 1.4 武器 | `ee6e579f` | `SiblingLodPathMatches` 匹配器、`BemOptions.java` 武器跨平台判定/冲突抑制、registry windows-x64 武器回退、sibling 静态广播（PreparedBinding.sibling_static_renderers + Apply/Restore）、sibling 匹配下的 mesh 名放行 |
+| 纹理修复 | `f127d37e`、`44b6971b`、`510359aa` | BC5 解码 Z 重建、`DetectNormalCandidate` 启发式（semantic/编码/文件名/内容）、`RepairNormalTexture` + `repairNormalsNative` JNI + Java native 声明、死蓝通道自愈 |
+| 世界适配器 | `91159fe3` | Purrche 帽 lod0 接收回退（lod1 名→lod0 接收器）+ receiver_names 映射贯通 shadow pass |
+
+验证（每批次后均跑，最终态复验）：`:app:verifyPortHost` **6 组 Java 90 项 + 4 Python 26 项 PASS**；工具层全量 **255 tests OK (5 skipped)**；`:app:assembleDebug` + `:app:assembleDebugAndroidTest` 双包成功（74 任务）。最终 `app-debug.apk` SHA-256 `D871AF293DF31B92FFE40FAB3C9550C597CF065DD108FE635883ECB16BAD7225`（82,647,449 字节）。
+
+### 8.1 本轮明确未移植（登记为缺口）
+
+| 上游能力 | 缺口性质 | 后续入口 |
+| --- | --- | --- |
+| `root_offset` 运行时应用 | 解析/校验/结构已在 bem.cpp/h；应用需要扩展 `SavedOriginalBinding`（visual_root_path/pristine）与热切换恢复链 —— 深度 F12 域工作 | S5 热切换批次一并落地 |
+| 驱动 JNI 控制面（`setCustomModelDriver`/`customModelDriverStatus` + overlay 面板） | 依赖上游 `betterendfieldnext` JNI 命名与 Next 包页面结构；本地 ini `drivers=` 覆写链已可用 | 页面域对齐批次 |
+| 逐模型 ASTC/修复按钮 UI（9116c7ec/96a40305 的 BemInstallPage/BemInstalledResources 部分） | 本地安装 UI 为 Compose（BemInstallScreen.kt），页面结构不同 | 安装页 UI 批次 |
+| 首页功能总览/管理员外观页（d6fe80c7/e76a7cd5/bf6478d8） | Next 包 UI，本地包名/页面树不同 | 产品决策后再排 |
+| 启动自动更新检查（2c642403） | 产品功能取舍未决 | 产品决策 |
+| LOD1 证据推导工具（30c5e1ec，config-driven） | 本地生成器是离线候选工具；上游 Purrche/LOD1 语义已通过世界适配器回退落地 | 目录证据批次 |
+| ZIP 安装入口 Java 侧（BemImportArchive zip 路径,3ff10a02） | 本地已有 ZIP staging 实现（27 项门禁过）；上游扩展（pack-zip 等）在工具层已带 | S2 导入事务批次核对 |
+
+### 8.2 边界声明
+
+- 本轮所有改动只落在移植分支 `codex/android-thirdparty-alignment`；未合并 upstream/main、未 rebase、未推送。
+- `animation_driver.cpp` 的 49 项纯逻辑套件与 `bem_v13_morph_tests` 的 109 项套件仅完成语法/链接验证与工具层等价测试；设备端运行验收仍欠（与 S1 设备门禁同一前提：PJX110 不可用）。
+- 本地 `module.cpp` 保持与上游分叉的 Android 适配结构；morph tick 使用固定 0.016s 步长（上游为帧时间驱动），长会话漂移待设备实测后再评估。
