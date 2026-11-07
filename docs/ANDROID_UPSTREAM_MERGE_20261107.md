@@ -19,7 +19,7 @@
 
 完成合并需要：冲突索引清空、活跃源码无冲突标记、针对性宿主与原生测试通过、Android 构建通过，并检查包入口、头饰目录及签名。若某一项因环境或既有故障无法执行，必须记录具体原因与影响，不得将已通过的其他检查代替该项。
 
-本轮不安装设备、不发布、不推送；构建和签名不证明游戏内第一人称、模型切换、MMD 或长期运行稳定性。历史实机结论只保留原时点和范围。
+最初的合并验收未安装设备，也未发布或推送。后续用户连接 PJX110 并要求安装 Next Debug 包，已在同一设备安装；应用页可启动不证明游戏内第一人称、模型切换、MMD 或长期运行稳定性。历史实机结论只保留原时点和范围。
 
 ## 已发现的既有检查问题
 
@@ -40,6 +40,14 @@
 用户允许把本地入口迁移到上游现行接口。等价能力优先复用新 owner，避免仅为维持旧名称保存双调用链；若替代方案转为独立 E Mod Loader 安装或依赖额外模块，则先核对 Android 能力、配置和 Hook 生命周期，不能仅凭上游删除记录就移除本地可用功能。
 
 本轮 Java 编译暴露旧 View MMD 页面仍调用已退役的散列设置接口；当前 Compose `MmdPage` 已通过 `SettingsState` 使用 `MmdSettings` 和 `MmdLibraryInstaller`，故移除没有调用入口的旧 MMD 页面及旧安装器，保留当前作品导入链。同样移除被 Compose 增强页取代且没有调用入口的旧 View 增强页；当前相机跟随开关仍由 `FreeCameraFollowCharacter` 负责。跨进程资源读取接到已有 `read_resource` Provider 合同。新增上游会客室媒体屏后，将其入口接到 Compose 工具页；静态导航夹具通过 20 项连线检查，不能替代设备交互验收。
+
+## Android UI 声明与 Compose 续接
+
+用户检查安装后的界面后指出 Next 功能遗漏。对照上游 `MainActivity.java`、`AboutPage.java`、`EnhancementSettingsActivity.java` 和媒体页，原有 Compose 已覆盖模型、语音、外观、界面、相机、冲刺、MMD 与悬浮面板，但缺少关于页的语言、更新、资源管理、项目与社区动作，以及创意工坊入口。现由 Compose 关于页调用既有 `AppLanguage`、`AppUpdateChecker`、`DistributionUpdater` 和 `GameResourceStore`；启动自动检查仍读取原配置 key。资源 ZIP 解包增加 2 GiB 总展开量上界。媒体屏从旧 View Activity 换为 Compose Activity，继续使用 `media_screen_settings`、`media_screen_configuration` 与 `media_screen_files`，文件导入仍限制 256 项、图片 32 MiB、MP4 512 MiB。
+
+PJX110 首次截图显示媒体页继承系统标题栏，并在页面内重复返回和标题，导致内容下移。媒体 Activity 现使用 `AppTheme`、与主设置页相同的系统栏处理和返回行，功能开关并入标题卡。重装 Debug 包后实机截图确认标题栏消失；下拉选单、滚动到页面底部和保存按钮均可见。该检查没有导入真实图片或视频，也没有启动游戏验证投屏画面。当前截图保存在本机 `D:/codexdata/bem-merge-20261107/media-after-fix-stable.png` 与 `media-bottom.png`，不作为仓库生成物提交。
+
+本次续接实际运行 `:app:assembleDebug`、`enhancement_navigation_fixture.py`（20 项接线）、`scripts.tests.test_next_identity` 与 `test_distribution_index`（共 7 项），以及 `run_host_gate.py`（118 项 Java 检查、29 项 Python 测试）；均通过。APK 用 `adb install -r -d` 更新到 PJX110，媒体页进入、下拉、滚动、保存成功提示和进程存活已在设备上观察。资源下载、外部链接、真实媒体导入及游戏内输出未做设备验收，不能由本次页面截图推断通过。
 
 ## 宿主门禁与公开 ABI
 

@@ -171,7 +171,7 @@ private fun SettingsBody(
 }
 
 @Composable
-private fun BackButton(onBack: () -> Unit) {
+fun BackButton(onBack: () -> Unit) {
     Text(
         text = "← " + stringResource(R.string.action_back),
         color = Be.Colors.accent,

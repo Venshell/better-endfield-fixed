@@ -105,7 +105,7 @@ final class GameResourceStore {
                     if(!names.add(name) || names.size()>200000)throw new IOException("Duplicate or excessive resource entries");
                     if(!out.getParentFile().isDirectory() && !out.getParentFile().mkdirs())throw new IOException("Cannot create resource directory");
                     try(FileOutputStream sink=new FileOutputStream(out)) {
-                        int n;while((n=zip.read(buffer))!=-1){total+=n;if(stage.getUsableSpace()<n+1024L*1024)throw new IOException("Insufficient storage");sink.write(buffer,0,n);}sink.getFD().sync();
+                        int n;while((n=zip.read(buffer))!=-1){total+=n;if(total>2L*1024*1024*1024)throw new IOException("Resource package exceeds size limit");if(stage.getUsableSpace()<n+1024L*1024)throw new IOException("Insufficient storage");sink.write(buffer,0,n);}sink.getFD().sync();
                     }
                 }
             }

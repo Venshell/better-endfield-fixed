@@ -27,7 +27,8 @@
         <activity android:name=".BemPreviewActivity" android:exported="false" android:hardwareAccelerated="true" android:theme="@style/AppTheme" />
         <activity
             android:name=".MediaScreenActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:theme="@style/AppTheme" />
         <activity
             android:name=".FrameworkBootstrapActivity"
             android:screenOrientation="behind"

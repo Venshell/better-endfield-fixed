@@ -1,12 +1,24 @@
 package dev.betterendfield.next
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The settings app.
@@ -21,6 +33,11 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var settings: SettingsState
     private var overlayPreview: GameOverlay? = null
+    private var availableUpdate by mutableStateOf<AppUpdateChecker.Result?>(null)
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,8 +75,27 @@ class MainActivity : ComponentActivity() {
                         startActivity(Intent(this@MainActivity, BemInstallActivity::class.java))
                     },
                 )
+                availableUpdate?.let { update ->
+                    AlertDialog(
+                        onDismissRequest = { availableUpdate = null },
+                        title = { Text(getString(R.string.next_update_available)) },
+                        text = { Text(getString(R.string.next_update_available_detail, update.currentVersion, update.latestVersion)) },
+                        confirmButton = {
+                            GhostButton(getString(R.string.next_open_releases), {
+                                availableUpdate = null
+                                runCatching {
+                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl)))
+                                }.onFailure {
+                                    Toast.makeText(this@MainActivity, R.string.sponsor_open_failed, Toast.LENGTH_SHORT).show()
+                                }
+                            })
+                        },
+                        dismissButton = { GhostButton(getString(R.string.next_update_later), { availableUpdate = null }) },
+                    )
+                }
             }
         }
+        if (savedInstanceState == null) checkUpdateOnStartup()
     }
 
     override fun onResume() {
@@ -84,6 +120,21 @@ class MainActivity : ComponentActivity() {
     private fun showOverlayPreview() {
         overlayPreview?.remove()
         overlayPreview = GameOverlay(this, true)
+    }
+
+    private fun checkUpdateOnStartup() {
+        if (!FrameworkSettings.open(this).getBoolean(ModuleSettings.AUTO_CHECK_UPDATES, true)) return
+        val missingCore = GameResourceStore.resolve(this, "core") == null
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { DistributionUpdater.update(applicationContext, false, false) }
+            }
+            if (missingCore && GameResourceStore.resolve(this@MainActivity, "core") != null) recreate()
+        }
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { AppUpdateChecker.check() } }
+            result.getOrNull()?.takeIf { it.isUpdateAvailable }?.let { availableUpdate = it }
+        }
     }
 
     companion object {

@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 @Composable
 fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
     val context = LocalContext.current
+    var workshopFailed by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
         OverlayCard(state, onPreviewOverlay)
         DiagnosticsCard(state)
@@ -67,6 +68,24 @@ fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
         }
 
         PanelCard {
+            CardTitle(stringResource(R.string.next_workshop))
+            GhostButton(
+                text = stringResource(R.string.next_workshop),
+                onClick = {
+                    workshopFailed = runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://146.235.16.65:8443/endfield/"))
+                                .addCategory(android.content.Intent.CATEGORY_BROWSABLE),
+                        )
+                    }.isFailure
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
+            )
+            if (workshopFailed) BodyText(stringResource(R.string.next_workshop_failed))
+        }
+
+        PanelCard {
             SubPageRow(
                 title = stringResource(R.string.page_log),
                 hint = stringResource(R.string.log_caption),
@@ -82,7 +101,6 @@ fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
         }
     }
 }
-
 @Composable
 private fun OverlayCard(state: SettingsState, onPreviewOverlay: () -> Unit) {
     SectionCard(
@@ -238,67 +256,6 @@ fun LogPage(state: SettingsState) {
                     modifier = Modifier.padding(Be.Space.l),
                 )
             }
-        }
-    }
-}
-
-/**
- * About. Kept to the facts this build can state about itself: the version the
- * packaging step stamped, the licence, and which modules are registered in the
- * Android runtime - the desktop-only modules are named as absent rather than
- * listed, because a reader looking for battle stats should find out here that
- * they were never part of this build.
- */
-@Composable
-fun AboutPage() {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
-        SectionCard(
-            eyebrow = stringResource(R.string.about_eyebrow),
-            title = stringResource(R.string.page_about),
-            subtitle = stringResource(R.string.about_description),
-        ) {}
-
-        PanelCard {
-            CardTitle(stringResource(R.string.about_version))
-            BodyText(
-                text = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                modifier = Modifier.padding(top = Be.Space.m),
-            )
-            BodyText(
-                text = stringResource(R.string.about_platform),
-                modifier = Modifier.padding(top = Be.Space.s),
-            )
-
-            CardTitle(
-                text = stringResource(R.string.about_license),
-                modifier = Modifier.padding(top = Be.Space.page),
-            )
-            BodyText(
-                text = stringResource(R.string.about_license_value),
-                modifier = Modifier.padding(top = Be.Space.m),
-            )
-
-            CardTitle(
-                text = stringResource(R.string.about_modules),
-                modifier = Modifier.padding(top = Be.Space.page),
-            )
-            BodyText(
-                text = stringResource(R.string.about_modules_value),
-                modifier = Modifier.padding(top = Be.Space.m),
-            )
-            BodyText(
-                text = stringResource(R.string.about_modules_note),
-                modifier = Modifier.padding(top = Be.Space.s),
-            )
-
-            CardTitle(
-                text = stringResource(R.string.about_upstream),
-                modifier = Modifier.padding(top = Be.Space.page),
-            )
-            BodyText(
-                text = stringResource(R.string.about_upstream_value),
-                modifier = Modifier.padding(top = Be.Space.m),
-            )
         }
     }
 }
