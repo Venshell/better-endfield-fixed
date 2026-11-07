@@ -42,8 +42,10 @@ jobs:
           python-version: '3.12'
       - name: Install BEM test dependency
         run: python -m pip install zstandard==0.25.0
+      - name: Prepare pinned JVM JSON dependency
+        run: curl -fL https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar -o "$RUNNER_TEMP/json-20240303.jar"
       - name: Run Android port host gate
-        run: python -B tools/AndroidPort/run_host_gate.py --work-dir "${{ runner.temp }}/port-host"
+        run: python -B tools/AndroidPort/run_host_gate.py --work-dir "${{ runner.temp }}/port-host" --json-jar "$RUNNER_TEMP/json-20240303.jar"
 
   build:
     needs: port-host
@@ -80,8 +82,9 @@ jobs:
 
       - name: Fetch verified headwear catalog
         env:
-          GH_TOKEN: ${{ github.token }}
+          HEADWEAR_CATALOG_URL: ${{ vars.HEADWEAR_CATALOG_URL }}
         run: |
+          python3 -c 'import json,os,pathlib; pathlib.Path("config/workspace.local.json").write_text(json.dumps({"tools":{"android_sdk":os.environ["ANDROID_HOME"],"android_dobby":"tools/android-toolchain/dobby-1.0.5"}}))'
           python3 tools/Camera/fetch_android_headwear_catalog.py --output "$RUNNER_TEMP/headwear"
           echo "HEADWEAR_CATALOG_DIR=$RUNNER_TEMP/headwear/catalog-bundled" >> "$GITHUB_ENV"
 
@@ -93,5 +96,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: better-endfield-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: build/next/android/gradle/app/outputs/apk/debug/*.apk
           if-no-files-found: error

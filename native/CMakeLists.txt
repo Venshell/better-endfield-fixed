@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(BetterEndfieldNative VERSION 3.1.1 LANGUAGES C CXX)
+project(BetterEndfieldNextNative VERSION 3.1.1 LANGUAGES C CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "Better Endfield native runtime targets Windows only.")
@@ -17,20 +17,10 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-set(BETTER_ENDFIELD_STAGE_DIR "${CMAKE_BINARY_DIR}/stage/$<CONFIG>")
-set(BETTER_ENDFIELD_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shared/include")
+set(BETTER_ENDFIELD_NEXT_STAGE_DIR "${CMAKE_BINARY_DIR}/stage/$<CONFIG>")
+set(BETTER_ENDFIELD_NEXT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shared/include")
 
-add_executable(BetterEndfield.FirstPersonMeshTests EXCLUDE_FROM_ALL tests/first_person_mesh_tests.cpp)
-add_executable(BetterEndfield.FirstPersonFacingTests EXCLUDE_FROM_ALL tests/first_person_facing_tests.cpp)
-add_executable(BetterEndfield.FirstPersonMotionTests EXCLUDE_FROM_ALL tests/first_person_motion_tests.cpp)
-add_executable(BetterEndfield.FirstPersonReadbackTests EXCLUDE_FROM_ALL tests/first_person_readback_tests.cpp)
-add_executable(BetterEndfield.FirstPersonCapVerticesTests EXCLUDE_FROM_ALL tests/first_person_cap_vertices_tests.cpp)
-add_executable(BetterEndfield.FirstPersonPolicyTests EXCLUDE_FROM_ALL tests/first_person_policy_tests.cpp)
-add_executable(BetterEndfield.FirstPersonHeadAttachmentTests EXCLUDE_FROM_ALL tests/first_person_head_attachment_tests.cpp)
-add_executable(BetterEndfield.FirstPersonHeadwearFixtureTests EXCLUDE_FROM_ALL tests/first_person_headwear_fixture_tests.cpp)
-add_executable(BetterEndfield.FirstPersonDialogueTests EXCLUDE_FROM_ALL tests/first_person_dialogue_tests.cpp)
-add_executable(BetterEndfield.FirstPersonTransitionTests EXCLUDE_FROM_ALL tests/first_person_transition_tests.cpp)
-add_executable(BetterEndfield.FirstPersonScaleTests EXCLUDE_FROM_ALL tests/first_person_scale_tests.cpp)
+add_executable(BetterEndfieldNext.InjectorLaunchGuardTests EXCLUDE_FROM_ALL tests/injector_launch_guard_tests.cpp)
 
 add_subdirectory(
     "${CMAKE_CURRENT_SOURCE_DIR}/shared/third_party/minhook"
@@ -38,280 +28,417 @@ add_subdirectory(
 )
 
 function(better_endfield_target_defaults target)
-    target_include_directories(${target} PRIVATE "${BETTER_ENDFIELD_INCLUDE_DIR}")
+    target_include_directories(${target} PRIVATE "${BETTER_ENDFIELD_NEXT_INCLUDE_DIR}")
     target_compile_definitions(${target} PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+        target_compile_options(${target} PRIVATE $<$<CONFIG:Release>:/Gy> $<$<CONFIG:Release>:/Gw>)
+        target_link_options(${target} PRIVATE $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
+        set_property(TARGET ${target} PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     endif()
 endfunction()
 
-add_executable(BetterEndfield.FirstPersonCapUploadTests EXCLUDE_FROM_ALL tests/first_person_cap_upload_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.FirstPersonCapUploadTests)
-target_link_libraries(BetterEndfield.FirstPersonCapUploadTests PRIVATE user32)
+add_executable(BetterEndfieldNext.FirstPersonMeshTests EXCLUDE_FROM_ALL tests/first_person_mesh_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonFacingTests EXCLUDE_FROM_ALL tests/first_person_facing_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonMotionTests EXCLUDE_FROM_ALL tests/first_person_motion_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonReadbackTests EXCLUDE_FROM_ALL tests/first_person_readback_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonCapVerticesTests EXCLUDE_FROM_ALL tests/first_person_cap_vertices_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonPolicyTests EXCLUDE_FROM_ALL tests/first_person_policy_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonHeadAttachmentTests EXCLUDE_FROM_ALL tests/first_person_head_attachment_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonHeadwearFixtureTests EXCLUDE_FROM_ALL tests/first_person_headwear_fixture_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonDialogueTests EXCLUDE_FROM_ALL tests/first_person_dialogue_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonTransitionTests EXCLUDE_FROM_ALL tests/first_person_transition_tests.cpp)
+add_executable(BetterEndfieldNext.FirstPersonScaleTests EXCLUDE_FROM_ALL tests/first_person_scale_tests.cpp)
 
-add_executable(BetterEndfield.FirstPersonRestoreTests EXCLUDE_FROM_ALL tests/first_person_restore_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.FirstPersonRestoreTests)
-target_link_libraries(BetterEndfield.FirstPersonRestoreTests PRIVATE user32)
+add_executable(BetterEndfieldNext.FirstPersonCapUploadTests EXCLUDE_FROM_ALL tests/first_person_cap_upload_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.FirstPersonCapUploadTests)
+target_link_libraries(BetterEndfieldNext.FirstPersonCapUploadTests PRIVATE user32)
 
-add_library(BetterEndfield.Host SHARED
+add_executable(BetterEndfieldNext.FirstPersonRestoreTests EXCLUDE_FROM_ALL tests/first_person_restore_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.FirstPersonRestoreTests)
+target_link_libraries(BetterEndfieldNext.FirstPersonRestoreTests PRIVATE user32)
+
+
+add_executable(BetterEndfieldNext.AsyncLoadingTests EXCLUDE_FROM_ALL tests/async_loading/scheduler_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.AsyncLoadingTests)
+target_link_libraries(BetterEndfieldNext.AsyncLoadingTests PRIVATE BetterEndfieldNext.CustomModelCore)
+
+add_executable(BetterEndfieldNext.CameraFollowTests EXCLUDE_FROM_ALL tests/camera_follow_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.CameraFollowTests)
+
+add_executable(BetterEndfieldNext.GenericModelMatchingTests EXCLUDE_FROM_ALL tests/generic_model_matching_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.GenericModelMatchingTests)
+
+add_library(BetterEndfieldNext.Host SHARED
     shared/host/bootstrap.cpp
+    shared/host/pose_lease.cpp
     shared/host/dynamic_resolver.cpp
     shared/host/hook_broker.cpp
+    shared/host/hook_diagnostics.cpp
     shared/host/host_runtime.cpp
     shared/host/logging.cpp
     shared/host/module_manager.cpp
     shared/host/settings_store.cpp
 )
-better_endfield_target_defaults(BetterEndfield.Host)
-target_link_libraries(BetterEndfield.Host PRIVATE minhook)
-set_target_properties(BetterEndfield.Host PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Host"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/runtime"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/runtime"
+better_endfield_target_defaults(BetterEndfieldNext.Host)
+target_link_libraries(BetterEndfieldNext.Host PRIVATE minhook)
+set_target_properties(BetterEndfieldNext.Host PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Host"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/runtime"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/runtime"
 )
 
-add_library(BetterEndfield.Model SHARED modules/model/module.cpp)
-better_endfield_target_defaults(BetterEndfield.Model)
-set_target_properties(BetterEndfield.Model PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Model"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+add_library(BetterEndfieldNext.Model SHARED modules/model/module.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.Model)
+set_target_properties(BetterEndfieldNext.Model PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Model"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
 add_subdirectory(modules/custom_model)
 
-add_library(BetterEndfield.CustomModel SHARED
+add_library(BetterEndfieldNext.MediaScreen SHARED
+    modules/media_screen/module.cpp
+    modules/media_screen/remote_capture.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.MediaScreen)
+set_target_properties(BetterEndfieldNext.MediaScreen PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.MediaScreen"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules")
+
+add_executable(BetterEndfieldNext.MediaCapture WIN32
+    modules/media_screen/capture_broker.cpp
+    modules/media_screen/window_capture.cpp)
+add_library(BetterEndfieldNext.GameInputBridge SHARED modules/media_screen/game_input_bridge.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.GameInputBridge)
+target_link_libraries(BetterEndfieldNext.GameInputBridge PRIVATE minhook dxguid)
+set_target_properties(BetterEndfieldNext.GameInputBridge PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.GameInputBridge"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/runtime")
+add_dependencies(BetterEndfieldNext.MediaCapture BetterEndfieldNext.GameInputBridge)
+better_endfield_target_defaults(BetterEndfieldNext.MediaCapture)
+target_link_libraries(BetterEndfieldNext.MediaCapture PRIVATE d3d11 dxgi windowsapp shell32 dwmapi)
+set_target_properties(BetterEndfieldNext.MediaCapture PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.MediaCapture"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/runtime")
+
+add_library(BetterEndfieldNext.CustomModel SHARED
     modules/custom_model/module.cpp
+    modules/custom_model/animation_driver.cpp
+    modules/custom_model/driver_audio_win.cpp
     modules/custom_model/native_mesh_layout.cpp
     shared/third_party/minhook/src/hde/hde64.c
 )
-better_endfield_target_defaults(BetterEndfield.CustomModel)
-target_link_libraries(BetterEndfield.CustomModel PRIVATE BetterEndfield.CustomModelCore)
-set_target_properties(BetterEndfield.CustomModel PROPERTIES
-    OUTPUT_NAME "BetterEndfield.CustomModel"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+better_endfield_target_defaults(BetterEndfieldNext.CustomModel)
+# WASAPI shared-mode render client for driver sound effects; Media Foundation
+# decodes the effect payloads. Neither touches the game's Wwise graph.
+target_link_libraries(BetterEndfieldNext.CustomModel PRIVATE
+    BetterEndfieldNext.CustomModelCore mfplat mfreadwrite mfuuid ole32)
+set_target_properties(BetterEndfieldNext.CustomModel PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.CustomModel"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_library(BetterEndfield.Voice SHARED modules/voice/module.cpp)
-better_endfield_target_defaults(BetterEndfield.Voice)
-set_target_properties(BetterEndfield.Voice PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Voice"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+add_library(BetterEndfieldNext.Voice SHARED modules/voice/module.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.Voice)
+set_target_properties(BetterEndfieldNext.Voice PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Voice"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_library(BetterEndfield.Music SHARED
+add_library(BetterEndfieldNext.Music SHARED
     modules/music/module.cpp
     modules/music/music_bank.h
     modules/music/omni_pcm_abi.h
+    modules/music/local_track.inc
 )
-better_endfield_target_defaults(BetterEndfield.Music)
-set_target_properties(BetterEndfield.Music PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Music"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+better_endfield_target_defaults(BetterEndfieldNext.Music)
+target_link_libraries(BetterEndfieldNext.Music PRIVATE mfplat mfreadwrite mfuuid ole32)
+set_target_properties(BetterEndfieldNext.Music PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Music"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_library(BetterEndfield.UiModule SHARED
+add_library(BetterEndfieldNext.UiModule SHARED
     modules/ui/module.cpp
     modules/ui/touch_input.cpp
     modules/ui/touch_input.h
+    modules/ui/touch_pointer_policy.cpp
+    modules/ui/touch_pointer_policy.h
 )
-better_endfield_target_defaults(BetterEndfield.UiModule)
-set_target_properties(BetterEndfield.UiModule PROPERTIES
-    OUTPUT_NAME "BetterEndfield.UiModule"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+better_endfield_target_defaults(BetterEndfieldNext.UiModule)
+add_executable(BetterEndfieldNext.TouchPointerPolicyTests EXCLUDE_FROM_ALL
+    tests/ui/touch_pointer_policy_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.TouchPointerPolicyTests)
+set_target_properties(BetterEndfieldNext.UiModule PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.UiModule"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_library(BetterEndfield.Camera SHARED
+add_library(BetterEndfieldNext.Camera SHARED
     modules/camera/module.cpp
+    modules/camera/free_camera_runtime.inc
+    modules/camera/character_motion_runtime.inc
+    modules/camera/mmd_director_runtime.inc
+    modules/camera/mmd_library.h
+    modules/camera/mmd_overlay_protocol.h
 )
-better_endfield_target_defaults(BetterEndfield.Camera)
-set_target_properties(BetterEndfield.Camera PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Camera"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+better_endfield_target_defaults(BetterEndfieldNext.Camera)
+
+# EIEM DirectVmd port (AGPL-3.0, see modules/camera/eiem/UPSTREAM.md). Built as
+# its own object library with EIEM's compile model: narrow Win32 APIs, min/max
+# macros, C++17-style u8 literals. One TU per dancing character (eiem_slot.h).
+# Only eiem_body.h is visible to module.cpp.
+add_library(BetterEndfieldNext.CameraEiem OBJECT
+    modules/camera/eiem/eiem_body.cpp
+    modules/camera/eiem/eiem_body.h
+    modules/camera/eiem/eiem_slot.h
+    modules/camera/eiem/eiem_slot.inc
+    modules/camera/eiem/eiem_slot0.cpp
+    modules/camera/eiem/eiem_slot1.cpp
+    modules/camera/eiem/eiem_slot2.cpp
+    modules/camera/eiem/eiem_slot3.cpp
+)
+target_include_directories(BetterEndfieldNext.CameraEiem PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shared/third_party/minhook/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/modules/camera/eiem/compat"
+    "${CMAKE_CURRENT_SOURCE_DIR}/modules/camera/eiem/upstream"
+    "${CMAKE_CURRENT_SOURCE_DIR}/modules/camera/eiem"
+    "${BETTER_ENDFIELD_NEXT_INCLUDE_DIR}"
+)
+if(MSVC)
+    target_compile_options(BetterEndfieldNext.CameraEiem PRIVATE /W3 /utf-8 /EHsc /Zc:char8_t- /bigobj)
+endif()
+target_link_libraries(BetterEndfieldNext.Camera PRIVATE BetterEndfieldNext.CameraEiem winmm)
+set_target_properties(BetterEndfieldNext.Camera PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Camera"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_library(BetterEndfield.Actions SHARED modules/actions/module.cpp)
-better_endfield_target_defaults(BetterEndfield.Actions)
-set_target_properties(BetterEndfield.Actions PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Actions"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+add_executable(BetterEndfieldNext.MmdOverlay WIN32
+    modules/camera/overlay/main.cpp
+    modules/camera/overlay/mmd_overlay.rc
+    modules/camera/mmd_library.h
+    modules/camera/mmd_overlay_protocol.h
+)
+better_endfield_target_defaults(BetterEndfieldNext.MmdOverlay)
+target_link_libraries(BetterEndfieldNext.MmdOverlay PRIVATE gdiplus shell32)
+if(MSVC)
+    target_link_options(BetterEndfieldNext.MmdOverlay PRIVATE "/MANIFEST:NO")
+endif()
+set_target_properties(BetterEndfieldNext.MmdOverlay PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.MmdOverlay"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_executable(BetterEndfield.ActionsTests EXCLUDE_FROM_ALL modules/actions/dash_policy_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.ActionsTests)
+add_executable(BetterEndfieldNext.ModelOverlay WIN32
+    modules/custom_model/overlay/main.cpp
+    modules/custom_model/overlay/model_overlay.rc
+    modules/custom_model/overlay/model_library.h
+    modules/custom_model/overlay/win32_overlay_window.h
+)
+better_endfield_target_defaults(BetterEndfieldNext.ModelOverlay)
+target_link_libraries(BetterEndfieldNext.ModelOverlay PRIVATE BetterEndfieldNext.CustomModelCore gdiplus shell32)
+if(MSVC)
+    target_link_options(BetterEndfieldNext.ModelOverlay PRIVATE "/MANIFEST:NO")
+endif()
+set_target_properties(BetterEndfieldNext.ModelOverlay PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.ModelOverlay"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+)
 
-add_executable(BetterEndfield.ActionsEffectsTests EXCLUDE_FROM_ALL modules/actions/effects_lifecycle_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.ActionsEffectsTests)
+add_executable(BetterEndfieldNext.ModelOverlayTests EXCLUDE_FROM_ALL
+    modules/custom_model/tests/model_overlay_tests.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.ModelOverlayTests)
 
-add_executable(BetterEndfield.ActionsExternalTests EXCLUDE_FROM_ALL modules/actions/external_loop_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.ActionsExternalTests)
+add_library(BetterEndfieldNext.WeaponAppearance SHARED
+    modules/weapon_appearance/module.cpp
+    modules/weapon_appearance/mapping.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.WeaponAppearance)
+set_target_properties(BetterEndfieldNext.WeaponAppearance PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.WeaponAppearance"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+)
 
-add_executable(BetterEndfield.ActionsPoseTests EXCLUDE_FROM_ALL modules/actions/pose_overlay_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.ActionsPoseTests)
+add_executable(BetterEndfieldNext.WeaponAppearanceTests EXCLUDE_FROM_ALL
+    modules/weapon_appearance/tests/mapping_tests.cpp
+    modules/weapon_appearance/mapping.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.WeaponAppearanceTests)
+target_link_libraries(BetterEndfieldNext.ModelOverlayTests PRIVATE BetterEndfieldNext.CustomModelCore)
 
-add_library(BetterEndfield.Gacha SHARED
+add_library(BetterEndfieldNext.Actions SHARED modules/actions/module.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.Actions)
+set_target_properties(BetterEndfieldNext.Actions PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Actions"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+)
+
+add_executable(BetterEndfieldNext.ActionsTests EXCLUDE_FROM_ALL modules/actions/dash_policy_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.ActionsTests)
+
+add_executable(BetterEndfieldNext.ActionsEffectsTests EXCLUDE_FROM_ALL modules/actions/effects_lifecycle_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.ActionsEffectsTests)
+
+add_executable(BetterEndfieldNext.ActionsExternalTests EXCLUDE_FROM_ALL modules/actions/external_loop_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.ActionsExternalTests)
+
+add_executable(BetterEndfieldNext.ActionsPoseTests EXCLUDE_FROM_ALL modules/actions/pose_overlay_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.ActionsPoseTests)
+
+add_executable(BetterEndfieldNext.ActionsQualityDataTests EXCLUDE_FROM_ALL modules/actions/quality_data_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.ActionsQualityDataTests)
+
+add_executable(BetterEndfieldNext.ActionsQualityTests EXCLUDE_FROM_ALL modules/actions/loop_quality_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.ActionsQualityTests)
+
+add_library(BetterEndfieldNext.Gacha SHARED
     modules/gacha/module.cpp
 )
-better_endfield_target_defaults(BetterEndfield.Gacha)
-target_link_libraries(BetterEndfield.Gacha PRIVATE advapi32)
-set_target_properties(BetterEndfield.Gacha PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Gacha"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+better_endfield_target_defaults(BetterEndfieldNext.Gacha)
+target_link_libraries(BetterEndfieldNext.Gacha PRIVATE advapi32)
+set_target_properties(BetterEndfieldNext.Gacha PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Gacha"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_library(BetterEndfield.CombatStats SHARED
+add_library(BetterEndfieldNext.CombatStats SHARED
     modules/combat_stats/module.cpp
     modules/combat_stats/combat_semantics.cpp
     modules/combat_stats/combat_semantics.h
     modules/combat_stats/rdps_math.h
     modules/combat_stats/combat_overlay_protocol.h
 )
-better_endfield_target_defaults(BetterEndfield.CombatStats)
-target_link_libraries(BetterEndfield.CombatStats PRIVATE shell32)
-set_target_properties(BetterEndfield.CombatStats PROPERTIES
-    OUTPUT_NAME "BetterEndfield.CombatStats"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+better_endfield_target_defaults(BetterEndfieldNext.CombatStats)
+target_link_libraries(BetterEndfieldNext.CombatStats PRIVATE shell32)
+set_target_properties(BetterEndfieldNext.CombatStats PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.CombatStats"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_executable(BetterEndfield.CombatOverlay WIN32
+add_executable(BetterEndfieldNext.CombatOverlay WIN32
     modules/combat_stats/overlay/main.cpp
     modules/combat_stats/overlay/combat_overlay.rc
     modules/combat_stats/overlay/character_assets.generated.h
     modules/combat_stats/overlay/avatars.generated.rcinc
     modules/combat_stats/combat_overlay_protocol.h
 )
-better_endfield_target_defaults(BetterEndfield.CombatOverlay)
-target_link_libraries(BetterEndfield.CombatOverlay PRIVATE gdiplus shlwapi shell32)
+better_endfield_target_defaults(BetterEndfieldNext.CombatOverlay)
+target_link_libraries(BetterEndfieldNext.CombatOverlay PRIVATE gdiplus shlwapi shell32)
 if(MSVC)
-    target_link_options(BetterEndfield.CombatOverlay PRIVATE "/MANIFEST:NO")
+    target_link_options(BetterEndfieldNext.CombatOverlay PRIVATE "/MANIFEST:NO")
 endif()
-set_target_properties(BetterEndfield.CombatOverlay PROPERTIES
-    OUTPUT_NAME "BetterEndfield.CombatOverlay"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/modules"
+set_target_properties(BetterEndfieldNext.CombatOverlay PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.CombatOverlay"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules"
 )
 
-add_executable(BetterEndfield.CombatSemanticsTests EXCLUDE_FROM_ALL
+add_executable(BetterEndfieldNext.CombatSemanticsTests EXCLUDE_FROM_ALL
     tests/combat_semantics_tests.cpp
     modules/combat_stats/combat_semantics.cpp
     modules/combat_stats/combat_semantics.h
     modules/combat_stats/rdps_math.h
 )
-better_endfield_target_defaults(BetterEndfield.CombatSemanticsTests)
+better_endfield_target_defaults(BetterEndfieldNext.CombatSemanticsTests)
 
-option(BETTER_ENDFIELD_BUILD_LEGACY_CUSTOM_MODEL_RESEARCH
+option(BETTER_ENDFIELD_NEXT_BUILD_LEGACY_CUSTOM_MODEL_RESEARCH
     "Expose archived CustomModel PoC lifecycle tests" OFF)
-if(BETTER_ENDFIELD_BUILD_LEGACY_CUSTOM_MODEL_RESEARCH)
+if(BETTER_ENDFIELD_NEXT_BUILD_LEGACY_CUSTOM_MODEL_RESEARCH)
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../research/custom-model/legacy-runtime"
         "${CMAKE_CURRENT_BINARY_DIR}/research/custom-model-legacy")
 endif()
 
-add_executable(BetterEndfield.CustomModelBindingTests EXCLUDE_FROM_ALL
+add_executable(BetterEndfieldNext.CustomModelBindingTests EXCLUDE_FROM_ALL
     tests/custom_model_binding_tests.cpp
+    modules/custom_model/animation_driver.cpp
+    modules/custom_model/driver_audio_win.cpp
     modules/custom_model/native_mesh_layout.cpp
     shared/third_party/minhook/src/hde/hde64.c
 )
-better_endfield_target_defaults(BetterEndfield.CustomModelBindingTests)
-target_link_libraries(BetterEndfield.CustomModelBindingTests PRIVATE BetterEndfield.CustomModelCore)
+better_endfield_target_defaults(BetterEndfieldNext.CustomModelBindingTests)
+target_link_libraries(BetterEndfieldNext.CustomModelBindingTests PRIVATE
+    BetterEndfieldNext.CustomModelCore mfplat mfreadwrite mfuuid ole32)
 
-add_executable(BetterEndfield.AsyncLoadingTests EXCLUDE_FROM_ALL
-    tests/async_loading/scheduler_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.AsyncLoadingTests)
-target_link_libraries(BetterEndfield.AsyncLoadingTests PRIVATE BetterEndfield.CustomModelCore)
+add_executable(BetterEndfieldNext.AndroidWorldBindingTests EXCLUDE_FROM_ALL
+    tests/android_world_binding_tests.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.AndroidWorldBindingTests)
 
-add_executable(BetterEndfield.AndroidTextureBudgetPolicyTests EXCLUDE_FROM_ALL
-    tests/android_texture_budget_policy_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.AndroidTextureBudgetPolicyTests)
+add_executable(BetterEndfieldNext.AndroidModelLodTests EXCLUDE_FROM_ALL
+    tests/android_model_lod_tests.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.AndroidModelLodTests)
 
-add_executable(BetterEndfield.AndroidTextureBudgetRuntimeTests EXCLUDE_FROM_ALL
-    tests/android_texture_budget_runtime_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.AndroidTextureBudgetRuntimeTests)
+add_executable(BetterEndfieldNext.AndroidTextureStreamingDiagnosticsTests EXCLUDE_FROM_ALL
+    tests/android_texture_streaming_diagnostics_tests.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.AndroidTextureStreamingDiagnosticsTests)
 
-add_executable(BetterEndfield.AndroidTextureStreamingDiagnosticsTests EXCLUDE_FROM_ALL
-    tests/android_texture_streaming_diagnostics_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.AndroidTextureStreamingDiagnosticsTests)
+add_executable(BetterEndfieldNext.AndroidTextureBudgetPolicyTests EXCLUDE_FROM_ALL
+    tests/android_texture_budget_policy_tests.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.AndroidTextureBudgetPolicyTests)
 
-add_executable(BetterEndfield.BemV13MorphTests EXCLUDE_FROM_ALL
-    tests/bem_v13_morph_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.BemV13MorphTests)
-target_link_libraries(BetterEndfield.BemV13MorphTests PRIVATE BetterEndfield.CustomModelCore)
+add_executable(BetterEndfieldNext.AndroidTextureBudgetRuntimeTests EXCLUDE_FROM_ALL
+    tests/android_texture_budget_runtime_tests.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.AndroidTextureBudgetRuntimeTests)
 
-add_executable(BetterEndfield.BemV14Tests EXCLUDE_FROM_ALL
-    tests/bem_v14_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.BemV14Tests)
-target_link_libraries(BetterEndfield.BemV14Tests PRIVATE BetterEndfield.CustomModelCore)
+add_executable(BetterEndfieldNext.AndroidLodStreamingObserverTests EXCLUDE_FROM_ALL
+    tests/android_lod_streaming_observer_tests.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.AndroidLodStreamingObserverTests)
 
-add_executable(BetterEndfield.CameraFollowTests EXCLUDE_FROM_ALL
-    tests/camera_follow_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.CameraFollowTests)
-
-add_executable(BetterEndfield.AndroidWorldBindingTests EXCLUDE_FROM_ALL
-    tests/android_world_binding_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.AndroidWorldBindingTests)
-
-add_executable(BetterEndfield.GenericModelMatchingTests EXCLUDE_FROM_ALL
-    tests/generic_model_matching_tests.cpp)
-better_endfield_target_defaults(BetterEndfield.GenericModelMatchingTests)
-
-better_endfield_target_defaults(BetterEndfield.BemValidate)
+better_endfield_target_defaults(BetterEndfieldNext.BemValidate)
 
 # Read-only research utility. It is deliberately excluded from the default
 # build and release layout; build the target explicitly when runtime metadata
 # signatures need to be refreshed.
-add_library(BetterEndfield.MusicProbe SHARED EXCLUDE_FROM_ALL
+add_library(BetterEndfieldNext.MusicProbe SHARED EXCLUDE_FROM_ALL
     research/music_probe/module.cpp
 )
-better_endfield_target_defaults(BetterEndfield.MusicProbe)
-set_target_properties(BetterEndfield.MusicProbe PROPERTIES
-    OUTPUT_NAME "BetterEndfield.MusicProbe"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
-)
-
-# Read-only research probe that answers where the game's own first-person look
-# input lives, so a gyroscope source can feed that instead of writing
-# CameraState. Excluded from the default build and the release layout like the
-# other probes: it only enumerates metadata and logs.
-add_library(BetterEndfield.FpLookProbe SHARED EXCLUDE_FROM_ALL
-    research/fp_look_probe/module.cpp
-)
-better_endfield_target_defaults(BetterEndfield.FpLookProbe)
-set_target_properties(BetterEndfield.FpLookProbe PROPERTIES
-    OUTPUT_NAME "BetterEndfield.FpLookProbe"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
+better_endfield_target_defaults(BetterEndfieldNext.MusicProbe)
+set_target_properties(BetterEndfieldNext.MusicProbe PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.MusicProbe"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
 )
 
 # Standalone research probe for the mobile-UI input path. Also excluded from
 # the default build: it injects synthetic touch to answer whether the Unity
 # backend surfaces WM_POINTER as a Touchscreen device, and is not shipped.
-add_executable(BetterEndfield.TouchProbe EXCLUDE_FROM_ALL
+add_executable(BetterEndfieldNext.TouchProbe EXCLUDE_FROM_ALL
     research/touch_probe/main.cpp
 )
-better_endfield_target_defaults(BetterEndfield.TouchProbe)
-set_target_properties(BetterEndfield.TouchProbe PROPERTIES
-    OUTPUT_NAME "BetterEndfield.TouchProbe"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
+better_endfield_target_defaults(BetterEndfieldNext.TouchProbe)
+set_target_properties(BetterEndfieldNext.TouchProbe PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.TouchProbe"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
 )
 
 # The probe must run at the game's integrity level or UIPI drops its injected
 # input, so it is started from inside the game process rather than a shell.
-add_library(BetterEndfield.TouchProbeLauncher SHARED EXCLUDE_FROM_ALL
+add_library(BetterEndfieldNext.TouchProbeLauncher SHARED EXCLUDE_FROM_ALL
     research/touch_probe/launcher_module.cpp
 )
-better_endfield_target_defaults(BetterEndfield.TouchProbeLauncher)
-set_target_properties(BetterEndfield.TouchProbeLauncher PROPERTIES
-    OUTPUT_NAME "BetterEndfield.TouchProbeLauncher"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
+better_endfield_target_defaults(BetterEndfieldNext.TouchProbeLauncher)
+set_target_properties(BetterEndfieldNext.TouchProbeLauncher PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.TouchProbeLauncher"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
 )
 
 # Buff resource table probe. Excluded from the default build and the release
@@ -319,124 +446,171 @@ set_target_properties(BetterEndfield.TouchProbeLauncher PROPERTIES
 # client's own loader, because the shipped BuffData files are MemoryPack blobs
 # that carry no field names. The source lives under tools/ with the rest of the
 # buff-table pipeline rather than here, since nothing in a release builds it.
-add_library(BetterEndfield.BuffProbe SHARED EXCLUDE_FROM_ALL
+add_library(BetterEndfieldNext.BuffProbe SHARED EXCLUDE_FROM_ALL
     ../tools/BuffProbe/module.cpp
 )
-better_endfield_target_defaults(BetterEndfield.BuffProbe)
-set_target_properties(BetterEndfield.BuffProbe PROPERTIES
-    OUTPUT_NAME "BetterEndfield.BuffProbe"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/research"
+better_endfield_target_defaults(BetterEndfieldNext.BuffProbe)
+set_target_properties(BetterEndfieldNext.BuffProbe PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.BuffProbe"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
 )
 
-add_executable(BetterEndfield.Injector
-    loaders/injector/main.cpp
-    loaders/injector/BetterEndfield.Injector.rc
+add_library(BetterEndfieldNext.OfficialLauncher STATIC
+    loaders/shared/official_launcher.cpp
 )
-better_endfield_target_defaults(BetterEndfield.Injector)
+better_endfield_target_defaults(BetterEndfieldNext.OfficialLauncher)
+target_link_libraries(BetterEndfieldNext.OfficialLauncher PUBLIC wintrust crypt32 shell32 advapi32 user32)
+
+add_executable(BetterEndfieldNext.Launcher
+    loaders/launcher/main.cpp
+    loaders/launcher/BetterEndfieldNext.Launcher.rc
+)
+better_endfield_target_defaults(BetterEndfieldNext.Launcher)
+target_link_libraries(BetterEndfieldNext.Launcher PRIVATE BetterEndfieldNext.OfficialLauncher)
 if(MSVC)
-    target_link_options(BetterEndfield.Injector PRIVATE "/MANIFEST:NO")
+    target_link_options(BetterEndfieldNext.Launcher PRIVATE "/MANIFEST:NO")
 endif()
-set_target_properties(BetterEndfield.Injector PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Injector"
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/loaders"
+set_target_properties(BetterEndfieldNext.Launcher PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Launcher"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/loaders"
+)
+
+add_executable(BetterEndfieldNext.OfficialLauncherTests EXCLUDE_FROM_ALL tests/official_launcher_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.OfficialLauncherTests)
+target_link_libraries(BetterEndfieldNext.OfficialLauncherTests PRIVATE BetterEndfieldNext.OfficialLauncher)
+
+add_executable(BetterEndfieldNext.Injector
+    loaders/injector/main.cpp
+    loaders/injector/BetterEndfieldNext.Injector.rc
+)
+better_endfield_target_defaults(BetterEndfieldNext.Injector)
+target_link_libraries(BetterEndfieldNext.Injector PRIVATE BetterEndfieldNext.OfficialLauncher)
+if(MSVC)
+    target_link_options(BetterEndfieldNext.Injector PRIVATE "/MANIFEST:NO")
+endif()
+set_target_properties(BetterEndfieldNext.Injector PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Injector"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/loaders"
 )
 
 # XInput is the only game-directory proxy. It forwards the system API and
 # starts the Better Endfield Host after IL2CPP is ready.
-add_library(BetterEndfield.XInput14Proxy SHARED
+add_library(BetterEndfieldNext.XInput14Proxy SHARED
     loaders/xinput/input_proxy.cpp
 )
-better_endfield_target_defaults(BetterEndfield.XInput14Proxy)
-target_compile_definitions(BetterEndfield.XInput14Proxy PRIVATE
-    BETTER_ENDFIELD_INPUT_PROXY_MARKER=L"BetterEndfield-xinput1_4-proxy.loaded"
-    BETTER_ENDFIELD_INPUT_PROXY_STATUS=L"BetterEndfield-xinput1_4-host.status"
-    BETTER_ENDFIELD_INPUT_PROXY_XINPUT14
-    BETTER_ENDFIELD_INPUT_PROXY_LOAD_HOST
+better_endfield_target_defaults(BetterEndfieldNext.XInput14Proxy)
+target_compile_definitions(BetterEndfieldNext.XInput14Proxy PRIVATE
+    BETTER_ENDFIELD_NEXT_INPUT_PROXY_MARKER=L"BetterEndfieldNext-xinput1_4-proxy.loaded"
+    BETTER_ENDFIELD_NEXT_INPUT_PROXY_STATUS=L"BetterEndfieldNext-xinput1_4-host.status"
+    BETTER_ENDFIELD_NEXT_INPUT_PROXY_XINPUT14
+    BETTER_ENDFIELD_NEXT_INPUT_PROXY_LOAD_HOST
 )
-set_target_properties(BetterEndfield.XInput14Proxy PROPERTIES
+set_target_properties(BetterEndfieldNext.XInput14Proxy PROPERTIES
     OUTPUT_NAME "xinput1_4"
     PREFIX ""
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/payloads"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/payloads"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/payloads"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/payloads"
 )
 
-add_library(BetterEndfield.Bootstrap SHARED
+add_library(BetterEndfieldNext.Bootstrap SHARED
     loaders/xinput/input_proxy.cpp
 )
-better_endfield_target_defaults(BetterEndfield.Bootstrap)
-target_compile_definitions(BetterEndfield.Bootstrap PRIVATE
-    BETTER_ENDFIELD_INPUT_PROXY_MARKER=L"BetterEndfield-bootstrap.loaded"
-    BETTER_ENDFIELD_INPUT_PROXY_STATUS=L"BetterEndfield-bootstrap-host.status"
-    BETTER_ENDFIELD_INPUT_BOOTSTRAP
-    BETTER_ENDFIELD_INPUT_PROXY_LOAD_HOST
+better_endfield_target_defaults(BetterEndfieldNext.Bootstrap)
+target_compile_definitions(BetterEndfieldNext.Bootstrap PRIVATE
+    BETTER_ENDFIELD_NEXT_INPUT_PROXY_MARKER=L"BetterEndfieldNext-bootstrap.loaded"
+    BETTER_ENDFIELD_NEXT_INPUT_PROXY_STATUS=L"BetterEndfieldNext-bootstrap-host.status"
+    BETTER_ENDFIELD_NEXT_INPUT_BOOTSTRAP
+    BETTER_ENDFIELD_NEXT_INPUT_PROXY_LOAD_HOST
 )
-set_target_properties(BetterEndfield.Bootstrap PROPERTIES
-    OUTPUT_NAME "BetterEndfield.Bootstrap"
+set_target_properties(BetterEndfieldNext.Bootstrap PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.Bootstrap"
     PREFIX ""
-    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/loaders"
-    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_STAGE_DIR}/loaders"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/loaders"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/loaders"
 )
 
-add_custom_target(BetterEndfield.Layout ALL
-    COMMAND ${CMAKE_COMMAND} -E rm -rf "${BETTER_ENDFIELD_STAGE_DIR}/catalog"
+add_custom_target(BetterEndfieldNext.Layout ALL
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/catalog"
     COMMAND ${CMAKE_COMMAND} -E rm -f
-        "${BETTER_ENDFIELD_STAGE_DIR}/payloads/version.dll"
-        "${BETTER_ENDFIELD_STAGE_DIR}/payloads/dinput8.dll"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/payloads/version.dll"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/payloads/dinput8.dll"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/model/betterendfield.model.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.model.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/model/betterendfieldnext.model.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.model.module.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/custom_model/betterendfield.custom_model.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.custom_model.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/custom_model/betterendfieldnext.custom_model.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.custom_model.module.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/voice/betterendfield.voice.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.voice.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/voice/betterendfieldnext.voice.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.voice.module.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/music/betterendfield.music.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.music.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/music/betterendfieldnext.music.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.music.module.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/combat_stats/betterendfield.combat_stats.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.combat_stats.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/media_screen/betterendfieldnext.media_screen.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.media_screen.module.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/ui/betterendfield.ui.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.ui.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/combat_stats/betterendfieldnext.combat_stats.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.combat_stats.module.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/camera/betterendfield.camera.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.camera.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/ui/betterendfieldnext.ui.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.ui.module.ini"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/actions/betterendfield.actions.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.actions.module.ini"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/camera/betterendfieldnext.camera.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.camera.module.ini"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/weapon_appearance/betterendfieldnext.weapon_appearance.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.weapon_appearance.module.ini"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/actions/betterendfieldnext.actions.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.actions.module.ini"
     COMMAND ${CMAKE_COMMAND} -E make_directory
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/actions"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/actions"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/actions/assets/pose_aglina.bin"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/actions/pose_aglina.bin"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/actions/assets/pose_liino.bin"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/actions/pose_liino.bin"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/modules/gacha/betterendfield.gacha.module.ini"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/betterendfield.gacha.module.ini"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/../manifests/combat/combat-semantics.besem"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/combat-semantics.besem"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/../manifests/combat/buff-sources.bemap"
-        "${BETTER_ENDFIELD_STAGE_DIR}/modules/buff-sources.bemap"
+        "${CMAKE_CURRENT_SOURCE_DIR}/modules/gacha/betterendfieldnext.gacha.module.ini"
+        "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/modules/betterendfieldnext.gacha.module.ini"
     DEPENDS
-        BetterEndfield.Host
-        BetterEndfield.Model
-        BetterEndfield.CustomModel
-        BetterEndfield.Voice
-        BetterEndfield.Music
-        BetterEndfield.UiModule
-        BetterEndfield.Camera
-        BetterEndfield.Actions
-        BetterEndfield.Gacha
-        BetterEndfield.CombatStats
-        BetterEndfield.CombatOverlay
-        BetterEndfield.Injector
-        BetterEndfield.Bootstrap
-        BetterEndfield.XInput14Proxy
+        BetterEndfieldNext.BemCompose
+        BetterEndfieldNext.Host
+        BetterEndfieldNext.Model
+        BetterEndfieldNext.CustomModel
+        BetterEndfieldNext.Voice
+        BetterEndfieldNext.Music
+        BetterEndfieldNext.MediaScreen
+        BetterEndfieldNext.MediaCapture
+        BetterEndfieldNext.GameInputBridge
+        BetterEndfieldNext.UiModule
+        BetterEndfieldNext.Camera
+        BetterEndfieldNext.Actions
+        BetterEndfieldNext.WeaponAppearance
+        BetterEndfieldNext.Gacha
+        BetterEndfieldNext.CombatStats
+        BetterEndfieldNext.CombatOverlay
+        BetterEndfieldNext.MmdOverlay
+        BetterEndfieldNext.ModelOverlay
+        BetterEndfieldNext.Injector
+        BetterEndfieldNext.Launcher
+        BetterEndfieldNext.Bootstrap
+        BetterEndfieldNext.XInput14Proxy
 )
+
+# Read-only research probe that answers where the game's own first-person look
+# input lives, so a gyroscope source can feed that instead of writing
+# CameraState. Excluded from the default build and the release layout like the
+# other probes: it only enumerates metadata and logs.
+add_library(BetterEndfieldNext.FpLookProbe SHARED EXCLUDE_FROM_ALL
+    research/fp_look_probe/module.cpp
+)
+better_endfield_target_defaults(BetterEndfieldNext.FpLookProbe)
+set_target_properties(BetterEndfieldNext.FpLookProbe PROPERTIES
+    OUTPUT_NAME "BetterEndfieldNext.FpLookProbe"
+    RUNTIME_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
+    LIBRARY_OUTPUT_DIRECTORY "${BETTER_ENDFIELD_NEXT_STAGE_DIR}/research"
+)
+
+
+# Shared parser publication is atomic; malformed input must retain the caller's active registry.
+add_executable(BetterEndfieldNext.ModRegistryAtomicTests EXCLUDE_FROM_ALL tests/mod_registry_atomic_tests.cpp)
+better_endfield_target_defaults(BetterEndfieldNext.ModRegistryAtomicTests)
+target_link_libraries(BetterEndfieldNext.ModRegistryAtomicTests PRIVATE BetterEndfieldNext.CustomModelCore)

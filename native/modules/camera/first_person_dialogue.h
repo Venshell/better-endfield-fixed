@@ -1,6 +1,6 @@
 #pragma once
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 enum class DialogueManagerRead { Unavailable, Absent, Present };
 using StaticFieldGet = void (*)(const void*,void*);
 
@@ -10,4 +10,4 @@ inline DialogueManagerRead ReadDialogueManager(StaticFieldGet get,const void* fi
     get(field,&manager);
     return manager ? DialogueManagerRead::Present : DialogueManagerRead::Absent;
 }
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

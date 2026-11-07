@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 
 DesktopModule::DesktopModule(
     const char* id,
@@ -18,7 +18,7 @@ DesktopModule::DesktopModule(
       configuration_variable_(configuration_variable),
       api_getter_(api_getter),
       active_message_(std::move(active_message)) {
-    host_.abi_version = BETTER_ENDFIELD_MODULE_ABI_V1;
+    host_.abi_version = BETTER_ENDFIELD_NEXT_MODULE_ABI_V1;
     host_.context = this;
     host_.log = &LogCallback;
     host_.resolve_method = &ResolveMethodCallback;
@@ -70,18 +70,23 @@ ModuleResult DesktopModule::Start(Il2CppRuntime& runtime) {
         return {false, std::move(hook_error)};
     }
     api_ = api_getter_ == nullptr ? nullptr : api_getter_();
-    if (api_ == nullptr || api_->descriptor.abi_version != BETTER_ENDFIELD_MODULE_ABI_V1 ||
+    if (api_ == nullptr || api_->descriptor.abi_version != BETTER_ENDFIELD_NEXT_MODULE_ABI_V1 ||
         api_->initialize == nullptr || api_->configuration_changed == nullptr) {
         return {false, "desktop module ABI is unavailable"};
     }
     const BE_Result initialize = api_->initialize(&host_);
     if (initialize != BE_Result_Ok) {
+        if (api_->shutdown) api_->shutdown();
+        ReleaseHooksCallback(this, id_);
         return {false, "desktop contract initialization failed: " +
             std::to_string(static_cast<int>(initialize))};
     }
     initialized_ = true;
     const BE_Result applied = api_->configuration_changed(configuration_.c_str());
     if (applied != BE_Result_Ok) {
+        if (api_->shutdown) api_->shutdown();
+        ReleaseHooksCallback(this, id_);
+        initialized_ = false;
         return {false, "desktop configuration rejected: " +
             std::to_string(static_cast<int>(applied))};
     }
@@ -94,7 +99,7 @@ DesktopModule* DesktopModule::Self(void* context) {
 
 void DesktopModule::LogCallback(void* context, const char* module_id, const char* message) {
     DesktopModule* self = Self(context);
-    LogInfo(module_id != nullptr ? module_id : (self != nullptr ? self->id_ : "betterendfield"),
+    LogInfo(module_id != nullptr ? module_id : (self != nullptr ? self->id_ : "betterendfieldnext"),
         message == nullptr ? "" : message);
 }
 
@@ -149,14 +154,16 @@ BE_Result DesktopModule::CreateHookCallback(
     if (self == nullptr || target == nullptr || detour == nullptr || original == nullptr) {
         return BE_Result_InvalidArgument;
     }
+    HookRecord record{module_id == nullptr ? self->id_ : module_id, nullptr};
+    self->hooks_.reserve(self->hooks_.size() + 1);
     void* stub = nullptr;
     std::string error;
-    if (!self->hook_broker_.Install(module_id == nullptr ? self->id_ : module_id,
-            target, detour, original, stub, error)) {
+    if (!self->hook_broker_.Install(record.module_id.c_str(), target, detour, original, stub, error)) {
         LogError(self->id_, error.c_str());
         return BE_Result_Failed;
     }
-    self->hooks_.push_back({module_id == nullptr ? self->id_ : module_id, stub});
+    record.stub = stub;
+    self->hooks_.push_back(std::move(record));
     return BE_Result_Ok;
 }
 
@@ -289,4 +296,4 @@ void* DesktopModule::FieldGetValueObjectCallback(
             reinterpret_cast<const FieldInfo*>(field_info), instance);
 }
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext

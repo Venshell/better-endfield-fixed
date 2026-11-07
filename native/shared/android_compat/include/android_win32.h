@@ -1,13 +1,13 @@
 #pragma once
 
-// Win32 surface used by the desktop Better Endfield modules, implemented for
+// Win32 surface used by the desktop Better Endfield Next modules, implemented for
 // Android/ARM64. The desktop module sources are compiled unchanged; this header
 // is reached through the compatibility <Windows.h> beside it, which is only on
 // the include path of the desktop-module translation units.
 //
 // Nothing here emulates Windows in general. Every entry is either a direct POSIX
-// equivalent (thread id, monotonic clock, dlopen/dlsym, read-only file access) or
-// the documented Android stand-in for a desktop-only concept:
+// equivalent (thread id, monotonic clock, dlopen/dlsym) or the documented
+// Android stand-in for a desktop-only concept:
 //
 //   * GetAsyncKeyState reads the virtual-key latch in android_virtual_keys.h.
 //     The in-game panel presses those keys, so the desktop hotkey code paths run
@@ -18,9 +18,9 @@
 //     addresses that a reader would take for real GameAssembly offsets.
 //
 // Desktop-only facilities that cannot be represented honestly - structured
-// exception handling, the module's own DLL directory, the append-only trace file,
-// the low-level mouse hook - are not declared here at all. Their call sites carry
-// an explicit `#if defined(_WIN32)` branch instead.
+// exception handling, the module's own DLL directory, the append-only trace file
+// - are not declared here at all. Their call sites carry an explicit
+// `#if defined(_WIN32)` branch instead.
 
 #if defined(_WIN32)
 #error "android_win32.h is the Android stand-in for <Windows.h>"
@@ -31,7 +31,7 @@
 #include <strings.h>
 
 #include "android_virtual_keys.h"
-#include "android_panel_commands.h"
+#include "android_frame.h"
 
 // The desktop modules spell out the x86 calling convention on every detour and
 // every managed function pointer. AArch64 has one convention, so the qualifier
@@ -44,18 +44,14 @@
 
 using DWORD = std::uint32_t;
 using ULONG = std::uint32_t;
-// The MMD overlay protocol carries its sequence lock in LONG fields. Win32
-// defines LONG as a 32-bit signed value on every target, so the alias has to
-// follow the same width rather than the pointer width.
-using LONG = std::int32_t;
 using WORD = std::uint16_t;
 using USHORT = std::uint16_t;
 using SHORT = std::int16_t;
 using BYTE = std::uint8_t;
 using BOOL = int;
+using LONG = std::int32_t;
 using HMODULE = void*;
 using HWND = void*;
-using HANDLE = void*;
 using LPCWSTR = const wchar_t*;
 using LPWSTR = wchar_t*;
 using LPCSTR = const char*;
@@ -85,53 +81,17 @@ union LARGE_INTEGER {
     std::int64_t QuadPart;
 };
 
-// Read-only file access, which is the POSIX descriptor API under its Win32
-// names: the desktop modules that load a data file by path (the VMD camera
-// importer) compile against it unchanged. The write side is deliberately absent -
-// the only desktop caller is the append-only trace file, whose call site is
-// platform-guarded because logcat already persists every line.
-//
-// A handle stores the descriptor plus one, so the null handle can never be a
-// descriptor: open() returns 0 once stdin has been closed, and closing that would
-// be a silent mistake.
-#define GENERIC_READ 0x80000000u
-#define FILE_SHARE_READ 0x00000001u
-#define OPEN_EXISTING 3u
-#define FILE_ATTRIBUTE_NORMAL 0x80u
-#define CP_UTF8 65001u
-#define INVALID_HANDLE_VALUE (reinterpret_cast<HANDLE>(static_cast<std::intptr_t>(-1)))
-
-// Only GENERIC_READ with OPEN_EXISTING opens; any other combination reports
-// failure instead of pretending to honour access modes POSIX does not have.
-HANDLE CreateFileW(LPCWSTR file_name, DWORD desired_access, DWORD share_mode,
-    void* security_attributes, DWORD creation_disposition,
-    DWORD flags_and_attributes, void* template_file);
-BOOL ReadFile(HANDLE file, void* buffer, DWORD bytes_to_read, DWORD* bytes_read,
-    void* overlapped);
-BOOL GetFileSizeEx(HANDLE file, LARGE_INTEGER* size);
-BOOL CloseHandle(HANDLE object);
-
-// UTF-8 to the 32-bit wchar_t Android uses. An input length of -1 means the input
-// is terminated, and the count returned for it includes the terminator, which is
-// what the callers size their buffers with. Invalid UTF-8 fails rather than being
-// replaced, so a garbled path cannot be opened under a different name.
-int MultiByteToWideChar(unsigned code_page, unsigned flags, const char* input,
-    int input_length, wchar_t* output, int output_capacity);
-
 // Virtual-key codes the desktop modules name explicitly. The numeric values are
 // the Windows ones, so one configuration line means the same key on both
 // platforms and a desktop profile can be read on a device without translation.
-#define VK_SHIFT 0x10
-#define VK_CONTROL 0x11
 #define VK_PRIOR 0x21
 #define VK_NEXT 0x22
 #define VK_LEFT 0x25
 #define VK_UP 0x26
 #define VK_RIGHT 0x27
 #define VK_DOWN 0x28
-// Modifiers, editing keys and the keypad arithmetic keys. The shared hotkey
-// binding tables (native/shared/input/hotkey.h) name these directly, so a
-// desktop hotkey string parses to the same code here.
+#define VK_SHIFT 0x10
+#define VK_CONTROL 0x11
 #define VK_MENU 0x12
 #define VK_LWIN 0x5B
 #define VK_RWIN 0x5C
@@ -139,9 +99,9 @@ int MultiByteToWideChar(unsigned code_page, unsigned flags, const char* input,
 #define VK_SPACE 0x20
 #define VK_TAB 0x09
 #define VK_ESCAPE 0x1B
-#define VK_MULTIPLY 0x6A
 #define VK_ADD 0x6B
 #define VK_DECIMAL 0x6E
+#define VK_MULTIPLY 0x6A
 #define VK_DIVIDE 0x6F
 #define VK_NUMPAD0 0x60
 #define VK_NUMPAD1 0x61
@@ -157,12 +117,7 @@ int MultiByteToWideChar(unsigned code_page, unsigned flags, const char* input,
 #define VK_F1 0x70
 #define VK_OEM_MINUS 0xBD
 
-// One wheel notch, used only to scale the accumulated wheel delta into degrees.
-// A device has no wheel, so the accumulator stays zero and the division is inert;
-// the constant exists so the shared expression reads the same on both platforms.
-#define WHEEL_DELTA 120
-
-namespace betterendfield::win32 {
+namespace betterendfieldnext::win32 {
 
 std::uint64_t MonotonicMilliseconds();
 std::int64_t MonotonicNanoseconds();
@@ -174,22 +129,22 @@ std::uint32_t ProcessId();
 void* Il2CppImage();
 void* Symbol(void* image, const char* name);
 
-}  // namespace betterendfield::win32
+}  // namespace betterendfieldnext::win32
 
 inline std::uint64_t GetTickCount64() {
-    return betterendfield::win32::MonotonicMilliseconds();
+    return betterendfieldnext::win32::MonotonicMilliseconds();
 }
 
 inline DWORD GetTickCount() {
-    return static_cast<DWORD>(betterendfield::win32::MonotonicMilliseconds());
+    return static_cast<DWORD>(betterendfieldnext::win32::MonotonicMilliseconds());
 }
 
 inline void Sleep(DWORD milliseconds) {
-    betterendfield::win32::SleepMilliseconds(milliseconds);
+    betterendfieldnext::win32::SleepMilliseconds(milliseconds);
 }
 
-inline DWORD GetCurrentThreadId() { return betterendfield::win32::ThreadId(); }
-inline DWORD GetCurrentProcessId() { return betterendfield::win32::ProcessId(); }
+inline DWORD GetCurrentThreadId() { return betterendfieldnext::win32::ThreadId(); }
+inline DWORD GetCurrentProcessId() { return betterendfieldnext::win32::ProcessId(); }
 
 inline BOOL QueryPerformanceFrequency(LARGE_INTEGER* frequency) {
     if (frequency == nullptr) return 0;
@@ -199,29 +154,29 @@ inline BOOL QueryPerformanceFrequency(LARGE_INTEGER* frequency) {
 
 inline BOOL QueryPerformanceCounter(LARGE_INTEGER* counter) {
     if (counter == nullptr) return 0;
-    counter->QuadPart = betterendfield::win32::MonotonicNanoseconds();
+    counter->QuadPart = betterendfieldnext::win32::MonotonicNanoseconds();
     return 1;
 }
 
 inline SHORT GetAsyncKeyState(int virtual_key) {
-    return betterendfield::VirtualKeyDown(virtual_key)
+    return betterendfieldnext::VirtualKeyDown(virtual_key)
         ? static_cast<SHORT>(0x8000) : static_cast<SHORT>(0);
 }
 
 // The injected library only exists inside the game process, and Android has no
 // notion of a different process holding the foreground while this code runs.
-inline HWND GetForegroundWindow() { return reinterpret_cast<HWND>(1); }
+inline HWND GetForegroundWindow() { return betterendfieldnext::AndroidForeground() ? reinterpret_cast<HWND>(1) : nullptr; }
 
 inline DWORD GetWindowThreadProcessId(HWND, DWORD* process_id) {
-    if (process_id != nullptr) *process_id = betterendfield::win32::ProcessId();
-    return betterendfield::win32::ThreadId();
+    if (process_id != nullptr) *process_id = betterendfieldnext::win32::ProcessId();
+    return betterendfieldnext::win32::ThreadId();
 }
 
-inline HMODULE GetModuleHandleW(LPCWSTR) { return betterendfield::win32::Il2CppImage(); }
-inline HMODULE GetModuleHandleA(LPCSTR) { return betterendfield::win32::Il2CppImage(); }
+inline HMODULE GetModuleHandleW(LPCWSTR) { return betterendfieldnext::win32::Il2CppImage(); }
+inline HMODULE GetModuleHandleA(LPCSTR) { return betterendfieldnext::win32::Il2CppImage(); }
 
 inline void* GetProcAddress(HMODULE image, const char* name) {
-    return betterendfield::win32::Symbol(image, name);
+    return betterendfieldnext::win32::Symbol(image, name);
 }
 
 // Desktop crash forensics: a GameAssembly-relative return-address list attached

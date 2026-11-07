@@ -1,7 +1,7 @@
 #pragma once
 #include "first_person_math.h"
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 inline bool SameHeadScale(FirstPersonMath::Vec3 a, FirstPersonMath::Vec3 b) {
     return FirstPersonMath::Finite(a) && FirstPersonMath::Finite(b) &&
         std::abs(a.x-b.x)<1e-7f && std::abs(a.y-b.y)<1e-7f && std::abs(a.z-b.z)<1e-7f;
@@ -32,4 +32,4 @@ struct HeadScaleLease {
         return restored;
     }
 };
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

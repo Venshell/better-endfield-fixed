@@ -13,11 +13,11 @@
 # and instantiates it reflectively (libxposed API 101+ replaced the legacy
 # assets/xposed_init with that list). No root in this APK references the type,
 # so without this rule R8 deletes it entirely rather than renaming it.
--keep class dev.betterendfield.android.XposedEntry { *; }
+-keep class dev.betterendfield.next.XposedEntry { *; }
 
 # --- JNI --------------------------------------------------------------------
 # src/main/cpp/installer/install_jni.cpp exports
-#   Java_dev_betterendfield_android_BemInstaller_{inspect,convert,cancel}Native
+#   Java_dev_betterendfield_next_BemInstaller_{inspect,convert,cancel}Native
 # and looks its progress callback up by name and signature:
 #   GetStaticMethodID(owner, "conversionProgress", "(Ljava/lang/String;IIIIF)V")
 # The exported symbol name *is* the class name plus the method name, and the
@@ -26,14 +26,14 @@
 # the second makes GetStaticMethodID return null and the conversion abort with
 # no progress. Keeping the class whole answers both.
 #
-# The second shipped library, libbetterendfield_android.so, also exports
-# Java_dev_betterendfield_android_NativeCommandBridge_* symbols. Nothing declares
+# The second shipped library, libbetterendfieldnext_android.so, also exports
+# Java_dev_betterendfield_next_NativeCommandBridge_* symbols. Nothing declares
 # them any more -- the panel-to-runtime channel is a file relay, not JNI (see the
 # NativeCommandBridge header) -- so they are dead weight in a prebuilt library and
 # R8 is free to merge that class away. verifyReleaseEntryPoints in
 # build.gradle.kts records them explicitly instead of ignoring them, so a new
 # native method without a rule here fails the build rather than disappearing.
--keep class dev.betterendfield.android.BemInstaller { *; }
+-keep class dev.betterendfield.next.BemInstaller { *; }
 
 # --- prevent R8 from merging unrelated game-process and Compose classes ------
 # R8's optimiser merges classes: anything never instantiated is folded into a
@@ -87,7 +87,7 @@
 # InitializeAndroidMusic refuses the interface, and MMD works play silently
 # without their music track. verifyReleaseEntryPoints asserts the names survive
 # in the dex, so a lost rule fails the build instead of the feature.
--keepclassmembers class dev.betterendfield.android.NativeCommandBridge {
+-keepclassmembers class dev.betterendfield.next.NativeCommandBridge {
     static long audioOpen(java.lang.String);
     static int audioControl(long, int, double);
     static double[] audioStatus(long);

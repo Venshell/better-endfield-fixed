@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(BetterEndfieldFirstPersonProfilesTests LANGUAGES CXX)
+project(BetterEndfieldNextFirstPersonProfilesTests LANGUAGES CXX)
 # The production project uses C++20; this standalone helper is also C++17
 # compatible and has no Unity/Windows/Android SDK dependency.
 set(CMAKE_CXX_STANDARD 17)

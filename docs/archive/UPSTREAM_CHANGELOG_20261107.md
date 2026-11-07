@@ -1,0 +1,497 @@
+# 更新日志
+
+## 4.1.8 Better Endfield Next
+
+Better Endfield Next **4.1.8** / BEM Tools & DSH **1.6.7**（资源包不重发）
+
+### 第三方模型
+
+- 模型包文件名改为可读形式 `<包名> v<版本> [<id 末 8 位>].bem`，不再是一串哈希；已有包在打开模型管理页时自动改名，游戏运行中跳过。只处理文件名仍是纯包 ID 的包，手动改过的名字不受影响。
+- 更新或重新导入同一个包时按包 ID 删除旧文件，不再需要依赖同名覆盖，避免重复包 ID。
+- Windows 世界模型的阴影接管改为可选：代理准备失败不再否决整包，保留游戏原投影继续替换几何与材质，并输出 `Windows shadow takeover skipped` 告警；只有构造事务失败才否决。
+- 放宽 Windows 投影代理的骨架证据：允许代理与可见 LOD0 接收器的骨骼调色板互为切片（伊冯 `cloth_04` 26/24、提弗洛斯 `body_01` 39/35），按 mesh 身份兜底时仍要求完全一致并保留竞争代理扫描。Android `SP_Mobile` 规则不变。
+
+### 创作者工具
+
+- BEM 1.4 规范补充 Windows `SP_Desktop` 投影代理的路径归属规则、骨骼证据边界与阴影降级语义；技能内规范副本同步更新。
+
+### 分发
+
+- 上传连接改用 `HTTPS_PROXY` 环境变量，不再写死本地代理端口。
+- 已发布归档改为比对 GitHub 资产的 SHA-256 后复用，不再下载归档逐字节比较；内容不同仍要求升版本号。
+- 资源发布新增可选 `--prune-assets`：每类只保留版本号最高的归档，其余删除并同步剔除索引条目，软件发布可用 `--prune-resources` 转发。
+
+## 4.1.7 Better Endfield Next
+
+Better Endfield Next **4.1.7** / BEM Tools & DSH **1.6.5**（资源包不重发）
+
+### 第三方模型
+
+- 恢复 Windows 大世界第三方模型的阴影接管：替换部件使用新模型投影，关闭对应的原生桌面阴影代理，避免继续显示原模型轮廓。
+- 阴影状态纳入模型应用、克隆继承、热切换与恢复事务；切回原版或应用失败时恢复原始投影状态及代理。
+- 修复场景角色与阴影代理坐标轴不一致导致热切换失败；阴影归属不再要求矩阵相同，保留骨骼归属与歧义检查。
+- 修复 Windows 旧格式模型包与显式资源包之间直接换包时丢失原始网格追溯、导致热切换校验失败的问题；保留原始网格索引数、骨骼归属和事务回滚校验。
+- 移除排查期间添加的矩阵、骨骼和对象地址调试日志，保留必要的失败原因日志。Android 阴影策略保持不变。
+
+### 测试
+
+- 补充桌面阴影接管、回滚、连续热切换、恢复原版、不同坐标轴、归属歧义及矩阵接口不可用等回归覆盖。
+
+## 4.1.6 Better Endfield Next
+
+Better Endfield Next **4.1.6** / BEM Tools & DSH **1.6.5**（资源包不重发）
+
+## 预览资源提示
+
+- Windows / Android 模型预览在未安装预览资源包时显示明确提示，指引前往「关于」页点击「下载预览资源」并在下载完成后重新打开；提示不阻断携带自带模型资源的包进行预览，中英文齐备。
+
+## 寻访导出
+
+- 修复 Windows 寻访面板点击「导出」崩溃（#36）：导出改用明确的公共属性 DTO，避免发布混淆移除构造参数名后 JSON 序列化抛异常。导出格式与旧文件导入保持兼容。
+- 导出补齐序列化、权限与文件操作异常处理，失败时显示错误并恢复按钮。
+
+## 构建与测试
+
+- DSH 打包冒烟测试按 UTF-8 读取子进程输出，修复 cp936 控制台下遇到非 GBK 字符即判定打包失败。
+- 新增寻访导出与缓存回归测试，覆盖导出结构、导出/导入往返、旧格式兼容、自动缓存与失败保留，并在混淆后的程序集上复现并验证 #36 的修复。
+
+## 4.1.5 Better Endfield Next
+
+Better Endfield Next **4.1.5** / BEM Tools & DSH **1.6.5**
+
+- Windows 外置资源定位从程序集解包临时目录改为实际可执行文件所在目录，修复单文件发行版读不到安装器附带基础资源。
+- Android APK 携带独立格式的基础资源 ZIP，首次启动本地校验解压至版本目录，无需联网即可使用；手动固定版本与可选预览包行为不变。
+- Android 声明游戏包可见性，修复 Android 11+ 查询已安装游戏版本可能失败；查询失败显示明确提示。
+- Android 资源更新失败按索引、游戏版本、下载、安装阶段写入 logcat 与私有 `betterendfieldnext-resources.log`。
+- 关于页新增「语言 / Language」入口，支持跟随系统、简体中文、English，统一 XML、Java 动态文案、模型预览与游戏悬浮窗语言。
+- Android 配音列表与配音目录生成兼容 schema 1 / 2 资源表，修复新基础包导致配音页加载失败；保留 Media ID 冲突校验。
+- Gradle 发布归档不再跟踪共享输出目录，避免与其它平台安装器同时打包时扫描占用文件失败。
+
+## 4.1.4 Better Endfield Next
+
+Better Endfield Next **4.1.4** / BEM Tools & DSH **1.6.5**
+
+- 游戏基础资源迁入独立版本目录，与软件版本解耦；双端「关于」新增资源更新、可选预览下载、ZIP 导入/回退、恢复自动更新及取消入口。
+- 下载、解压并校验通过后才切换版本；中断或取消保留原版；手动导入会固定所选版本。
+- 软件、工具与资源使用统一分发索引，资源集中在独立的 game-resources Release。
+- 全角色预览资源按精确角色、prefab、renderer 与材质身份读取，从 37 个可玩角色 / 模型变体生成 BC7 与 ASTC 6×6 两个可选包，单独下载不捆入安装包。
+- BEM Tools / DSH 升级 1.6.5：预览页可选择本地资源目录与 BC7 / ASTC 格式，支持浏览器 ASTC GPU 直传，bem 工具增加 resources 操作。
+- 合入发布后历史提交：双端提供默认关闭的「高质量过渡」开关，改善祀及坐骑的循环接缝与附属件动作。
+
+## 4.1.3 Better Endfield Next
+
+Better Endfield Next **4.1.3** / BEM Tools **1.6.4**
+
+## 双端外观组合
+
+- 从多个已安装 BEM 包选择部件来源，保留来源的切换选项、绑定条件与默认值；版本自动从来源推导，修订号差异不再直接阻止兼容组合。
+- 按来源选项名称分组并可展开绘制段；支持一键启用/停用、批量操作和多段高亮。重叠段按选择保留，不自动裁剪、补缝或消除穿插。
+- Body 按骨骼权重细分头、颈、躯干、骨盆及四肢等区域；支持预览中手动调整三角形归属、撤销、恢复自动划分。来源不存在的区域不会凭空生成。
+- BEM 1.4 大招与武器作为可选整体项；多输出组合可连续导入。不支持的形变、驱动及材质覆盖会明确拒绝，不静默丢弃。
+
+## 交互预览
+
+- 已安装包新增预览入口，可切换选项、查看绑定部件、旋转、缩放、平移及保存。Windows 支持多个独立窗口，组合界面预览常驻；Android 组合预览按需打开，支持触摸编辑。
+- 支持 BCn（含 BC7）与 ASTC 贴图预览，减少重复解析与切换等待，并自动补全缺失的原生头部预览部件。
+- 移除改为卡片右侧垃圾桶图标，与预览分开；配套中英文本地化。
+- Windows 预览使用 WebView2；运行时缺失只影响预览，主程序仍可启动。
+
+## 模型加载修复
+
+- 合入先前提交：同步热切换过程的材质缓存与资源替换状态，修复过期材质复用及相关资源竞态。
+- 新增可选的退役模型资源清理实验，沿用实验功能开关与配置流程。
+
+## BEM Tools 1.6.4
+
+- 新增 compose CLI；Windows 独立工具包随附原生组合引擎，可生成 PC / Android 目标包。
+- bem-creator skill 增加组合文档及 Python 标准库脚本，支持计划、精简摘要、预览草稿与最终构建。
+- Windows 工具包、Android CLI 源码包与 DSH 插件统一升级至 1.6.4。Android CLI 源码包不包含原生组合引擎；手机组合通过 Android 应用提供。
+
+
+完整记录见 [4.1.3 发布记录](docs/workspace/releases/4.1.3/RELEASE_4_1_3.md)。
+
+## 4.1.2 Better Endfield Next
+
+- **桌面端角色外观新增「打开模型文件夹」快捷入口**：
+  - 将「角色外观」管理页顶部的快捷按钮明确更名为「打开模型文件夹」（中英文对齐）；
+  - 修复原本打开配置目录 `catalog/custom-model` 的逻辑偏差，点击后直接在系统资源管理器中打开实际存放 `.bem` 文件的目录（`<程序安装目录>/models`），便于用户随时查看与管理本地模型包文件。
+
+- **安卓端界面布局优化：移除顶部横幅，底部导航四等分**：
+  - 移除主界面顶部大横幅（`app_header`），减少纵向空间占用；
+  - 将赞助按钮移至底部导航栏并取消特殊高亮色，统一采用标签页视觉样式；
+  - 底部导航栏收敛为「主页 / 增强功能 / 关于 / 赞助」四键并列，采用 `weight=1` 等分宽度与文字动态自适应缩放，确保在不同设备分辨率下恒定保持四等分对称排布。
+
+- **优化桌面端持续冲刺界面层级排布**：
+  - 将「隐藏机甲与光效」选项与说明准确归属并嵌套于「梨诺」设置项下方，修正此前「祀」排布在梨诺与其子选项之间的层级错位问题；
+  - 机甲光效子面板与梨诺主开关建立联动绑定，梨诺关闭时自动禁用子选项，清晰体现能力归属与依赖关系。
+
+- **修复桌面端发布遗漏管理员外观模块动态库**：
+  - 修复 `native/CMakeLists.txt` 中 `BetterEndfieldNext.Layout` 自定义目标遗漏 `BetterEndfieldNext.WeaponAppearance` 依赖项的问题，确保 Windows 完整构建时自动编译该 DLL 并输出至发布目录；
+  - 在 `BuildBetterEndfieldNext.ps1` 发布前完整性检查清单中补全 `BetterEndfieldNext.WeaponAppearance.dll` 与 `betterendfieldnext.weapon_appearance.module.ini`，避免构建产物漏发。
+
+- **管理员外观功能规范化：双端统一默认关闭**：
+  - 桌面端配置模型 `WeaponAppearanceConfiguration` 默认启用状态、ini 读取缺省回退值以及 `betterendfieldnext.weapon_appearance.module.ini` 清单全部调整为 `enabled=false`；
+  - 双端共享原生模块 `weapon_appearance/module.cpp` 的默认运行配置结构体同步调整为 `enabled = false`；
+  - 与安卓端 `ModuleSettings.isAppearanceEnabled`（默认 `false`）完全对齐，消除未配置时自动覆写外观与特效的行为，符合增强模块默认不侵入规范。
+
+- **BEM Tools 新增 Android CLI 产物（1.6.3）**：新增 `BEM-Tools-1.6.3-android-arm64.tar.gz`，让手机上的 agent 自己完成 `inspect` / `convert` / `validate` / `pack`，不必把源包传回 Windows。它不是 APK 也不是 GUI：解压后是源码形态的 `app/` 加一个 mksh 兼容的 `bem-tools` 入口，入口解析自身路径（含符号链接）、把 `TMPDIR` 指向 `/data/local/tmp`（Android 没有 `/tmp`，`tempfile` 会退到当前目录）、注入 `PYTHONPATH` 与 UTF-8，并透传 exit 0/2；另转发 `doctor`（环境自检）、`install-wheel`（补 zstandard）、`repair`（`bem_repair.py`）。源格式只保留目录与 ZIP——RAR/7z 需要 7-Zip 后端，发行包不带，命中时按 `ARCHIVE_BACKEND` 拒绝而不是缺可执行文件。打包用 AST 可达性分析从入口算白名单，模块从 39 降到 24，仓库维护脚本不会被误带；成品 2.0 MB 压缩 / 11.5 MB 解压，构建入口 `scripts/BuildBemCliAndroid.ps1`。默认装到 `/data/local/tmp/bem-cli`：`/sdcard` 挂载为 `noexec`，Android 10 起应用私有目录也被 SELinux 拒绝 `execve`。
+
+- **Android CLI 在 Python 3.14 上零依赖**：Termux 当前 `pkg install python` 装的是 3.14.8，自带 PEP 784 的 `compression.zstd`，设备不必再装 `zstandard`。新增 `zstd_compat.py`，在扩展缺失时把标准库实现挂成 `zstandard`（`bem_v1` / `bem_v11` / `bem_projects` 各加一行导入），扩展存在时完全不接管，Windows 行为不变；`doctor` 的 `deps.zstd_backend` 报 `stdlib` 或 `cext`。两条后端输出逐字节相同（都是 zstd 1.5.7，同一份数据同级别压缩的 sha256 一致），手机产出的包与 Windows 产出的 digest 相同；用真实 `TohsakaRin-aglina-by-Dr-hydra.bem` 在 3.13（扩展）与 3.14（标准库）上校验，除源路径外输出完全一致。回归：`audit/test_bem_repair.py` 141 例、`test_bem_v1` 9 例、`test_bem_projects` 10 例、`test_bem_v11` 13 例（1 skip）在两套后端上全绿。
+
+- **随包提供 bionic arm64 的 zstandard wheel**：Termux 没有 zstandard 包，PyPI 只有 glibc/musl 轮子，`pip install zstandard` 会在设备上拉 clang 现编。改用 NDK 27 clang 加 Termux `python` 包内的 3.14 头文件交叉编译 `zstandard 0.25.0` 的 C 扩展，产出 `zstandard-0.25.0-cp314-cp314-android_24_arm64_v8a.whl`（301 KB；strip 后 604 KB 的 ELF64/AArch64 共享对象，只依赖 `libc`/`libm`/`libdl`，只导出 `PyInit_backend_c`）。`bem-tools install-wheel` 不走 pip 而是解包复制：Termux 的 Python 报 `sys.platform == 'android'`，pip 认 `android_<api>_arm64_v8a` 标签，而 Chaquopy 一类 Linux 形态解释器认 `linux_aarch64`，一个 wheel 文件名只能带一个平台标签；安装器按本机 `EXT_SUFFIX` 落盘，两种宿主都适用且不需要编译器。构建脚本 `tools/CustomModel/android/build_zstandard_wheel.py`，Termux 换 Python 版本后重跑即可。
+
+- **创作者技能补 Android 运行规范，SKILL.md 增加宿主分叉**：新增 `references/ANDROID_RUNTIME.md` 与 `.en.md`（与既有 references 双语成对），覆盖入口差异、能力差异表、路径与权限三条硬约束、输出契约、错误码与安装升级。`SKILL.md` 原先把入口写死成 `.exe` 或 `python bem_tool.py`，agent 在手机上会先照做失败再翻文档；改为按宿主分叉的三行表并写明第一步是 `doctor`，补充修复脚本在源码形态下反而可用的差异，以及"3.14 免装、旧解释器用 `install-wheel`"的处置顺序。`bem_tool.py` 的源格式提示改为按 7-Zip 后端是否可用动态拼装，Windows 文案逐字未变。
+
+- **产物版本对齐 1.6.3**：`BEM-Tools-1.6.3-win-x64.zip`、`BEM-Tools-1.6.3-android-arm64.tar.gz` 与 `dsh-bem-creator-1.6.3.tgz` 三件产物同版本发布。DSH 插件版本由 `BuildDshPlugin.py` 与 `bem_tool.py` 的 `TOOL_VERSION` 强校验，两者不一致会直接构建失败，本轮双方均为 1.6.3，版本号本身未变，只把发布记录补齐。
+
+## 4.1.1 Better Endfield Next
+
+- **材质包加载提速（日志器重写）**：修复不带动画驱动的纯材质包加载时明显卡顿的问题。根因不在驱动路径（无 `drivers` 时逐帧调用全部早退），而在加载过程中每处理一个材质、每构建一张贴图都写一条日志，而 `Logger::Write` 每条都用 `ofstream` 打开再析构一次文件——Windows 实时防护会在 write-open 时扫描整份文件，实测本机单条「打开-追加-关闭」10.6 ms 且随文件变大继续变慢。`Logger` 改为持有 `std::ofstream` 成员（`Initialize` 打开一次，每行 `flush()`，失败时在 `Write` 内重试），崩溃后日志尾部仍完整；`Applied BEM 1.5 material overrides` 改为每个组件汇总一条（`draws=` / `slots=` 与 `properties=`），贴图 `built t=` 明细改为每次上传事务只打第一张，其余进 `textureFormats` 直方图由事务汇总行输出。实测每行成本 10.6 ms → 0.02 ms（450–600×）。行为变化：日志文件在程序运行期间保持打开，运行中删除日志不会重建文件，需清空日志请先退出程序。
+
+- **赞助面板新增 Ko-fi**：桌面端与安卓端赞助面板在微信赞赏、爱发电、PayPal 之外新增 Ko-fi（`https://ko-fi.com/hydra405`），两端顺序一致。
+
+- **安卓界面英文本地化**：新增 `Text` 翻译层与 `res/values-en` 资源，覆盖主页、增强功能、开屏模型、第三方模型、角色配音、MMD 作品库、会客室媒体屏、关于页以及游戏内悬浮窗（含 MMD 控制台、模型管理、FOV 面板、媒体屏控制）的全部界面文案；系统语言为英文时自动切换，中文环境行为与文案完全不变。同时把依赖中文字面量做 `contains` 判断的操作状态栏显隐改为结构化标志（`BemInstaller.IDLE_STATUS`、`MmdInstaller.failed`），避免本地化后判断失效；布局与清单中的硬编码中文改为 `@string` 引用。角色名统一取桌面端 `character-names-en.json` 的官方英文名（如洁尔佩塔 Gilberta、梨诺 Reno、祀 Si），语音与开屏模型的角色列表也一并英文化。
+
+- **修复昼雪（chr_0014_aurora）旧模型包在 4.1.0 或免校验模式下的左手骨骼错位问题**：修复 SelectCompatibleModelDonor 在开启「关闭模型校验」（skip_validation）或普通匹配下条件短路导致昼雪 1.6.3 定点兼容与骨骼重排逻辑被跳过的问题。明确提取昼雪旧目标判定，无条件将 C1 请求适配至现行 87288 索引与标准接收器路径，确保 10 槽位骨骼重排（Slot 37~44、64/65）恒定生效，彻底解决人物自身左手大拇指、食指严重扭曲与中指变形的异常；补全自动化回归测试在免校验场景下的断言保护。
+
+- **安卓界面重构：主页改为「启用功能一览」**：主页只列出已开启的功能并显示实时状态（替换角色与动作、主题色、自定义配音角色数、界面与相机项、冲刺角色、悬浮窗透明度、当前 MMD 作品），点击直达对应设置页；未启用的功能不再出现在主页（入口集中在「增强功能」页），第三方模型单独保留一个主页入口。顶部导航收敛为「主页 / 增强功能 / 关于」，开屏模型、第三方模型、角色配音收进增强功能二级页面，并按「模型与外观 / 游戏内增强 / 内容与工具」分组；二级页提供返回入口，系统返回键先回主页。
+
+- **BEM Tools 升级至 1.6.3**：`bem_repair.py` 重写为 22 个证据门控子命令（IB/DDS/INI 重复段/条件贴图/蒙皮/合并骨架/入口程序/贴图覆盖/角色资料缺口/形态参数/选项空间/CrossIB 分组），新增 `shape-params` 从源 ShapeKey 自动生成 BEM 1.3 滑条配置，并随包分发 `catalog/material-attributes.json` 材质属性名字典；同时新增 `bem_assemble.py` 与 `catalog/identities/`。
+
+- **新增 DeepSeek Harness 插件 `dsh-bem-creator`（第四个产物）**：把创作者 skill 打包成 DSH 插件，版本与 BEM Tools 对齐到 1.6.3，`dsh plugin --profile web add dsh-bem-creator-1.6.3.tgz` 一条命令装进任意 profile，装完即出现在 `dsh skill list` 中，模型可用 `skill` 工具加载、用户可 `/bem-creator` 直接调用。插件随包携带 BEM Tools **源码树**（`lib/bin/cli/`，2.0 MB），`convert` 不再依赖机器上装过 bemtools，也不需要 33 MB 的 PyInstaller 构建——宿主有 Python 3.10+ 即可运行，3.14+ 无需额外包，更早版本按 `doctor` 给出的命令 `pip install zstandard`。由 `scripts/BuildDshPlugin.py` 构建，已接入 `scripts/BuildBemTools.ps1` 的发布流程。
+
+- **`dsh-bem-creator` 注册 `bem` 工具与会话内预览页**：插件从「只带指令」扩到 skill + 工具 + 预览三块，装完在会话里就能看成品模型。
+  - `bem` 工具五个动作：`inspect`（只读 manifest）、`validate`（查会让渲染出错的问题：索引越界、载荷长度不足、网格引用越界）、`preview`（建场景并返回预览 id）、`convert`（自备 CLI 时转发）、`doctor`（报本机能力）。工具用裸 JSON Schema 自注册，不依赖 `@deepseek-ai/dsh-tools`；
+  - 预览页注册 `conversation.view` 槽位：轨道相机、外观与选项组 chips、形态参数滑条、部件勾选、贴图/素模切换、统计与解码状态；1.0–1.2 的 `start`/`count` 共享索引与 1.3+ 的每 draw 自带索引两种布局都支持，draw 级 `when` 条件按当前选项求值；
+  - 形态滑条读 `parameters` 的 0–1000 刻度与 `mesh_deformations` 的稀疏帧（`u32 顶点 + 3×f32 增量`），客户端做相邻帧插值后 `bufferSubData` 回传；
+  - 贴图在 1–4 个 module worker 里解 BC1/BC3/BC4/BC5/BC7，解完立即转移所有权并丢弃 CPU 副本（五张 4096×2048 的 RGBA 是 160 MB，留在主线程会把手机 WebView 撑爆）；解码器从 `@bis-toolkit/bcn` 1.0.2 逐字 vendored（GPL-3.0-or-later，AGPL §13 允许合并）；ASTC 明确不解码并在角标说明；
+  - 宿主侧注册 `/dsh-bem/` 前缀路由（`api/latest`、`api/scene/<id>`、`api/blob/<scene>/<blob>`、两个解码器资产），几何与贴图走 `application/octet-stream`，避开 connection 插件占用的 `/api/*`；场景上限 6 个、最旧先淘汰，过期标签页拿到 410 而不是空舞台；
+  - 新增 `test/host.test.mjs` 与 `test/client.test.mjs`：前者用 stub context 跑真实 1.0/1.5 包（工具、路由、场景 JSON、blob 长度、形变帧、ASTC 跳过），后者用假 React 与假 WebGL2 上下文真渲染一遍（面板、解码、滑条改位置缓冲、部件隐藏、场景过期提示、卸载回收 worker）；`BuildDshPlugin.py` 三条测试全绿才打包，并校验 `exports["./client"]`、`dsh.client.platform`、`lib/client.js` 的模块封装——`dsh-client-modules` 在这三处缺失时直接抛错。
+  - **联调修复：可选服务不能按属性读**：`apply` 原先在插件自己的 ctx 上探 `ctx.webServer` / `ctx.tools`，而 Cordis 4 的 ctx 是服务表上的 Proxy —— 名字不在本 fiber 的 `inject` 集合里时直接抛 `cannot get property "webServer" without inject`，不返回 `undefined`，`source?.name` 挡不住。桌面 profile 因此在 `apply` 的同步栈里把整个 fiber 打成 `failed`，连 skill 一起回滚（实测 `fiberPhase: failed`、`Config.status: absent`、skill 报 unknown、`/dsh-bem/*` 全 404，而客户端半的标签页照常出现，表现为一个永远 404 的空预览页）。改为 `mountService`：先用 `ctx.get(name)` 非严格读做同步快路径（服务已就绪时不额外建 fiber），缺服务时才用 `ctx.inject([name], cb)` 起子 fiber 声明依赖兜底晚到；两条路径都由 `ctx.effect` 管生命周期。`doctor` 新增 `surface.routes` / `surface.tool`，一眼区分「加载了但没挂上」和「根本没加载」；
+  - 新增 `test/cordis.mjs`：stub 用 Proxy 复刻「未声明就抛」的语义（普通对象 stub 返回 `undefined`，正好把这个 bug 藏过去），`host.test.mjs` 里反过来断言 stub 仍在抛，防止测试替身悄悄退化；新增 `test/real-cordis.mjs`，在装有 dsh 的机器上用真实 Cordis 4.0.5 复验四种情形 —— 桌面全服务、headless 只有 skills、服务晚到、以及「fiber 内直接读属性必抛」，四条全绿且 `fiber.state` 均为 2（active）。
+  - **联调修复二：前缀不能带尾斜杠**：`kind: 'prefix'` 的路由原先注册 `/dsh-bem/`，而 `dsh-host-webserver` 的 matcher 是 `pathname !== prefix && !pathname.startsWith(`${prefix}/`)` —— 它自己补分隔符，于是只在找 `/dsh-bem//…`。症状是最坏的一种：注册成功、handler 活着、`doctor.surface.routes` 诚实地报 `true`，但 `/dsh-bem/api/latest` 全部落到 SPA fallback 拿空 404，客户端轮询的 `catch` 又把错误吞掉，页面永远停在空态且 Console 不报错。改为注册 `/dsh-bem`，handler 用 `slice(ROUTE_BASE.length)` 去掉前导斜杠，同时容忍 `/dsh-bem`、`/dsh-bem/`、`/dsh-bem//…` 三种形态；
+  - 测试补上真正的盲区：`host.test.mjs` 的 `request()` 现在先过一遍照抄自 `dsh-host-webserver` 的 `match()` 再分派（原来直接调 `routes[0].handler`，等于绕开了分派，路由挂错也测不出来），`real-cordis.mjs` 进一步用真实的 `WebServer.prototype.match` 在 duck-typed sink 上交叉验证 `/dsh-bem`、`/dsh-bem/`、`/dsh-bem/api/latest`、`/dsh-bem/assets/bcn.js` 都归到这条路由，`/dsh-bemx` 不会误命中。把注册路径改回带尾斜杠，这两处会立刻红。
+  - **客户端不再静默失败**：轮询 `${API}api/latest` 原先直接 `response.json()`，空 body 一抛就被 `catch` 吞掉——上一轮那个「路由注册成功但前缀不可达」的 bug，在页面上表现为永远停在空中态、Console 一条错误都没有。现在先判 `response.ok`、再读 `text()` 判空、最后 `JSON.parse`；连续三个轮询周期（约 4.5 秒）失败后显示「预览服务连不上」并带上失败原文（如 `HTTP 404 Not Found`），恢复后自动清掉。测试新增一段：让 fetch 全返回空 404、手动 tick 三次，断言提示出现且含状态码。
+  - **预览画面三处硬伤（联调第二轮）**：
+    - 朝向：包里的顶点是 Z-up（1.67 m 的角色 Z 跨度 1.668、Y 只有 0.58），相机是 Y-up，于是模型横躺。宿主在 `buildScene` 里按并集包围盒判定（Z 跨度 > Y 跨度 1.05 倍）后，把位置与形变增量一起做 `(x, y, z) → (x, z, −y)`，并在场景 JSON 里写明 `orientation`，下游不必再关心包的坐标系。实测 40 个真实包（1.0/1.4/1.5）全是 Z-up，扁平的合成 fixture Z 跨度为 0，不会被误转；
+    - 亮度：贴图按 `SRGB8_ALPHA8` 采样拿到的是线性值，却被直接写进非 sRGB 的 drawing buffer，中间调整体暗一档；再叠上 `0.42 + 0.58 * key` 的大环境光，整个模型几乎只有一个明度。改为线性空间里 key/fill/半球三灯、末尾 `pow(color, 1/2.2)` 编码一次，环境光降到 0.20、key 提到 0.80；素模平均亮度 0.27 → 0.52（sRGB 0–1），明暗跨度也拉开；
+    - 法线方向：网格沿 UV 缝拆点、绕序混杂（质心法只有约 64% 的三角形朝外），`gl_FrontFacing` 不能当「这面朝外」用，原先那一翻就足以让整片表面变背光。改为按视点翻（`dot(n, view) < 0` 取反）并给零长法线兜底，同时不信绕序、不做整体翻转；
+    - 取景：`resetView` 原用 `radius * 2.4`，在 38° 垂直视场下装不下包围球，头脚被裁；改为 `radius / sin(fov/2) * 1.06`。
+  - **ASTC 不再假装可解码**：宿主原先给 ASTC 也发 blob，客户端逐张送进 worker，换来 6 条 `no decoder for astc` 失败。`TEXTURE_FAMILY` 增加 `decodable` 标志后，格式 48/49/50 只给 `blob: null` + `skipped: 'ASTC blocks are not decoded in the browser build'`，`stats.previewableTextures` 自然排除它们；客户端对空 blob 直接跳过（不算失败），角标写「N 张 ASTC 贴图不在浏览器内解码」，几何照常显示，这些 draw 走素模。
+  - **补掉两处空断言**：`host.test.mjs` 的 ASTC 断言原本写在对 1.0 包的检查里，而那个包一张 ASTC 都没有，`astc.every(...)` 恒真——新增 ASTC 包（22 张全是 ASTC）与 Y-up 朝向两节；`client.test.mjs` 的 fixture 换成绕序朝内的四面体，新增「宿主跳过的贴图不算失败」「着色器不依赖 `gl_FrontFacing`」「末尾有 gamma 编码」三条；`BuildDshPlugin.py` 的冒烟测试补上 `BEM_TEST_PACKAGE_ASTC`。
+
+## 4.1.0 Better Endfield Next
+
+- **BEM 1.5 连续动画与动效驱动（dynamic-drivers-v1）**：原生实现双端时钟驱动器与波形动画（PingPong、Sine、Sawtooth、Triangle 等），支持单次（once）与循环（loop）播放，停止时自动恢复基准姿态；Android 端采用 SetNativeArrayForChannelImpl 安全多流更新通道，与滑条功能稳定共存；桌面端游戏内悬浮窗支持开始/暂停/停止控制；支持动效音效联动（driver_audio）；客户端支持自定义独立桌面快捷键并实现实时存储。
+- **BEM 单模型 ZIP 容器原生支持**：双端运行时及工具链原生支持包含根 manifest.json 与 payloads/ 的单个模型 ZIP 容器文件，方便创作者打包分发与玩家直接加载。
+- **双端启动自动检查更新**：Windows 桌面端与 Android 端新增启动时自动检查更新功能，发现新版本时在状态栏或对话框提醒并提供一键直达下载页，可在“关于”界面手动检查更新或关闭自动检查。
+- **Android 噗切娜主世界 LOD 映射与模型校验修复**：补齐噗切娜（chr_0038_purrche）全量 22 个组件在安卓端 UI LOD0 与主世界之间的映射规则，解决帽子部件（fur_02）在安卓主世界模型中保留 lod0 命名导致的校验失败与节点缺失问题。
+- **BEM Tools 升级至 1.6.2**：完整支持 BEM 1.5 动效驱动（dynamic-drivers-v1）与 ZIP 容器打包解包命令（pack-zip / unpack）。
+
+## 4.0.8 Better Endfield Next
+
+- **BEM Tools 1.6.1 修复**：修复 1.6.0 中 `bem_v15` 源码 NUL 导致模块无法导入、所有 CLI 校验与打包失败的问题；补全冻结包 hidden import，并在构建后执行真实 BEM 校验。
+- **BEM 1.5 回归**：修复材质覆盖数值被通用 manifest 校验提前拒绝的问题；旧版 1.0–1.4 不再依赖 1.5 模块加载。
+- **安装升级清理**：升级时清理旧的 BEM Tools 运行时目录，避免旧 Python、DLL 或 GUI 文件残留。
+
+## 4.0.7 Better Endfield Next
+
+- **BEM 1.5 材质属性与关键字动态覆盖（material-overrides-v1）**：原生支持在模型绘制阶段对 Unity 材质属性（floats、colors、vectors）及着色器关键字（disable_keywords、enable_keywords）进行实例级动态覆盖；完美支持半透薄纱深度写入、水墨暗底色调校及高光抑制等复杂视觉需求，双端完全对齐（特别鸣谢 @Saberverse 提供 BEM 1.5 规范设计与审阅材料支持）。
+- **关闭模型校验开关（skip_validation）全链路联动**：工具链与原生运行时全面接入「关闭模型校验」宽松模式，支持属性名称放宽、超界数值自动截断（Clamp）与配额动态扩容。
+- **BEM Tools 升级至 1.6.0**：版本号前两位正式对齐游戏主版本（1.6.x），同步更新创作者指南、格式规范与 Agent Skill。
+
+## 4.0.6 Better Endfield Next
+
+- **Steam 覆盖层与链式启动修复**：针对 Steam 替换启动即使开启管理员权限也无法呼出 Steam 叠加层的问题，重构启动器流程，在挂起状态下的游戏子进程中完成 Steam Overlay 模块注入，彻底恢复 Shift+Tab 叠加层快捷键呼出与状态同步。
+- **Android 端模型卡片 ASTC 转码与法线重建优化**：在已安装模型卡片上新增「转为 ASTC 格式」入口，支持针对特定模型按需重编码为移动端原生 ASTC 格式并自动补全法线 Z 轴；优化重写写入机制，非修改纹理直接零解压直通原包压缩载荷，重构纹理启用 Zstd 压缩落盘，彻底解决包体积异常暴增问题；同步修正元数据载荷大小并支持自动修复自愈，彻底消除游戏端校验异常。
+- **Android 会客室媒体屏崩溃修复**：解决手机版会客室媒体屏播放视频时闪退的问题。针对 Android Vulkan 渲染模式下 Unity 原生 VideoPlayer 引发的底层驱动崩溃，自动回退并接入 Android NDK 原生 MediaCodec / libmediandk.so 解码流水线，直连 SurfaceTexture 纹理渲染，彻底根治视频播放闪退。
+- **桌面端新角色头像与战斗字典增量同步**：增量提取并规范化补充新角色「祀（chr_0036_jsspsi）」与「明河（chr_0037_minghe）」的高清头像资源，完整嵌入桌面端 UI 程序集；重新运行增量流水线同步战斗字典，角色总数增量更新至 36 位，同步刷新 Native Overlay 与 Web 字典定义。
+
+附件与验证边界见 [4.0.6 发布记录](docs/workspace/releases/4.0.6/RELEASE_4_0_6.md)。
+## 4.0.5 Better Endfield Next
+
+- **多启动器自动识别与切换**：支持官服及各渠道服启动器自动扫描与下拉列表切换，支持手动选择并记住自定义启动器路径，支持从列表移除。
+- **免启动器直接拉起模式**：设置页新增“跳过官方启动器”开关，开启后无需打开任何启动器即可直接启动游戏。在 XInput 模式下启用跳过启动器时，自动以管理员权限直接运行游戏主程序，保证注入和游戏正常拉起。
+- **Android 1.6.4 全语种短语音目录同步**：提取并校验真机（1.6.4 / versionCode 61）最新 VFS 音频分区，完成中、英、日、韩四语种共 1,359 个 Banks 与 14 万+ 条 Media 记录验证，生成包含全部 35 个角色 × 4 种语言（共 140 目录）的完整运行时索引，彻底解决韩语语音缺失与新短语音映射问题。
+- **BEM Tools 升级 1.5.5**：将 4.0.4 补充包的角色资料直接整合入完整包，无需单独覆盖补丁；保留昼雪、祀、明河的 Windows 1.6.3 目标合同、profiles 与 keep-only 创作起点工程。
+- **Windows 串流与触控输入优化**：集成 Unity 输入系统独立指针路由策略（AllPointersAsIs），彻底根治 iOS / Moonlight 串流及触屏多指输入时 UI 按钮按下不释放卡死的问题；新增 mouse_to_touch_enabled 配置开关，实现原生触控与鼠标模拟转换解耦。（感谢 @orangetooth 的逆向分析与 @yumi233 的适配提交，详见 Issue #29 与 [触控修复说明](docs/ui/TOUCH_POINTER_REUSE_FIX.md)）。
+- **Android 媒体屏管理界面风格统一**：重构媒体屏增强页面，统一为 Better Endfield 原生 UI 风格，完善媒体导入提示与状态布局。
+
+附件与验证边界见 [4.0.5 发布记录](docs/workspace/releases/4.0.5/RELEASE_4_0_5.md)。
+
+## 4.0.4 Better Endfield Next
+
+- Steam 国服配置自动填写当前账号的启动选项；切换加载方式、路径或升级后，在 Steam 退出时自动更新。启动前检查配置，避免直接执行占位 EXE 而出现“平台无效”。移除 BE 配置时恢复原启动选项，并保留其他游戏设置。
+- 正常更新时保留 AppID 匹配的 `steam_appid.txt`；其他文件冲突可在确认完整路径和删除范围后清理并重新配置。自动更新不执行强制清理。
+- 从 BE 或 Steam 启动 Launcher / Injector 时隐藏常驻控制台，保留游戏生命周期跟踪、注入与错误提示。
+- Windows 增加昼雪旧 BEM 的定点兼容：适配 1.6.3 中 cloth_01 的原网格变化与骨骼顺序调整，保留旧包自定义权重和数据；不关闭其他角色或未知资源的校验。代表旧包的 12 部件开屏替换已获用户实机确认。
+- BEM Tools 更新为 1.5.4，同步分发昼雪当前世界/详情资料、11 个索引身份、41 个纹理身份和 24 部件的 keep-only 显式工程；提供独立工具 ZIP 与角色资料补丁。8/12 个部件符合现有来源转换布局，未支持项继续保留边界。
+- 修复持续冲刺模块因可选的 `AnimatorStateInfo.get_loop` 接口缺失而整体无法加载的问题；该诊断值缺失或读取失败时显示 `unknown`，核心状态、时间和长度仍需正常读取。纳入用户已完成的修复，本轮只编译，未重复冲刺测试。
+- Android 版本同步为 4.0.4（40004），生成本地 APK，**本次不发布 Android 附件**；语音资源后续补充。昼雪兼容与本轮角色运行时资料仅有 Windows 证据。
+
+附件与验证边界见 [4.0.4 发布记录](docs/workspace/releases/4.0.4/RELEASE_4_0_4.md)。
+
+## 4.0.3 Better Endfield Next
+
+- 适配终末地 Windows 1.6.3 的启动器检查，将“保存并启动”、Injector、XInput、快捷方式和已有 Steam 国服启动功能接入统一流程，使用本机官方签名启动文件完成检查，无需打开官方启动器界面。
+- XInput 完全由用户手动安装；普通启动、创建快捷方式和配置 Steam 不再自动安装或切换加载方式。Steam 命令按当前注入器/XInput 模式生成，升级或更换模式后需重新粘贴到 Steam 启动选项。
+- 修复 Release 混淆后 Steam 元数据、缓存和安装/权限记录反序列化失败；正式混淆包的资料导入、持久化往返和 ACF 界面预览已验证。
+- 修复新版持续冲刺因方法内联导致的挂钩失效；更新战斗统计的协议字段、属性范围和来源归因，修正 MMD 地面检测对嵌套 `RaycastHit` 的布局判断。
+- 使用现有工具链增量更新角色、动作、语音和战斗资源：当前覆盖 37 个角色/变体条目、4,719 条动作，补充祀和明河相关资源；语音 bank 和新增头像的既有缺项仍按实际资源保留。
+- Android 同步升级 4.0.3（40003），针对手机实际安装的游戏 1.6.4 定向核查 ARM64 冲刺调用链、字段、枚举和 MMD 托管调用合同；覆盖安装保留数据，相机模块本轮初始化成功。持续冲刺未启用、MMD 未播放，不宣称完成这两项游戏内行为验收。
+- BEM Tools 升级 1.5.3，正式角色库新增祀的目标与部分来源识别资料，附带祀和明河三种形态的 5 套 Windows 显式资源工程。保持现有不支持部件、keep-only 和未完成替换验证状态，独立工具与 BE 内置资料同步更新。
+- Steam 覆盖层、计时及完整 Steam 客户端启动流程尚未实测。
+
+本地安装包、验证范围和研究依据见 [4.0.3 发布记录](docs/workspace/releases/4.0.3/RELEASE_4_0_3.md)。
+
+## 4.0.1 Better Endfield Next
+
+- 修复 Android MMD 独立 VMD 镜头机位偏低、距离过近的问题：使用绑定姿态的头部高度缩放镜头，与 PC 保持一致，不受当前弯腰动作影响。Android APK 已在本版本中覆盖更新，安装后需重启游戏。
+- 同一个 BEM 可覆盖使用同名角色模型、外包一层同名节点的非编队 NPC；统一模型根定位、加载登记与关闭恢复，保留原有校验。Android aglina / 凛 1.2.1 已通过用户实机测试。
+- 修复 Windows DLL / XInput 代理安装后状态不能及时刷新，并恢复官方 4.0.0 代理缺失的安装记录。
+- 修复 Windows“保存并启动”卡在“正在准备配音资源”、无法启动游戏的问题；修正混淆构建中的安装记录 JSON 序列化。
+- 修复模型资源重新持有已记录原版 Mesh 后的二次交付拒绝，允许重新准备当前替换。
+- PC / Android 新增独立、默认关闭的“实验：克隆模型支持”，重启游戏生效；保存生成时的来源代次、实例恢复记录与自身骨骼，保持同步模板交付。已继承完整结果的实例保留私有材质，来源不明时保留当前绑定。
+- 双端彻底移除第三方模块装载器、管理页面、网页桥、扩展配置与 SDK / Echo 打包项，迁移到独立项目 [Endfield Mod Loader](https://github.com/Dr-hydra/Endfield-Mod-Loader)。通用 Host、内置模块加载、共享 Hook 链及创意工坊保留。
+- BEM 原生布料物理及制作端权重、裁剪试验作为废弃研究归档到 `legacy/native-bem-cloth-20261010/`，不参与当前构建。
+
+完整附件与验证范围见 [4.0.1 发布记录](docs/workspace/releases/4.0.1/RELEASE_4_0_1.md)。
+
+## 4.0.0 Better Endfield Next
+
+- 产品更名为 Better Endfield Next，保留原 Logo，更新双端安装身份、内部模块/通信标识和发布签名。与旧版独立，需卸载后重新安装；Android 重新启用框架模块和游戏作用域，不迁移旧设置。
+- 第一人称功能完整移除；专用代码、资料工具、测试及公共文件原始快照归档至 `legacy/retired-before-next/`。
+- 暂时隐藏 Windows、Android 第三方模块入口及旧入口路由，保留装载器、网页桥和管理实现。
+- Windows Release 加入 Obfuscar 程序集混淆；Android Release 启用 R8 和资源收缩；原生 C++ 优化与符号收敛。公开调用和界面绑定保留必要名称。
+- Android 支持单个 BEM 和包含多个 BEM 的 ZIP，校验后可勾选导入项，支持子目录及文件管理器打开/分享；逐包处理冲突和失败，保留已成功导入的模型。
+- 修正 Windows 仅开启时间冻结时的相机模块启用条件，使冻结能独立运行。
+- 双端 Release、Android lint、签名核对、桌面启动和相关离线回归已通过；游戏内效果待实机验收。Windows 目前使用内部自签证书。
+- 完整安装说明、附件与验证范围见 [4.0.0 发布记录](docs/workspace/releases/4.0.0/RELEASE_4_0_0.md)。
+
+
+## 3.5.4（草稿，未正式发布）
+
+- Android PCUI 排除移动端额外的退出快捷键绑定，恢复菜单与 Alt 显示光标时的系统箭头，并接入真实鼠标绝对坐标；保留触屏和相对鼠标输入。针对 issue #26，实际菜单兼容性待手机验收。
+- Android 保留全局最高 LOD 与 NPC 可见范围，在确认场景 mip 被纹理池削减时，按实际需求与系统可用内存协调额度；跟踪游戏档位及同值预算请求，切档和退出时恢复原值。issue #25 测试包的场景贴图已获用户确认恢复正常，尚未覆盖全部设备和场景。
+- Android 悬浮窗区分模型列表读取失败和真正空目录，失败时保留已读取列表并禁用过期写入，重试成功后恢复操作；补充不包含授权密钥或设置内容的桥接失败与恢复日志。热切换运行时改用“启用（热切换）”，移除旧的“下次加载生效”文案。
+- 补齐 Android 普通角色首次启用时的已加载实例发现：沿 UI LOD0 donor 与主世界 LOD1 的既有配对校验、回绑事务生效；UI donor 暂不可用时保留请求重试，避免配置已接受却只等下一次资源投递。
+- 修正模型热切换的实例/模板原版资产归属，按角色隔离失败重试，避免切换一个角色触发其他角色的遗留请求。恢复只校验实际使用的原版骨骼路径，忽略无关节点，仍拒绝必需骨骼缺失或歧义；本轮安卓测试包已获实机确认。
+- Android 更新后补充框架初始化入口；游戏前台读取设置桥失败时，通过透明启动入口恢复 BE 的框架连接并限频重试读取，模型修改不自动重放。补充有界私有连接状态记录，避免依赖可能缺失的 logcat。
+
+## 3.5.3
+
+- 设置页新增 Steam 国服启动预览：查询、缓存或导入官方应用元数据，生成 ACF 和国服启动命令，使用 BE 管理的 XInput 自启动代理。
+- BE 在启动时及每小时查询已管理配置的元数据；Steam 运行期间只缓存，完整退出后更新 ACF。配置写入、移除及 Windows 管理员设置同步均检查客户端状态，保留备份与中断恢复。
+- Steam 管理员启动默认关闭；可单独同步或恢复当前 Windows 用户的管理员兼容设置，保留其他兼容选项。
+- 游戏目录存在 `xinput1_4.dll` 时，启动按钮、注入器快捷方式和独立注入器均拒绝再次注入，避免双加载。
+- 独立 BEM Tools 1.5.2 随本次发布提供创作者 GUI。Windows 与 Android 版本统一为 3.5.3（Android versionCode 30503）；Steam 功能仅限 Windows，完整元数据、实际 Steam 启动、覆盖层及计时仍待后续验证。
+
+## BEM Tools 1.5.2（独立工具）
+
+- 独立工具 ZIP 新增 `BetterEndfield.BemTools.exe`，完整解压后可直接打开创作者 GUI，无需安装主程序、Python 或 .NET。
+- GUI 与主程序共用创作者窗口，支持导出工程、工作区、转换、打包、解包与合集；可通过一个工程路径参数打开 `.bemproj.json`。
+- 主程序入口改名为“BEM 创作者工具…”，同步中英文指南与随包 Skill；BEM 格式仍为 1.0–1.4。
+
+## 3.5.2
+
+- BEM Tools 升至 1.5.1，正式支持 BEM 1.4：显式资源目标、静态网格、平台/LOD 与 donor 声明，可覆盖武器和角色大招形态；旧版 1.0–1.3 包保持兼容。
+- 修正双端模型热切换的发现、实例更新与恢复路径，减少诊断扫描带来的卡顿；按正常资源重载应用选择。
+- Android PCUI 增加相对鼠标输入桥接，桌面布局和 DPI 放置修正；保留游戏原生手柄输入路径，未新增自定义映射器。
+- 第三方模块与创意工坊入口统一到 Android 增强功能页，桌面端提供独立 Workshop 导航。
+- Windows 与 Android 统一为 3.5.2（Android versionCode 30502）；提供安装包、APK、BEM Tools 1.5.1、第三方模块 SDK 与双端 Echo 示例。
+
+## 3.5.1
+
+- Android 悬浮窗新增全局 FOV 开关与 5–150° 滑条，独立于自由相机视野；设置实时保存，已初始化的相机即时应用。
+- 双端新增游戏内模型管理：按角色筛选、关闭全部、同角色互斥启用、外观、组件与形态参数。详细选项展开后显示，继续使用原热切换加载和回滚路径。
+- Windows 新模型悬浮窗复用现有悬浮窗基础，默认使用主键盘 `=`（无需 Shift）切换显示，支持自定义组合键及中英界面。
+- 模型管理器与 PC 悬浮窗共用原子保存和增量合并，避免并发操作覆盖选择；仅修改悬浮窗状态不会触发模型重建。
+- Android 游戏进程通过框架授权的设置桥写入模块应用，保留渠道客户端支持、版本冲突检测、包代次校验和原提交失败回滚。
+- 开发工作区改用配置管理工具链和输出路径，资料按模块与游戏版本整理；新增统一构建与测试入口。
+- Windows 与 Android 统一为 3.5.1（Android versionCode 30501）；提供 PC 安装包与 Android APK，附 BEM Tools 1.5.0、第三方模块 SDK 1.0.0 和双端 Echo 示例。
+
+## 3.5.0
+
+- Android 接入跨 LOD 资源关系及宽松命名兼容，Renderer/Mesh 名与资源限定骨骼别名沿用实际目标匹配。
+- BEM 创作者工具增加 Blender 工程导出入口、可移动工作区及四篇英文创作者文档；BEM Tools 升至 1.5.0。
+- 原始发布范围与验证记录见 [3.5.0 发布记录](docs/workspace/releases/3.5.0/RELEASE_3_5_0.md)。
+
+## 3.4.4
+
+- 模型加载默认采用低峰值模式：贴图上传按小批次与渲染线程同步，降低单角色和四人编队加载时的瞬时显存与内存峰值，不预热、不增加常驻显存；详情模型重建复用场景模型已上传的贴图。双端新增「加载速度优先」选项，适合内存充足的设备。
+- 实验热切换支持场景模型：切换后同步重建场上实例与模板，保存原版网格用于恢复；修复场景模型不切换、切换缓慢及切换后闪退的问题。
+- 修复 Android 第三方模型替换失效：阴影代理按专用路径匹配，场景模型网格空间校验与渲染器缺失分开报告。新增通用模型定位与原网格身份验证。
+- 第一人称新增逐角色资料，扩大头饰与发饰隐藏范围（含提夫罗斯）；修正第一人称朝向使用游戏最终视角。
+- Host 双端支持多个模块挂接同一方法，内置 Hook 统一走 Hook 链；新增 HookInlineScan 工具，动作模块的打断 Hook 改为可选。
+- 模型管理双端新增「按角色筛选」「关闭全部模型」。
+- Android 模型存储：转换纹理后删除被替换的原包，游戏启动时清理未启用的模型副本；新增「清理未使用数据」与可选的「保留本地副本」。
+- Windows 模型包改为存放在程序目录 `models`，旧位置的包在游戏关闭时自动迁移；程序目录不可写时继续使用原位置。
+- Android 悬浮窗新增透明度与自动贴边；模型管理与悬浮窗设置补充英、日、韩、繁中文本。
+- BEM 创作者文档重新整理为创作者指南、格式规范（1.0–1.3 合并）、运行时行为与兼容性、其他来源 Mod 转换四篇，旧规范与研究记录移至 `docs/archive/bem/`。
+- Windows 与 Android 版本号统一为 3.4.4，Android versionCode 为 30404；BEM Tools 保持 1.4.1，第三方模块 SDK 保持 1.0.0。
+
+## 3.4.3
+
+- 改善双端 BEM 顶点布局兼容性：替换网格使用包自身的顶点声明和步长，原网格继续提供骨骼、bindpose 与材质，不再要求两者的顶点格式一致；保留包自身校验与构建结果回读校验。
+- 修复 Android 部分模型仅在详情界面生效的问题：场景适配允许完整后缀一致的原生 LOD 材质对应，并正确使用已验证的详情材质副本，不再要求旧 LOD Shader 具有相同纹理属性。
+- Android 场景替换与详情路径统一遵循模型校验开关；补充场景适配拒绝原因日志。开启默认校验时，提夫罗斯测试包的详情与场景模型均已通过实机验证。
+- 双端将关闭模型校验明确列为实验性功能；Android 三个模型实验功能合并到同一区域，移除该区域与相机 FOV、跟随控件下的说明文字。
+- 补齐桌面角色外观页、第三方模块与 MMD 页的英文本地化。
+- Windows 与 Android 版本号统一为 3.4.3，Android versionCode 为 30403；BEM Tools 保持 1.4.1，第三方模块 SDK 保持 1.0.0。
+
+## 3.4.2
+
+- 双端新增实验性「第三方模块」：导入 ZIP、启停、调整顺序、查看状态与日志，以及每个模块独立的 HTML/CSS/JavaScript 页面。原生库统一由游戏进程 Host 加载，提供配置、消息和共享 Hook 链接口；附开发文档与双端 Echo 示例。
+- Android 手机导航支持横向滚动，模块页面使用独立全屏容器；桌面角色外观页新增 `.bem` / `.zip` 多文件拖入区。
+- 双端支持 BEM 1.3 顶点形变与体型参数滑条；转换工程、桌面创作者窗口、CLI 和文档同步升级，BEM Tools 升至 1.4.1。
+- 修复第一人称退出后偶发残留视角旋转限制、切换角色时旧相机或骨骼引用的生命周期问题。
+- 调整第一人称头发剔除：结合实时骨骼与 BEM 替换几何识别头部，保留完整投影；未知或无法读取的混合部件保守回退。
+- 新增全局 FOV 调节和自由相机相对人物平移跟随。
+- 双端补齐噗切娜开屏人物模型资源；更新 README 与仓库功能说明。
+- 已完成双端发布构建与相关回归。第三方原生模块驻留到进程退出，升级库或调整已加载模块顺序需重启游戏；退休版本文件暂不自动清理。游戏内新增效果仍需实机确认。
+
+## 3.4.1
+
+- 双端新增默认关闭的模型热切换和加载优化实验；创作者工程支持保存参数并重复导出，BEM Tools 升至 1.4.0，随包分发 33 角色资料。
+- 修复 Windows 相机扩展按键、Android 外部导入连接等待与 PC 风格 UI 状态漂移；放宽两项 BEM 校验，并提供开发者关闭模型校验选项。
+- 完整说明见 [3.4.1 发布记录](docs/workspace/releases/3.4.1/RELEASE_3_4_1.md)。
+
+## 3.4.0（仅 Windows）
+
+- 新增 MMD 播放：安装目录 `mmd\` 下的每个作品文件夹由 `set.ini` 描述动作、表情、镜头与音乐，管理器可直接导入；游戏内由独立的 MMD 悬浮窗选择、播放、暂停与停止，动作、镜头和音乐共用同一条时间轴。
+- 角色身体动作移植 EIEM DirectVmd：FK、扭转骨、FinalIK 腿部、膝盖弯曲混合与可选地形贴合；所有游戏接口按名字解析，不含写死的地址或字段偏移，解析失败时只关闭对应功能并写入 `BetterEndfield.EiemBody.log`。
+- 支持多人同台：作品可额外提供 `motion2`–`motion4`（及对应表情），由小队中在场的队员按顺序出演，并保留 VMD 中的队形。
+- 表情由作品的 face VMD 驱动游戏面部；新增 MMD 常用口型别名（「ワ」「口横広げ」「にやり」等），按非标准口型制作的表情文件也能驱动嘴部。
+- 新增「衣物物理」选项：稳定（推荐，播放期间头发与衣物完整模拟，不被原生动画姿态拉回）、游戏原样、冻结（衣物随身体刚性运动）。
+- VMD 镜头无需开启自由相机即可播放，并按角色身高与 EIEM 舞台锚点自动适配；自由相机新增关键帧保存与读取。
+- 音乐模块支持为 MMD 播放本地音轨（WAV/MP3/M4A/AAC/FLAC/WMA），可设置与动作的时间偏移。
+- 自定义角色外观（BEM）运行时与转换工具支持 BEM 1.1 / 1.2 格式；「角色外观」页的组件选项收入可展开区域，标题显示当前选择摘要，包列表不再过长。
+- 修复角色模型下存在多个 Animator 时身体动作无法绑定的问题：改为选取唯一处于启用状态的人形 Animator，并在日志中列出全部候选。
+- 同步游戏热更新后的角色资源（新增角色噗切娜）：角色动作清单、角色语音清单与语音目录、战斗数据字典。
+- 本次仅发布 Windows 版，Android 版本保持 3.3.0。
+
+## 3.3.0
+
+- 自定义角色外观（BEM）在 Windows 与 Android 双端上线。两端使用同一份标准 BEMv1 包，Android 直接编译 `native/modules/custom_model` 的桌面源码，不存在第二套实现，也不引入游戏偏移。
+- 新增「角色外观」页：导入、更新、删除 BEM 包，按角色选择外观，并提供独立 LOD 偏好。同一角色同时只允许一个启用包，重复启用会在界面停用并提示重新选择；包与外观的选择在下次启动游戏时生效。
+- 「其他来源 Mod 转换」支持直接读取已解压目录及 ZIP、RAR、7z 源包，无需预先解压或安装解压软件。转换通过完整检查后才允许导出 BEM；未适配的源包输出待适配原因报告。
+- 修复登录色带在图集打包 sprite 上的换色失效。Sprite 矩形使用纹理坐标（原点在左下），而 `ReadPixels` 寻址的是活动渲染目标，其纵向原点随图形 API 而定；两者仅在 sprite 占满整张纹理时一致，因此图集子矩形读到的是无关填充区，返回整块不透明色而没有可中和的主题色。
+- 补齐 README 的模块与功能清单。此前文档停留在早期版本，缺少自定义外观、相机增强、动作模块与寻访查询四个模块。
+- 面向创作者的 BEM 说明同步双端现状，并从 README 直接给出入口。
+- Android 移除 legacy API 82 构建变体，libxposed API 102 成为唯一框架入口。
+- Android 端新增「转换手机纹理」：手机 GPU 纹理格式与桌面不同，实机显示异常时可按包转换，成功后发布新一代并保留启用状态与已选外观，失败或取消保持当前包不变；缺少已验证法线编码信息的包可导入但无法转换。
+- 战斗数据页新增「悬浮窗初始可见性」：悬浮窗随模块启动后可以先隐藏，不必每次进游戏按 F12 关掉。该项只在改变时下发，游戏内用热键切换的状态不会被其他设置的保存动作覆盖。
+- 修复安装到非系统盘后，用 Setup.exe 更新可能不覆盖原安装的问题。升级时安装器不再显示目录页，直接沿用上次的安装路径，避免新文件装到默认目录而快捷方式仍指向旧副本、「关于」中版本号不变。
+- 安装器版本号改为从 `Directory.Build.props` 推导，与程序集版本不一致时直接中止构建；「关于」页不再保留会过期的硬编码版本号回退值。
+- 已知限制：两端切换包或外观后都需要重启游戏，暂不支持运行时热切换。
+- Windows 与 Android 版本号统一为 3.3.0。
+
+## 3.2.2
+
+- 修复单文件解包后错误地从临时目录查找注入器，导致注入器与 XInput 代理检测失败的问题；固定路径以启动程序 EXE 所在目录为准。
+- 第一人称相机新增头部网格隐藏、颈部缺口填补及对应设置，切换角色或场景后会自动恢复正确状态。
+- 修复梨诺悬浮冲刺耗尽后机甲与光效状态未及时恢复的问题。
+- 内置注入器固定使用安装目录下的 `loaders/BetterEndfield.Injector.exe`；设置页不再允许覆盖路径，启动、快捷方式、部署和卸载统一使用随软件安装的注入器。
+- 发布构建会在打包前清理原生暂存目录，避免其他分支或旧目标的残留文件混入安装包。
+- Windows 与 Android 版本号统一为 3.2.2。
+
+## 3.2.1
+
+- 战斗解析和寻访统计使用独立 WebView2 窗口，页面加载后自动接收桌面数据并进入对应页面，无需浏览器访问本地回环地址。
+- 使用共享 WebView2 Runtime，保留登录状态；大记录分块传输并逐块确认，原始数据不经过远端中转。
+- 冲刺优化各功能默认关闭，包括梨诺“隐藏机甲与光效”；保留用户显式保存的开关选择。
+- Windows 与 Android 版本号统一为 3.2.1。
+
+## 3.1.3
+
+- 修复战斗悬浮窗普通 DPS 的技能分类。伤害现在结合运行时 `damageDecorateMask` 与技能 ID 归入普攻、战技、终结技、连携技、被动或其他，并正确处理终结技强化普攻等保留普攻标记的转换形态。
+- 寻访界面的“打开网页”按钮改名为“上传云端”，英文同步为“Upload to Cloud”，使按钮行为更明确。
+
+## 3.1.2
+
+- Android 不再硬编码目标包名。模块附着到 LSPosed 作用域里选中的应用（只进主进程），是否真正介入改由证据决定：`UnityPlayer.nativeRender` 必须存在，原生 Hook 全部经 `libil2cpp.so` 导出按名字解析。官服 `com.hypergryph.endfield`、国际服 `com.gryphline.endfield.gp` 与 B 服等渠道包由此共用同一份构建，客户端更新只要托管层类名方法名不变就无需重新适配。
+- Android 清单新增 `xposedscope`，LSPosed 作用域页预选官服与国际服包名；渠道包仍需手动勾选。
+- 桌面端「在网页中解析」把回环地址改用查询串传递。Toy 正式页把应用装在 iframe 里，只有查询串会被转发进去，URL fragment 到不了服务端也无人转发。
+- 网页端分享改为不信任 `isSupport("share")`：该接口在浏览器中返回 true 但调用必定抛出，导致复制链接的兜底路径从未执行。新增分享弹窗，二维码在本地生成（不依赖 SDK），复制依次尝试剪贴板 API、`execCommand`，都失败则选中链接。
+- 网页端不再于启动时调用 `getUserProfile`。宿主桥对该接口的守卫是"手机 UA 且不在 B 站 App 内"，命中时会先拉起 App 再抛错，导致手机上打开分享链接直接跳出页面。
+- 修复手机端三处：iframe 内 viewport meta 不生效导致浏览器自行放大字号（补 `text-size-adjust`）；时间轴画布 `touch-action` 由 `none` 改为 `pan-y`，纵向滑动不再被吞掉；分享链接的 `?r=` 参数在消费后从 URL 移除，底部导航不再被它一直劫持回记录页。
+- 云函数放宽 BEC 快照版本门至 1–2（仅解析 HEAD 层，两版编码一致）。
+
+## 3.1.1
+
+- 修复替换语音的时长修正：Lua 侧调用经 IL2CPP 委托快路径内联，绕过了原入口 Hook；现改挂唯一的时长叶子 `_GetVoDurationFromVoData`，按角色规则直接读取目标语言时长列。角色档案、电台、对话回放、剧情与 Bark 的时长查询全部覆盖。
+- 口型加载补充按对白 ID 直接选规则的路由来源，Timeline 剧情不再依赖语音先行触发；移除没有调用方的 `GetLipSyncTrackPath` 重载 Hook。
+- 恢复 Windows 端登录角色模型替换：`InitMainPathHash` 在当前客户端被整体内联，改挂 `StringPathHashBinary.InitMain/InitInit`，桌面端与 Android 同源。
+- 登录 Logo、色带与两侧色块改为运行时生成去色副本后再套用主题色，最终颜色与所选颜色一致；移除相关已知问题说明。
+- 语音页移除"时长修正与口型同步存在问题"的提示。
+- Android 编译当前桌面模型源码，新增 `betterendfield.enhancement`（隐藏 UID 水印、关闭近镜头角色抖动）与模型页 HSV 调色盘；Windows 与 Android 统一版本号为 3.1.1。
+
+## 3.0.1
+
+- 更新 Windows 桌面端资源数据以适配当前游戏版本，并统一桌面端与 Android 版本号。
+- 当前游戏版本的模型替换存在生命周期兼容问题，本版强制关闭该功能，保留 Logo 与色带主题色设置。
+- 配音替换可继续使用，但语音时长修正与口型同步仍存在已知问题，界面已明确提示。
+- 发布 Better Endfield Android/LSPosed 正式版，并与后续 Windows 桌面版统一版本号。
+- 更新 Android 1.5.3 资源清单，新增提弗洛斯模型、118 个动作和四语角色语音目录。
+- Android 模型配置补齐原生循环、强制循环和双 Playable 交叉混合，支持自定义循环区间与混合时长。
+- 新增登录 Logo 与色带主题色调色板，同时保留精确 `#RRGGBB` 输入。
+- Android 模型和语音资源改为独立生成产物，避免被尚未适配的桌面客户端资源覆盖。
+
+## 2.3.1
+
+- 新增第五个独立模块 `BetterEndfield.UiModule.dll`：在 PC 客户端启用移动端触屏布局，提供虚拟摇杆、技能轮盘和触控控件，面向串流到手机、平板与掌机的场景。
+- 移动端布局配套鼠标转触控输入。客户端的触控读取只认 `EnhancedTouch.Touch.activeTouches`，普通鼠标事件不会进入该集合；模块改为注入合成触点，由 Unity 的 Windows 后端识别为真实 `Touchscreen` 设备。鼠标左键即手指，`Ctrl+Alt+T` 开关转换，只在游戏窗口前台时生效。
+- 转换按触控签名过滤自身回声，但不过滤 `LLMHF_INJECTED`，因此通过 `SendInput` 投递鼠标的串流客户端同样可用；合成注入需要 Windows 10 1809 或更新版本，系统不支持时只停用转换、保留布局。
+- 向账号声明 Android/云游戏平台身份拆分为独立开关，与触屏布局解耦，默认关闭且不由 UI 写入配置。
+- 战斗数据新增 rDPS 口径：按单次伤害实际扣血量守恒分配直伤、攻击力、增伤、增幅、脆弱、承伤易伤、减防/减抗、连携增益、法术强度和其他十类贡献。跨乘区按乘数对数权重分配，同一乘区内按实际观测增量分配；角色自身效果保留在直伤，只有其他角色提供且语义已验证的效果才转移贡献。
+- 随版本发布 `modules/combat-semantics.besem` 与 `modules/buff-sources.bemap`，提供 Buff、技能、元素和乘区语义。运行时不读取独立更新目录，语义随模块一并升级；构建脚本会校验目录与构建报告的哈希一致性，过期时直接失败。
+- 战斗记录升级到 schema 11：只保存可验证的操作、原子结果、队伍快照和会话摘要，排行、技能统计、Buff 区间与时间轴均在读取时派生。不再按时间或 ID 前缀猜测归属，无法唯一验证的来源明确记录为未知；不兼容更早的开发格式。
+- 每条记录保存目录版本、验证覆盖率和有界未解析项审计，历史页可直接查看；无法验证的候选项不参与 rDPS。
+- 新增副本自动会话开关，进出副本时自动开始与结束统计。
+- 战斗统计配置节升级到 schema 2，移除 `record_all_damage`、`include_overkill`、`minimum_damage`、`group_by_*` 和 `save_raw_events`。
+- Host 动态解析器：类型名比较统一 `/`、`+` 与 `.` 的嵌套分隔写法；托管字符串读取加上结构化异常保护；静态字段读取不再要求实例指针。
+- 纳入独立 Android/LSPosed 工程的角色语音与登录模型模块。该工程仍在开发中，不包含在 Windows 安装器内。
+
+## 2.2.1
+
+- 完成第四个独立模块 `BetterEndfield.CombatStats.dll`：支持隐藏伤害数字、F11 统计会话和 F12 悬浮窗开关。
+- 新增独立 Win32 战斗悬浮窗，显示角色头像、总伤害、DPS 与按技能分类堆叠的横向柱状图，可相对游戏窗口拖动定位。
+- 伤害分类改为普攻、战技、终结技、连携技、被动和其他，并按实际 `originSkillId` 归类。
+- 会话格式升级到 schema 3，以 0.25 秒为桶同时保存技能分类与逐角色时间轴；原始逐击事件仍可独立关闭。
+- 重做战斗历史界面：最近三条折叠、日期与最多四角色筛选、记录删除、头像排行、双端点时间范围选择，以及按技能类型/按角色切换的时间轴图表与图例。
+- 修复时间轴页在 WinUI `Pivot` 中不显示、切换堆叠方式或操作图表时页面自动滚回顶部的问题。
+- 数值单位改为每 10 倍切换一级，提升中等伤害区间的可读性。
+
+## 2.1.1
+
+- 新增第四个独立模块 `BetterEndfield.CombatStats.dll`，提供伤害数字隐藏、快捷键统计会话、可配置聚合规则和本地结果可视化。
+- Host 新增 IL2CPP 嵌套类型动态解析，战斗数据模块继续保持无固定 RVA、无客户端哈希依赖。
+- 修复退出登录场景时色带换色 Tick 访问已销毁 `Graphic` 导致的崩溃，释放期间改用幂等标记和延迟清理。
+- 修复无打包 WinUI 窗口在任务栏、标题栏和 Alt+Tab 中显示默认图标的问题。
+- 纳入独立 Android/LSPosed 开发工程；该工程仍在开发中，不包含在 Windows 安装器内。
+
+## 2.0.1
+
+- 发布开屏视觉、模型、语音与 OmniMix 集成的当前稳定版本。
+- 已知问题（不会修复）：Logo、色带和色块的颜色可能与选择值存在偏差。原因是主题颜色会与游戏源资源自身的颜色数据叠加；本版本保留原始材质改色逻辑，不再继续处理该偏差。
+
+## 2.0.0
+
+- 重建为 Better Endfield Host + 独立模型模块 + 独立语音模块。
+- 统一 C# 与 C++ 命名空间、模块 ABI、配置和发布目录。
+- 移除固定 RVA、客户端哈希白名单和旧客户端布局回退。
+- 新增 IL2CPP 动态方法/字段解析与 Host 独占 HookBroker。
+- 新增内置注入器和可安装、可安全卸载的 `xinput1_4.dll` 自启动方式。
+- 删除外部加载器启动编排、`version.dll` 与 `dinput8.dll` 发布路径。
+- 优化游戏及注入器路径自动发现，并支持向游戏传递自定义启动参数。
+- 新增本机 PCK 语音 Catalog 生成器，支持按角色和目标语言生成。
+- B 服通过运行时契约和本机资源目录适配，不依赖官服二进制样本。
+## 3.5.0
+
+- Android 模型加载接入当前资源快照的 UI LOD0 → World LOD1 精确关系表，支持已核实的 Renderer/Mesh 名称差异。
+- 保留关闭模型校验的原有宽松路径，并增加受角色、资源根、组件路径和 LOD 区域限制的 `_8` / `_20` 后缀回退。
+- BEM 骨骼别名在运行时按 `world` / `ui` 资源分别匹配。
+- BEM Tools 升至 1.5.0，增加可移动创作者工作区、英文文档和 Blender 工程导出器首版。
+- PC 创作者窗口增加标准工作区入口。
+- Windows 与 Android Release 构建、Android Lint 与 APK 签名检查通过；随版本发布 BEM Tools 1.5.0、第三方模块 SDK 与双端 Echo 示例。
+

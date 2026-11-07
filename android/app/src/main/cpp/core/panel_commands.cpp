@@ -4,7 +4,7 @@
 
 #include "core/command_pump.h"
 
-namespace betterendfield {
+namespace betterendfieldnext {
 
 bool AcquirePanelCommand(const char* command, std::string& value) {
     return AcquireRuntimeCommand(command, value);
@@ -14,6 +14,6 @@ void AcknowledgePanelCommand(const char* status) {
     AcknowledgeRuntimeCommand(status);
 }
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext
 
 #endif

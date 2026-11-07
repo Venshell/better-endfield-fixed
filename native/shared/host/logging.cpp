@@ -4,12 +4,12 @@
 #include <iomanip>
 #include <sstream>
 
-namespace BetterEndfield::Host {
+namespace BetterEndfieldNext::Host {
 
 void Logger::Initialize(const std::filesystem::path& root) {
     std::error_code error;
     std::filesystem::create_directories(root, error);
-    file_path_ = root / "BetterEndfield.log";
+    file_path_ = root / "BetterEndfieldNext.log";
     std::lock_guard lock(mutex_);
     stream_.open(file_path_, std::ios::out | std::ios::app);
 }
@@ -39,4 +39,4 @@ void Logger::Write(const std::string& source, const std::string& message) {
     stream_.flush();
 }
 
-} // namespace BetterEndfield::Host
+} // namespace BetterEndfieldNext::Host

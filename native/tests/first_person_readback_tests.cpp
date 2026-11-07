@@ -1,6 +1,6 @@
 #include "../modules/camera/first_person_readback.h"
 #include <iostream>
-using namespace BetterEndfield::FirstPerson;
+using namespace BetterEndfieldNext::FirstPerson;
 int main() {
     auto plan = PlanReadback(100, 4, 40);
     if (plan.error != ReadbackError::None || plan.buffer_bytes != 400 || plan.read_bytes != 40) {

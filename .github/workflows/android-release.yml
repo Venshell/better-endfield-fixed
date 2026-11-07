@@ -16,12 +16,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to tag and title; must match versionName in android/app/build.gradle.kts (e.g. 3.4.2)'
+        description: 'Version to tag and title; must match versionName in android/app/build.gradle.kts (e.g. 4.1.8)'
         required: true
         # Tracks versionName on the branch this runs against. A stale default is
         # harmless -- the run stops on the mismatch check rather than tagging a
         # version the source does not declare -- but a wrong one wastes a build.
-        default: '3.4.2'
+        default: '4.1.8'
       draft:
         description: 'Create the release as a draft instead of publishing it'
         type: boolean
@@ -113,8 +113,9 @@ jobs:
 
       - name: Fetch verified headwear catalog
         env:
-          GH_TOKEN: ${{ github.token }}
+          HEADWEAR_CATALOG_URL: ${{ vars.HEADWEAR_CATALOG_URL }}
         run: |
+          python3 -c 'import json,os,pathlib; pathlib.Path("config/workspace.local.json").write_text(json.dumps({"tools":{"android_sdk":os.environ["ANDROID_HOME"],"android_dobby":"tools/android-toolchain/dobby-1.0.5"}}))'
           python3 tools/Camera/fetch_android_headwear_catalog.py --output "$RUNNER_TEMP/headwear"
           echo "HEADWEAR_CATALOG_DIR=$RUNNER_TEMP/headwear/catalog-bundled" >> "$GITHUB_ENV"
 
@@ -126,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          apk="android/app/build/outputs/apk/release/app-release.apk"
+          apk="build/next/android/gradle/app/outputs/apk/release/app-release.apk"
           # apksigner prints the digest as lowercase hex without separators,
           # while the pinned constant is the colon-separated uppercase form
           # keytool prints. Normalise both so the comparison is about the
@@ -161,7 +162,7 @@ jobs:
 
           mkdir -p dist
           apk="dist/betterendfield-${version_name}-${version_code}.apk"
-          cp android/app/build/outputs/apk/release/app-release.apk "$apk"
+          cp build/next/android/gradle/app/outputs/apk/release/app-release.apk "$apk"
           ls -l dist
 
           # Notes are lifted from the matching CHANGELOG section so the release

@@ -2,8 +2,8 @@
 #include <iostream>
 #include <stdexcept>
 
-using namespace BetterEndfield::FirstPerson;
-namespace Math = BetterEndfield::FirstPersonMath;
+using namespace BetterEndfieldNext::FirstPerson;
+namespace Math = BetterEndfieldNext::FirstPersonMath;
 void Check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 bool Same(Math::Quat a, Math::Quat b) {
     return std::abs(a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w) > .99999f;

@@ -1,0 +1,695 @@
+# BEM Format Specification (1.0–1.5)
+
+BEM (Better Endfield Next Model) is a character model replacement package with the `.bem` extension. Windows and Android read the same file. The [BEM 1.4 extension](BEM_V1_4_SPEC.md) defines explicit multi-resource targets and static weapons. The sections below describe the 1.0–1.3 contract; version-specific differences are marked below. Sections 12–14 add the BEM 1.5 material overrides, dynamic clock drivers and the native ZIP container. See the [Creator Guide](BEM_CREATOR_GUIDE.en.md) for production workflow and [Runtime Behavior and Compatibility](BEM_RUNTIME_COMPATIBILITY.en.md) for in-game matching and restrictions.
+
+Reference implementations: writers and validators are `tools/CustomModel/bem_v1.py`, `bem_v11.py`, `bem_v13.py`, and `bem_v14.py`; the native reader is `native/modules/custom_model/bem.cpp`.
+
+## 1. Versions
+
+| Minor version | Added | Required capability |
+| --- | --- | --- |
+| 1.0 | Fixed appearances, `appearances` | `fixed-appearances` |
+| 1.1 | Composable options, `option_groups` + `component_rules`, conditional draws, and texture overrides on keep components | `composable-options`; add `keep-material-textures` when used |
+| 1.2 | `texture_slots`, resource-specific bone aliases, 32-byte uncompressed skinning, and higher resource limits | Add `texture-slots` and/or `resource-bone-aliases` as used |
+| 1.3 | Continuous parameters, `parameters` + `mesh_deformations` | `body-parameters`, `mesh-position-deltas` |
+| 1.4 | Explicit resource/platform targets and static MeshRenderer meshes; see the linked extension | `multi-resource-targets`; `static-meshes` when used |
+| 1.5 | Material property and keyword overrides, root bone offset, dynamic clock drivers; see sections 12 and 13 | Add `material-overrides-v1`, `root-offset-v1`, `dynamic-drivers-v1` as used |
+
+- Writers choose the **lowest version that can express the package**. A package without newer features remains readable by older runtimes. Newer content in an older header is rejected.
+- Readers apply the limits and semantics for the header version. The current development runtime accepts 1.0–1.5. The ZIP container in section 14 is version independent.
+- 1.5 extends 1.3: a package may keep the legacy `character_id` / `world_resource` / `ui_resource` target and does not have to be rebuilt as 1.4 to use 1.5 features. `multi-resource-targets` is an **optional target-structure branch** from 1.4 onward; whether explicit resource targets apply depends on the presence of `resources` in `target`, never on the header version. Declaring the capability without `resources`, or carrying `resources` without declaring it, is rejected. Once the structure is chosen the whole package is validated against it; components may not mix the two field sets.
+- Every version requires `native-materials`, `palette-u8`, and `indices-u32`. Unknown or duplicate capabilities, and used features without their capability, are rejected. Declaring an unused capability is allowed.
+
+## 2. Container
+
+The file contains, in order: a 40-byte header, a UTF-8 JSON manifest, a payload directory, and contiguous payload bytes. Integers are little-endian, structures have no padding, the file limit is 2 GiB, and there is no file hash.
+
+| Header offset | Type | Field |
+| --- | --- | --- |
+| 0 | byte[8] | magic `42 45 4D 00 50 4B 47 00` (`BEM\\0PKG\\0`) |
+| 8 | uint16 | major = 1 |
+| 10 | uint16 | minor = 0..5 |
+| 12 | uint32 | header_size = 40 |
+| 16 | uint64 | file_size, equal to the actual file length |
+| 24 | uint64 | manifest_size, 1 byte..4 MiB |
+| 32 | uint32 | payload_count |
+| 36 | uint32 | flags = 0 |
+
+Each payload-directory entry is 32 bytes; its array index is the Payload ID:
+
+| Entry offset | Type | Field |
+| --- | --- | --- |
+| 0 | uint32 | codec: 0 raw, 1 Zstandard |
+| 4 | uint32 | reserved = 0 |
+| 8 | uint64 | offset, absolute file offset |
+| 16 | uint64 | stored_size |
+| 24 | uint64 | decoded_size |
+
+- Each payload is 1 byte..512 MiB; raw payloads have equal stored and decoded sizes.
+- Entries are ordered by offset. The first payload follows the directory, each later payload follows the previous one, and gaps, overlaps, out-of-range offsets, and trailing bytes are forbidden.
+- Zstandard data must be one independent frame with no dictionary and an exact content size. Compression level does not affect compatibility; raw is used when compression provides no benefit.
+- Byte-identical data shares one Payload ID.
+
+One or more `.bem` files may be placed in a standard ZIP for distribution. ZIP does not change the BEM files; the manager extracts and manages them separately.
+
+## 3. Manifest rules
+
+- JSON must not contain duplicate keys or NUL characters, and nesting may not exceed 48 levels. Numeric fields are UInt32 integers and `srgb` is boolean.
+- Stable IDs match `[A-Za-z0-9][A-Za-z0-9_.-]{0,95}` and are case-sensitive. Names and identity strings are at most 256 UTF-8 bytes.
+- Resources are referenced by array index; manifests contain no local paths or runtime addresses.
+- Unknown ordinary fields are optional metadata. New rendering semantics must be introduced by a capability or version, not hidden in an optional field.
+
+Top-level fields:
+
+| Field | Meaning |
+| --- | --- |
+| `schema` | Always `1` |
+| `package_id` | Package identity; keep it for updates |
+| `name`, `author`, `version` | Display name, author, and display version |
+| `required_capabilities` | Required capability array |
+| `target` | Target-character contract; see section 4 |
+| `meshes` | Mesh resources, at most 4096 |
+| `textures` | Texture resources, at most 4096 |
+| 1.0: `default_appearance_id`, `appearances` | Fixed appearances; see section 5 |
+| 1.1+: `option_groups`, `component_rules`, optional `selection_constraints` | Composable options; see section 6 |
+| 1.2+: optional `texture_slots` | See section 9 |
+| 1.3: optional `parameters`, `mesh_deformations` | See section 10 |
+| 1.5: optional `root_offset`, `drivers` | See sections 12 and 13; `material_overrides` inside a draw also belongs to 1.5 |
+
+## 4. Target contract
+
+```json
+"target": {
+  "character_id": "chr_0013_aglina",
+  "platform": "windows-x64",
+  "profile_id": "aglina.windows", "revision": "20260918", "snapshot": "",
+  "world_resource": "chr_0013_aglina_postmodel",
+  "ui_resource": "chr_0013_aglina_uimodel",
+  "components": [
+    {"id": 0, "mesh_name": "S_actor_example_body_01_lod0", "original_index_count": 300,
+     "bone_names": ["Bip001_Pelvis"], "materials": ["M_actor_example_body_01"]}
+  ]
+}
+```
+
+- `character_id` is the complete character ID. A package targets one character.
+- `platform` is a format constant and must be `windows-x64`. Android reads the same package; changing this value causes rejection.
+- `world_resource` (scene root, `*_postmodel`) and `ui_resource` (detail-model root, `*_uimodel`) must differ.
+- `profile_id`, `revision`, and `snapshot` record the catalog source; `snapshot` may be empty.
+- `components` lists **all** replace, keep, hide, bone-donor, and material-donor components, 1..64 entries:
+  - `id` is continuous from 0 to N-1; `mesh_name` is the complete original game LOD0 Mesh name and must be unique; `original_index_count` is the sum of index counts of all original submeshes and is a positive multiple of 3.
+  - `bone_names` follow native bone-slot order, at most 65,536 entries; `materials` follow native material-slot order, at most 256 entries.
+  - 1.2+ may add `bone_name_aliases`; see section 9.
+
+Packages contain no bindposes, skeletons, or shaders. The runtime uses the current game's bindposes and original materials.
+
+## 5. Fixed appearances (1.0)
+
+```json
+"default_appearance_id": "outfit-a",
+"appearances": [
+  {"id": "outfit-b", "name": "Another outfit", "description": "Fixed state",
+   "components": [{"target": 0, "operation": "replace", "mesh": 0},
+                  {"target": 1, "operation": "keep"},
+                  {"target": 2, "operation": "hide"}]}
+]
+```
+
+- There are 1..64 appearances. Each completely lists every target component; appearances do not inherit or layer.
+- `operation` is `replace` (use one entry from `meshes`), `keep` (retain the original mesh), or `hide`.
+- Optional `preview` is a PNG Payload ID, at most 8 MiB. The current manager shows the character's public avatar; preview images are reserved for tools.
+
+## 6. Composable options (1.1+)
+
+Starting with 1.1, use option groups and component rules instead of `default_appearance_id` and `appearances`.
+
+```json
+"option_groups": [
+  {"id": "outfit", "name": "Outfit", "default": "a",
+   "choices": [{"id": "a", "name": "Outfit A"}, {"id": "b", "name": "Outfit B"}]},
+  {"id": "part21", "name": "Part", "default": "on",
+   "available_when": {"eq": ["outfit", "b"]},
+   "choices": [{"id": "on", "name": "Show"}, {"id": "off", "name": "Hide"}]}
+],
+"component_rules": [
+  {"target": 0, "candidates": [
+    {"when": {"eq": ["outfit", "a"]}, "operation": "keep"},
+    {"when": {"eq": ["outfit", "b"]}, "operation": "replace", "mesh": 0}
+  ]}
+]
+```
+
+**Option groups**
+
+- Each group has a stable `id`, display `name`, `default`, and mutually exclusive choices. There are at most 64 groups; choice limits are in section 11. The total Cartesian combination count has no standalone limit.
+- `available_when` may reference only earlier groups. When unavailable, the UI hides the group but retains its saved value; while evaluating, it has no active value and `eq` against it is false. Its value returns when it becomes available.
+- Optional `selection_constraints` lists conditions that must all hold for a legal combination, representing states the source Mod can actually reach. The default combination must be legal.
+- A 1.3 package with sliders but no discrete choices may use an empty `option_groups` array and unconditional rules. 1.1/1.2 require at least one group.
+
+**Condition syntax:** `true`, `false`, `{"eq":["group","choice"]}`, `{"all":[...]}`, `{"any":[...]}`, and `{"not": condition}`. Depth is at most 16 and each `all`/`any` node has 1..32 children. No source INI, expression, or shader is executed.
+
+**Component rules**
+
+- `component_rules` covers target IDs 0..N-1 in order. Each candidate is `keep`, `hide`, or `replace` with `mesh`.
+- For every legal combination, exactly one candidate must hold for each component; a selected `replace` mesh must select at least one draw. The creator tool proves this with an exact decision diagram rather than sampling and computes worst-case draw, index, texture, and memory use. A decision diagram may contain at most 250,000 nodes.
+
+**Texture overrides on keep (`keep-material-textures`)**
+
+```json
+{"operation": "keep", "material_overrides": [
+  {"material_slot": 0, "material_name": "Native material name", "textures": [0]}]}
+```
+
+The slot is located in the target component's native material table and the name must match. A slot cannot be repeated and every entry needs at least one texture. `hide` and `replace` cannot use this field.
+
+**Saving and reading**
+
+- Settings are stored as `group:choice&group:choice`, for example `outfit:a&part21:on`; omitted groups use their defaults. 1.0 stores an appearance ID.
+- Packages retain every candidate resource instead of trimming to the install-time selection, so one package can switch A → B → A.
+- The runtime reads, decompresses, and uploads only payloads used by the current selection.
+
+## 7. Mesh
+
+| Field | Rule |
+| --- | --- |
+| `vertex_count` | 1..1,048,576 |
+| `index_size` | 2 or 4 (UInt16/UInt32); each index is below `vertex_count` |
+| `streams` | Exactly 3 `{"stride":N,"payload":ID}` entries; stride 1..64 and payload length `vertex_count × stride` |
+| `attributes` | `[semantic, format, dimension, stream, offset]`, using Unity `VertexAttributeDescriptor` enum values |
+| `bones` | Local bone palette, 1..256 entries |
+| `draws` | Ordered draw segments. Candidate limits in section 11: 512 for 1.1, 4096 for 1.2+; at most 256 may be active in any one reachable state |
+| 1.0 `indices`, `index_count` | One index payload for the whole mesh |
+
+**Vertex attributes**
+
+- At most 16 attributes; semantic 0..13, unique; dimension 1..4; stream 0..2.
+- Format 0..11 element sizes are `4,2,1,1,2,2,1,1,2,2,4,4` bytes. Attributes are tightly packed in declaration order within a stream; `offset` is the sum of preceding sizes and the sum equals stride.
+- The runtime builds the mesh from the package declarations; its layout need not match the original Mesh.
+
+**Skinning stream (stream 2):** only these three layouts are allowed, and BlendIndices must be last:
+
+| Stride | Declaration | Meaning |
+| --- | --- | --- |
+| 4 | `[13,6,4,2,0]` | UInt8×4 bone indices, rigid skinning; only the first index is used with weight 1 |
+| 12 | `[12,4,4,2,0]`, `[13,6,4,2,8]` | UNorm16×4 weights + UInt8×4 indices |
+| 32 (1.2+) | `[12,0,4,2,0]`, `[13,10,4,2,16]` | Float32×4 non-negative finite weights + UInt32×4 indices |
+
+Each vertex's weights sum to 1±0.01. The runtime also limits the number of influences; see the runtime document.
+
+**Bone palette**
+
+```json
+{"component": 0, "index": 17, "name": "Bip001_Head"}
+```
+
+Vertex indices refer to this table. Each donor component, index, and name must match the target table and actual game resource. The table has at most 256 entries. Source 16-bit indices may be remapped offline; more than 256 entries is rejected, never truncated or split automatically. Bone and material donors may be different components.
+
+**Draws**
+
+1.0 uses one mesh-level index payload:
+
+```json
+{"start": 0, "count": 300, "material_component": 1, "material_slot": 0,
+ "material_name": "M_actor_example_body_01", "textures": [0, 1]}
+```
+
+Draws must be ordered, gapless, and cover the full index stream; each `count` is a positive multiple of 3.
+
+In 1.1+, each draw has its own index payload and the mesh-level `indices`/`index_count` fields are not used:
+
+```json
+{"when": {"eq": ["part21", "on"]}, "indices": 7, "count": 300,
+ "material_component": 0, "material_slot": 0, "material_name": "Native material name", "textures": [0]}
+```
+
+- The `indices` payload contains exactly `count × index_size` bytes. Draws with identical geometry may share a payload.
+- The runtime concatenates selected draws in manifest order and recalculates each `start`.
+- Do not merge an index payload unique to an unselected draw into another draw; the runtime reads selected payloads independently.
+
+**Materials:** `material_component` and `material_slot` identify a native material slot on the donor component, and `material_name` must match. The runtime copies the original material, preserving its shader, keywords, parameters, and sampling state; shader programs are not included in BEM.
+
+**Texture references:** `textures` refers to the top-level texture table; 1.2+ may also use `{"slot":"slot-id"}`. A draw cannot reference one entry twice or assign two values to the same original texture.
+
+## 8. Texture
+
+| Field | Rule |
+| --- | --- |
+| `width`, `height` | 1..32768; BC formats require dimensions divisible by 4 |
+| `mips` | 1..16; payload contains the complete declared mip chain, largest to smallest, with halved dimensions rounded down to at least 1 and no row padding |
+| `format` | Unity TextureFormat, listed below |
+| `srgb` | Color-space flag |
+| `original_name` | Complete name of the original Texture object replaced on the donor material |
+| `payload` | Data Payload ID |
+| optional `semantic` | `normal` for a normal map |
+| optional `normal_encoding` | `xy-unorm` or `xyz-unorm`; required for Android normal-map conversion |
+
+| Format | Meaning | Note |
+| --- | --- | --- |
+| 4 | RGBA32 | 4 bytes per pixel, R/G/B/A order |
+| 10 | DXT1 (BC1) | |
+| 12 | DXT5 (BC3) | |
+| 25 | BC7 | |
+| 26 | BC4 | |
+| 27 | BC5 | |
+| 48 / 49 / 50 | ASTC 4×4 / 5×5 / 6×6 | Usually generated by the Android installer; usually unsupported by desktop GPUs |
+| 63 | R8 | 1 byte per pixel; `srgb` must be false |
+
+- BC6H is unsupported.
+- The runtime replaces textures by exact `original_name` matching on the copied material. A source DDS filename is not a substitute.
+- Identical pixel data assigned to different names can share one payload.
+
+## 9. 1.2 additions
+
+### Texture slots (`texture_slots`, capability `texture-slots`)
+
+Recoloring can select a replacement for one original texture without duplicating a draw:
+
+```json
+"texture_slots": [
+  {"id": "dress_d", "candidates": [
+    {"when": {"eq": ["colour", "c0"]}, "texture": null},
+    {"when": {"eq": ["colour", "c1"]}, "texture": 7}
+  ]}
+]
+```
+
+- Draw `textures` and keep `material_overrides[].textures` may contain `{"slot":"dress_d"}`.
+- Exactly one candidate must hold for every legal combination; `null` retains the original texture.
+- All non-null candidates for one slot must replace the same original texture (`original_name`). Within one draw or keep list, fixed textures and slot replacements must target different original textures.
+
+### Bone-name aliases (`bone_name_aliases`, capability `resource-bone-aliases`)
+
+Use aliases when the same bone has different names in scene and detail resources, for example because of a game skeleton spelling error.
+
+```json
+{"id": 13, "mesh_name": "S_actor_typhoea_cloth_01_lod0",
+ "bone_names": ["...", "skirt_base_L_c_03_jnt", "..."],
+ "bone_name_aliases": [{"index": 24, "resource": "world", "name": "skirt_base_R_c_03_jnt"}]}
+```
+
+- `bone_names` contains the canonical names and the palette refers to those names.
+- Each alias contains `index`, `resource` (`world` or `ui`), and `name`; it cannot equal the canonical name, and one `(index, resource)` may appear only once.
+- The intended runtime behavior is to accept the canonical name or a declared alias for the corresponding resource and still bind the bone object at that index. The current native parser stores aliases without retaining the `resource` dimension, so resource-specific isolation is not fully enforced yet. A later game name correction does not require rebuilding a published package once the runtime path uses the alias.
+
+### 32-byte skinning
+
+See the skinning table in section 7. This supports native meshes that already use uncompressed skinning, such as Typhoea's `cloth_01`.
+
+## 10. 1.3 shape parameters
+
+Shape evaluation follows EFMI ShapeKey semantics: `position = original position + sum(parameter deltas)`. Only positions change; original normals, tangents, UVs, weights, bindposes, and bones remain. The package contains data, not INI files, shaders, or UI scripts.
+
+```json
+"parameters": [
+  {"id": "body", "name": "Body", "min": 0, "max": 1000, "neutral": 0, "default": 0, "step": 1}
+],
+"mesh_deformations": [
+  {"mesh": 0, "parameter": "body", "frames": [
+    {"value": 0, "neutral": true},
+    {"value": 1000, "payload": 12, "count": 350, "encoding": "sparse-position-f32"}
+  ]}
+]
+```
+
+**Parameters**
+
+- At most 64. Values are integer ticks from 0..1000; `min < max`, `step ≥ 1`, and `max`, `neutral`, `default`, and all frame values align to `min` by `step`.
+- `neutral` is the zero-deformation coordinate; `default` is the author's initial preference and may differ.
+- Optional `available_when` uses option-group conditions and may refer only to discrete choices, not other sliders. An unavailable parameter evaluates at `neutral` while retaining its saved value.
+- Settings are stored as `id:tick&id:tick` in manifest order. Invalid or unknown values are sanitized and never used to index data.
+
+**Deformation channels**
+
+- At most 4096. `mesh` is a mesh index and `parameter` is a parameter ID; each `(mesh, parameter)` is unique.
+- A channel has 2..64 strictly increasing frames covering `min` and `max`, with exactly one `{"value": neutral, "neutral": true}` frame, which has no payload.
+- Other frames contain exactly `value`, `payload`, `count`, and `encoding`; encoding is `sparse-position-f32`. `count` may be 0 and cannot exceed the mesh vertex count.
+- A deformation mesh must declare Float32 XYZ positions (semantic 0, format 0, dimension 3). A channel applies only when that mesh is selected for replacement. Shared meshes must produce equivalent geometry for the same settings.
+
+**Delta payload**
+
+| Offset | Contents |
+| --- | --- |
+| 0 | UInt32: JSON description length J (1..4096) |
+| 4 | J-byte JSON: `{"count":N,"encoding":"sparse-position-f32"}` |
+| 4+J | N records, each 16 bytes: UInt32 vertex index + Float32 ΔX/ΔY/ΔZ |
+
+- Total length is exactly `4 + J + 16N`. Indices are below the vertex count and unique within a frame; deltas are finite. Missing records mean zero delta.
+- Deltas use the mesh's coordinate system and units. They are absolute offsets from the original position, not offsets from the previous frame.
+
+**Evaluation:** an exact frame uses that frame's delta. Between adjacent frames a and b, linearly interpolate their absolute deltas using `(b-v)/(b-a)` and `(v-a)/(b-a)`. Sum all channel results and add them once to the original position.
+
+## 11. Limits summary
+
+| Item | 1.0 | 1.1 | 1.2 / 1.3 / 1.4 / 1.5 |
+| --- | --- | --- | --- |
+| Appearances / option groups | 1..64 appearances | 64 groups | 64 groups |
+| Choices per group | — | 16 | 64 |
+| Component + draw + texture-slot candidates (whole package) | — | 512 | 4096 |
+| Candidate draws in one component | — | 512 | 4096 |
+| **Draws active in one selection** (worst reachable state) | — | 256 | 256 |
+| Texture bindings in one selection | 32 | 32 | 64 |
+| One texture (complete mip chain) | 64 MiB | 64 MiB | 256 MiB |
+| Decoded data / resident resources in one selection | 512 / 512 MiB | 768 / 768 MiB | 1536 / 1536 MiB |
+| Payload directory entries | 4096 | 4096 | 16384 |
+
+All versions share these limits: 2 GiB container; 4 MiB manifest; 512 MiB per payload; 1..64 components; 256 palette bones; 16,777,216 selected indices; 1,048,576 vertices; 64 shape parameters; and 4096 deformation channels. 1.4 and 1.5 add no container or resource limits and reuse the same column; the 1.5 `material_overrides` and `drivers` quotas are counted per draw, see sections 12 and 13.
+
+**Declared candidates and active draws are different numbers; do not conflate them.** A component may declare up to 4096 candidate draws (`bem_v11.py:720`; package-wide candidate total is also ≤4096, `bem_v11.py:774`). The validator then expands every reachable state from `component_rules` and requires **at most 256 simultaneously active draws in any one state** (`bem_v11.py:394`, message `Selected draw limit exceeded`). So "limit 4096" holds only for declarations, not for a single render. A package with 1551 draw segments passes only because those draws belong to mutually exclusive states; putting them in one state is rejected at 256.
+
+Budgets apply to one selection and are not the same as the actual GPU peak. The 1.3 budget conservatively counts all frames for each channel. See the runtime document for actual loading cost.
+
+
+## 12. BEM 1.5 Material & Keyword Overrides (material-overrides-v1)
+
+> **Acknowledgment**: Special thanks to **@Saberverse** for key technical support and review materials contributed to the BEM 1.5 specification, material/keyword override design, and NPC receiver path integration.
+
+
+BEM 1.5 (`minor = 5`) introduces the `material-overrides-v1` capability, allowing draw candidates to dynamically override Unity Material properties and shader keywords. This enables visual customizations such as transparent gauze, ink-mist matte shading, and specular suppression without replacing underlying shaders.
+
+### Capability Declaration
+Packages utilizing this feature must declare it in `required_capabilities`:
+```json
+"required_capabilities": ["native-materials", "material-overrides-v1"]
+```
+
+### Draws Material Overrides Object
+An optional `material_overrides` object can be added to `meshes[].draws[]`:
+- `floats`: Object mapping property name to float, value bounded in `[-128.0, 128.0]`, max 32 items per draw.
+- `colors`: Object mapping property name to 4-element RGBA float array, channels bounded in `[0.0, 8.0]`, max 16 items per draw.
+- `vectors`: Object mapping property name to 4-element float array, components bounded in `[-65536.0, 65536.0]`, max 8 items per draw.
+- `disable_keywords`: String array of shader keywords to disable, max 16 items per draw.
+- `enable_keywords`: String array of shader keywords to enable, max 16 items per draw.
+
+### Property & Keyword Naming Rules
+- Property names must begin with `_` and contain only letters, numbers, and underscores, length 2..96 characters (`^_[a-zA-Z0-9_]{1,95}$`).
+- Keywords must contain only uppercase letters, numbers, and underscores, length 2..96 characters (`^[A-Z0-9_]{2,96}$`).
+
+### Skip Validation (Developer Mode)
+When "Skip Validation" (`skip_validation`) is active:
+- Property and keyword names are relaxed to ASCII printable characters;
+- Out-of-bounds float and color values are clamped to their valid ranges rather than rejected;
+- Item limits are relaxed 4x (128 floats, 64 colors, 32 vectors, 64 of each keyword list).
+
+### Root Bone Offset Extension (root-offset-v1)
+
+BEM 1.5 introduces `root-offset-v1`, enabling local translation adjustments on a specified bone node to resolve ground clipping caused by high heels, platform shoes, or floating stances.
+
+#### Capability Declaration
+```json
+"required_capabilities": [
+  "native-materials",
+  "root-offset-v1"
+]
+```
+
+#### Manifest Structure
+Add `root_offset` at the root level of `manifest.json`:
+```json
+{
+  "root_offset": {
+    "path": "Bip001",
+    "translation": [0.0, 0.04, 0.0]
+  }
+}
+```
+- `path`: String, relative hierarchy path to the target bone node (1..256 chars, `[-A-Za-z0-9_ /]`, no `..` or `//`).
+- `translation`: 3-element float array `[x, y, z]` representing local offset in meters.
+  - Length bound: $\sqrt{x^2 + y^2 + z^2} \le 0.2$ meters.
+  - Relaxed to 1.0 meter and clamped automatically when "Skip Validation" is active.
+
+
+## 13. BEM 1.5 Dynamic Clock Drivers & Material Modulation (dynamic-drivers-v1)
+
+BEM 1.5 introduces the dynamic-drivers-v1 capability, enabling packages to declare continuous procedural time animations (e.g. reciprocating gadget movement) and dynamic material parameter modulation (such as breathing glow lights, tactical flashlight toggles, and specular ramps) directly in the manifest without external sidecar files.
+
+### Interaction Principle: Overlay Controls + Desktop Hotkey Configuration
+
+- **Cross-platform parity**: both Windows (ModelOverlay) and Android (GameOverlay) render a "Motion" group inside the model detail panel with **Start / Pause / Stop** buttons and a speed slider per controller, with identical touch and mouse UX.
+- **PC hotkeys are configured in the manager GUI**: one start/stop toggle key per controller, **empty by default (unbound)**. Capture, modifiers and clearing work exactly like every other GUI hotkey field. A hotkey is a binary toggle and never pauses.
+- **Pause is overlay-only**, so a single key never has to cycle through three states.
+- **Session-scoped**: overlay and hotkey edits apply to the current run only. They are not written back to `default_playing` and do not modify the package. A restart returns to the package default; to change the default, change the package.
+- **Where hotkeys live**: hotkeys are a user preference, not package content, so they are stored in `runtime.ini` under `[Mod.<package id>]` as `driver_hotkeys`. They are per package, so disabling or deleting a package simply disables its bindings and re-enabling restores them.
+
+### Capability Declaration
+
+```json
+"required_capabilities": [
+  "native-materials",
+  "material-overrides-v1",
+  "dynamic-drivers-v1"
+]
+```
+
+`dynamic-drivers-v1` does not require explicit resource targets: a 1.3-style package (`character_id` / `world_resource` / `ui_resource`) plus that capability is a valid 1.5 package, and both readers agree. A material binding's `component` is still an index into `target.components`, which means the same under either target structure.
+
+### Manifest Structure (drivers field in manifest.json)
+
+```json
+{
+  "drivers": [
+    {
+      "id": "driver_dildo_thrust",
+      "name": "Gadget Reciprocating Thrust",
+      "waveform": "pingpong",
+      "playback": "loop",
+      "default_playing": false,
+      "base_frequency": 1.2,
+      "speed_multiplier": 1.0,
+      "bindings": [
+        {
+          "type": "morph_parameter",
+          "target": "dildo_depth",
+          "range": [0.0, 1.0]
+        }
+      ]
+    },
+    {
+      "id": "driver_insert_once",
+      "name": "Single Push",
+      "waveform": "sawtooth",
+      "playback": "once",
+      "default_playing": false,
+      "base_frequency": 0.5,
+      "bindings": [
+        {
+          "type": "morph_parameter",
+          "target": "anal_plug_depth",
+          "range": [0.0, 1.0]
+        }
+      ]
+    },
+    {
+      "id": "driver_glow_pulse",
+      "name": "Tactical Glow Breathing",
+      "waveform": "sine",
+      "default_playing": false,
+      "base_frequency": 0.8,
+      "bindings": [
+        {
+          "type": "material_float",
+          "component": 2,
+          "material_slot": 0,
+          "property": "_EmissionWeight",
+          "range": [0.0, 1.5]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Field reference
+
+- **id**: unique controller identifier, unique within the package. The GUI hotkey table and the overlay controls both index by it;
+- **name**: display name used as the control title in the overlay "Motion" group and the GUI hotkey row; falls back to `id` when absent;
+- **waveform**: closed generator set, see below; an unknown name drops the controller instead of silently clamping to the lower bound;
+- **playback**: closed set `loop` / `once`, defaults to `loop`; an unknown value drops the controller. See "Playback modes";
+- **default_playing**: initial state after entering the game; must be `false` (at rest) by default;
+- **base_frequency**: base oscillation frequency in Hz, `0 ≤ f ≤ 10`; under `loop` the phase accumulates as `phase = (phase + Δt × base_frequency × speed_multiplier) mod 1`, under `once` it is clamped at 1 instead;
+- **speed_multiplier**: initial multiplier, `0 ≤ s ≤ 10`; the panel slider adjusts it live between 0.25x and 4.00x;
+- **bindings**: driven targets, 1..32 entries;
+- **sound**: optional embedded sound effect, see "Driver sound";
+- **Quotas**: at most 16 controllers per package. Anything beyond that is dropped by the runtime with an `[AnimDriver]` log line; the authoring tools reject it at pack time.
+
+##### Waveforms (closed set, all output 0 at `phase = 0`)
+
+| Name | Value | `once` end weight | Typical use |
+| --- | --- | --- | --- |
+| `pingpong` (default) | `p < 0.5 ? 2p : 2 − 2p` | 0 (returns to start) | reciprocation, thrust |
+| `sine` | `(1 − cos 2πp) / 2` | 0 (returns to start) | breathing, pulse (`sin` would start at 0.5) |
+| `jitter` | deterministic hash of the quantised phase | hash value (not guaranteed 1) | high-frequency tremor |
+| `sawtooth` | `p` | 1 (rests at the far end) | one-way flow, single push to the end |
+| `step` | `p < 0.5 ? 0 : 1` | 1 (rests at the far end) | binary switching |
+
+`jitter` must be a deterministic function of phase and must never use `rand()`: the same package has to produce the same curve across runs, otherwise A/B comparison is impossible.
+
+#### Playback modes `playback`
+
+| Value | Behaviour |
+| --- | --- |
+| `loop` (default) | The phase wraps in `[0,1)` forever. Packages that omit the field get this mode, so behaviour is identical to the earlier 1.5 implementation. |
+| `once` | The phase advances from 0 to 1, then **clamps at 1 and stops advancing**. The driver enters a "finished" state but still evaluates at phase = 1 every frame, so vertices, material properties and keywords all hold the last frame instead of snapping back. |
+
+Points that matter for `once`:
+
+1. **Duration comes from `base_frequency`**: `duration = 1 / (base_frequency × speed_multiplier)` seconds. No extra duration field, and `loop` semantics are untouched;
+2. **The waveform decides where the end is**: see the "`once` end weight" column above. Use `sawtooth` or `step` for "push out and hold at the far end"; use `pingpong` or `sine` for "go out and come back, ending at rest";
+3. **Restart**: sending Start to a finished driver resets the phase to 0 and plays again. Both the overlay Start button and the hotkey follow this;
+4. **Pause versus Stop** under `once`: Pause freezes the current phase and keeps delivering it, so the pose is held. Stop hands the parameter back and clears the finished state;
+5. **Sound**: `sound` follows the play state. A finished `once` driver stops its voice; under `loop` the `sound.loop` flag decides;
+6. An unknown `playback` value drops the controller with an `[AnimDriver]` log line, exactly like an unknown `waveform`; there is no silent fallback.
+
+#### Control and state model
+
+Every controller has four states, and any of them can be rewritten at any time by an external control (overlay button, hotkey, or `runtime.ini`):
+
+| State | Meaning | Vertices / materials |
+| --- | --- | --- |
+| `stopped` | Stopped. Nothing is delivered and the phase is reset | Hands back the package's authored pose; also clears `finished` |
+| `playing` | The phase is advancing | Delivered every frame |
+| `paused` | Paused. The phase is frozen | Delivered every frame at the frozen phase, so the pose is held |
+| `finished` | `once` only; the phase reached 1 | Delivered every frame at phase = 1, resting on the last frame |
+
+Control entry points:
+
+| Entry point | Operations | Platform |
+| --- | --- | --- |
+| Overlay (model detail "Motion" group) | **Start / Pause / Stop** + speed slider | Windows, Android |
+| Hotkeys configured in the manager GUI | **Start / Stop** binary toggle (no pause) | Windows only |
+| `runtime.ini` `[Mod.<package id>]` `drivers=` | `id:play` / `id:pause` | Both, headless fallback |
+
+How the buttons map to states:
+
+- **Start**: `playing = true`. From `finished` or `stopped` the phase resets to 0 and playback begins; from `paused` playback resumes at the frozen phase;
+- **Pause**: `playing = false` but the phase is kept and the paused flag is set, so the frozen phase keeps being delivered. A `once` driver freezes where it is and does not snap back;
+- **Stop**: enters `stopped`, phase reset to 0, `finished` cleared, parameters handed back so the model returns to its authored pose immediately (the baseline the slider or load-time selection produced, i.e. the static state before Start). **That frame re-uploads the baseline even when the delta happens to be exactly zero**: the GPU is still holding the previous animated pose, and skipping the upload would leave the mesh frozen mid-motion;
+- **Hotkey**: equivalent to a Start/Stop binary toggle. Pressing it in the stopped state starts playback from 0; pressing it while playing or paused enters the stopped state (never pause). After a `once` finishes, one press stops it and the next starts it again.
+
+**Speed slider**: 0.25x to 4.00x. It rewrites `speed_multiplier` without touching the phase, so changing speed never makes the motion jump.
+
+#### Desktop hotkeys `driver_hotkeys` (user configuration, not package content)
+
+Hotkeys live in `runtime.ini` under `[Mod.<package id>]`, next to `parameters_saved`, so they are isolated per package:
+
+```ini
+[Mod.xueyuan-full]
+enabled=true
+package=packages/xueyuan-full.bem
+parameters_saved=dildo_depth:500&anal_morph:300
+driver_hotkeys=dildo_thrust:F1&anal_plug_thrust:CTRL+F2&vag_cycle:
+```
+
+- Syntax: `id:key` pairs joined by `&`, the same shape as `parameters_saved` and `options`. **An empty value means unbound** (third entry above);
+- Key names use exactly the `overlay_hotkey` grammar (`F1`, `CTRL+F2`, `NUMPAD1`, `ADD`, `=`, ...), produced by the GUI's hotkey capture field;
+- At most 16 entries per package, matching the driver quota. Two drivers in one package bound to the same key is a configuration error and the GUI refuses to save it;
+- A clash with `overlay_hotkey` only warns: showing the panel and driving motion are different purposes;
+- Hotkeys only respond while the game window is foreground. Keys are polled read-only, so **the game's own input is never intercepted or swallowed**;
+- The overlay process reads and executes the table, so hotkeys keep working while the panel is hidden, and closing the manager GUI has no effect;
+- Drivers without a binding can only be controlled through the overlay or `drivers=`.
+
+### Platform support
+
+| Capability | Windows | Android |
+| --- | --- | --- |
+| Manifest `drivers` parsing | Yes | Yes |
+| Phase clock / waveform evaluation | Yes | Yes |
+| Morph driver (`morph_parameter`) | Yes. Defaults to `SetNativeArrayForChannelImpl` on the whole Position channel; the overlay can switch to `InternalSetVertexBufferData` byte ranges | Yes, `SetNativeArrayForChannelImpl` only (Unity exports neither of the other two icalls) |
+| Material float / color / keyword | Yes | Yes |
+| Embedded sound `sound` | Yes, WASAPI shared mode | Yes, one `MediaPlayer` per effect |
+| Overlay control panel | Yes, ModelOverlay | Yes, GameOverlay |
+| Desktop hotkeys | Yes | No physical keyboard |
+
+Android delivers morphs through a different path with identical semantics: both rebuild from the base positions captured at load, write only the position components, and never touch normals/tangents/UVs or skinning. Windows exposes both equivalent paths in the overlay for A/B diagnosis; Android has no switch.
+
+### Driver sound `sound` (optional)
+
+A controller may carry one sound effect that starts and stops with its play state. The audio is stored as an ordinary payload inside the package and is materialised to a cache file before the platform audio backend plays it.
+
+```json
+{
+  "id": "driver_dildo_thrust",
+  "name": "Gadget Reciprocating Thrust",
+  "waveform": "pingpong",
+  "base_frequency": 1.2,
+  "sound": {
+    "payload": 12,
+    "format": "ogg",
+    "gain": 0.8,
+    "loop": true,
+    "offset_seconds": 0.0
+  },
+  "bindings": [
+    { "type": "morph_parameter", "target": "dildo_depth", "range": [0.05, 1.0] }
+  ]
+}
+```
+
+#### Field reference
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `payload` | Yes | Payload id holding the audio bytes; 16 B to 32 MiB after decoding |
+| `format` | No | File extension (`wav`/`mp3`/`m4a`/`aac`/`flac`/`ogg`/`wma`/`mp4`), used only to name the cache file; defaults to `bin` |
+| `gain` | No | Linear volume, `[0, 2]`, defaults to 1.0 |
+| `loop` | No | Loop playback, defaults to `true` |
+| `offset_seconds` | No | Start delay, `[0, 60]` seconds, defaults to 0; use it to align sound with motion |
+
+#### Playback semantics
+
+1. The sound follows the driver's play state: Start begins it; Pause, Stop, package switch and model unload end it;
+2. One sound per controller, at most 8 concurrent voices per package; anything beyond that is dropped with a `[driver-audio]` log line;
+3. Sound **does not participate** in the animation clock. Decoding happens on a background thread, so the animation keeps advancing while a voice is not ready and is simply silent for that moment;
+4. A controller may carry only `sound` and no `bindings` (a pure sound driver), but a controller with neither is dropped.
+
+#### Relationship to game audio (important)
+
+Driver sound **never overrides or pauses existing game audio**. Both platforms use a channel independent of Unity/Wwise:
+
+- Windows: a WASAPI **shared-mode** render stream; Windows mixes it with the game's own streams at the endpoint;
+- Android: one independent `MediaPlayer` per effect, mixed by the system mixer with the game audio.
+
+BGM, footsteps and combat audio therefore keep playing normally. This differs from `BetterEndfieldNext.Music`, which deliberately pauses game BGM; driver sound does not.
+
+#### Known limitations
+
+- The sound start point is not hard-synchronised with the waveform phase: audio is an independent clock and long loops drift slowly. For strict alignment, match the sound length to the waveform period or calibrate with `offset_seconds`;
+- Windows is silent when the audio device format is not float32 (animation is unaffected);
+- Sound payloads count toward package size; prefer lossy codecs (ogg/mp3) and a few seconds of length.
+
+### Known limitations summary
+
+- **Morph drivers and manual sliders must not share a vertex set**: a slider rebuilds the mesh at the selected tick and uploads the whole stream, while the driver rewrites Stream 0 every frame. Overlaid on the same vertices they produce residue at the previous position, flicker and a hazy surface. Split into two parameters with disjoint vertex ranges when you need "slider sets the base, animation oscillates";
+- Different parameters on disjoint vertex ranges (for example prop A and prop B) are fully independent and can each start, pause and stop on their own;
+- Without a static override, material keywords are always disabled after a stop, because the runtime deliberately adds no `Material.IsKeywordEnabled` reflection contract; declare them through `material_overrides.enable_keywords` when the semantics matter;
+- The `once` end frame depends on the waveform; `jitter` ends on a hash value rather than 1 and is unsuitable when a precise endpoint matters.
+
+---
+
+## 14. BEM Native ZIP Archive Container Specification
+
+BEM natively supports standard PKZip / Zip64 containers across all versions. Models can be directly authored, debugged, and distributed as standard .zip archives without requiring binary repackaging.
+
+### 1. Dual-Mode Signature Auto-Detection
+- The engine auto-detects archive format via header magic: 0x42 0x45 0x4D 0x00 (BEM PKG) selects binary stream decoding; 0x50 0x4B 0x03 0x04 (PKZip) activates in-memory zero-copy ZIP decompression.
+
+### 2. Standard Archive Layout
+The root must contain manifest.json. Manifest `payload` references are integers, so payloads are named by number and the file name follows from the manifest alone:
+```text
+model.zip (or .bem)
+├── manifest.json              # [Required] Core manifest with drivers
+├── preview.png                # [Optional] Preview thumbnail
+└── payloads/                  # [Required] Keyed by manifest payload id
+    ├── 0000.bin               # payload 0: vertex streams, indices, textures, morph frames
+    ├── 0001.bin               # payload 1
+    └── 0002.bin
+```
+
+- The file number is the `payload` / `indices` / `preview` integer the manifest references, contiguous from 0. A gap fails the load with `ZIP package is missing payload N`.
+- Each payload holds the same **uncompressed** bytes as one entry of the binary package directory; the container does the compressing. Entries may be STORED or DEFLATE and are decompressed on read; encrypted entries are rejected.
+- `0000.bin` (no padding) or an entry at the root also works for debugging by hand, but published packages should use the four-digit form.
+- A manifest may carry `"format_version": "1.5"`. A ZIP container has no binary header, so readers otherwise infer the version from the fields present; declaring it removes the guesswork. It is a container hint and is dropped when writing a binary package.
+
+### 3. Disambiguation: Collection Bundle vs Single Model Package
+1. Single Model Archive (Package): Root (or single top-level directory) contains valid manifest.json. Such an archive normally has no .bem members; when both are present the manifest wins and the archive is treated as a single package, not a bundle.
+2. Collection Bundle: Contains one or more .bem archives and no root model manifest.json. Dispatched to the bundle staging extractor.
+3. Single Top-Level Folder Tolerance: Archives wrapped in a single root folder containing manifest.json are automatically unfolded to ensure seamless creator workflow.

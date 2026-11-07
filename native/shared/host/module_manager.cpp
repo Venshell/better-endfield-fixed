@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace BetterEndfield::Host {
+namespace BetterEndfieldNext::Host {
 namespace {
 
 std::string ToUtf8(const std::wstring& value) {
@@ -194,7 +194,7 @@ ModuleManager::LoadResult ModuleManager::LoadManifest(
     const auto get_api = reinterpret_cast<BE_GetModuleApiV1Fn>(
         GetProcAddress(library, api_name.c_str()));
     const BE_ModuleApiV1* api = get_api ? get_api() : nullptr;
-    if (!api || api->descriptor.abi_version != BETTER_ENDFIELD_MODULE_ABI_V1 ||
+    if (!api || api->descriptor.abi_version != BETTER_ENDFIELD_NEXT_MODULE_ABI_V1 ||
         !api->descriptor.module_id || module_id != api->descriptor.module_id ||
         !api->initialize || !api->shutdown) {
         logger_.Write("host.modules", "Module ABI validation failed: " + module_id);
@@ -206,6 +206,9 @@ ModuleManager::LoadResult ModuleManager::LoadManifest(
     const BE_Result result = api->initialize(&runtime_.Api());
     if (result != BE_Result_Ok) {
         logger_.Write("host.modules", "Module contract was rejected: " + module_id);
+        // A partially initialized module may have hooked targets shared with
+        // other modules; its nodes must become pass-throughs before unload.
+        runtime_.ReleaseHooks(module_id);
         FreeLibrary(library);
         rejected_modules_.insert(module_id);
         return LoadResult::Rejected;
@@ -268,4 +271,4 @@ void ModuleManager::Shutdown() {
     pending_module_count_ = 0;
 }
 
-} // namespace BetterEndfield::Host
+} // namespace BetterEndfieldNext::Host

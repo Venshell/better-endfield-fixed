@@ -6,14 +6,16 @@
 
 | 文档 | 用途 |
 | --- | --- |
+| [2026-11-07 上游合并](ANDROID_UPSTREAM_MERGE_20261107.md) | 本轮合并合同、冲突取舍与实际验收证据；旧对账仍保留原时点范围 |
+| [按模块浏览上游技术资料](INDEX.md) | 模块规范与来源导航，包含上游双端历史，不改变本分支产品边界 |
 | [产品边界](PRODUCT_BOUNDARY.md) | Android 唯一目标平台及历史 Windows 代码的处理边界 |
 | [技术实现与配置参考](TECHNICAL_DETAILS.md) | Android 实现与历史桌面实现细节 |
-| [BEM 创作者指南](BEM_CREATOR_GUIDE.md) | 外观包制作、转换和验证 |
+| [BEM 创作者指南](custom_model/BEM_CREATOR_GUIDE.md) | 外观包制作、转换和验证 |
 | [Android 第三方模块创作者指南](THIRD_PARTY_MODULE_CREATOR_GUIDE.md) | 第三方 ZIP、Native ABI、网页桥及 Android 验证边界 |
-| [BEM 格式规范 1.0–1.3](BEM_FORMAT_SPEC.md) | 当前标准包字段、形变参数与版本合同 |
+| [BEM 格式规范 1.0–1.3](custom_model/BEM_FORMAT_SPEC.md) | 当前标准包字段、形变参数与版本合同 |
 | [BEM 1.4 格式合同](BEM_V1_4_SPEC.md) | 多资源目标、静态网格与 Android 源码接线；游戏设备验收未完成 |
 | [第一人称执行记录](CAMERA_FIRST_PERSON_EXECUTION.md) | 相机阶段门禁与验证边界 |
-| [OmniMix 集成交接](OMNIMIX_INTEGRATION_HANDOFF.md) | 音乐后端协议与回退合同 |
+| [OmniMix 集成交接](music/OMNIMIX_INTEGRATION_HANDOFF.md) | 音乐后端协议与回退合同 |
 | [项目更新日志](../CHANGELOG.md) | 版本变化与发布状态 |
 | [Android 上游 3.4.4 移植记录](ANDROID_UPSTREAM_344_PORT_20261004.md) | 本分支 Android 功能范围与验收证据 |
 | [Android 上游移植当前状态](ANDROID_UPSTREAM_STATUS_20261008.md) | 以 2026-10-10 获取的上游 `c2f8eafc` 为当前核查点，区分源码接线、构建与设备验收 |
@@ -33,7 +35,7 @@
 | --- | --- |
 | [Android 开发记录归档](ANDROID_DEVELOPMENT_HISTORY.md) | 旧 Android README 中的逐版本日志和实现记录，保留原时点上下文 |
 | [Android Compose 悬浮层实验](ANDROID_OVERLAY_COMPOSE_EXPERIMENT_20260929.md) | 实验过程与当时的验收证据 |
-| [BEM 1.0 规范](BEM_V1_SPEC.md)、[BEM 1.1 扩展](BEM_V1_1_SPEC.md) | 分版本旧文档；当前完整格式以 1.0–1.3 合并规范为准 |
+| [BEM 1.0 规范](custom_model/history/bem-1.0/BEM_V1_SPEC.md)、[BEM 1.1 扩展](custom_model/history/bem-1.1/BEM_V1_1_SPEC.md) | 分版本旧文档；当前完整格式以 1.0–1.3 合并规范为准 |
 
 其他带日期的审计、探针和迁移文档记录其对应时点；阅读时应与当前源码及版本说明核对。
 

@@ -1,0 +1,297 @@
+using BetterEndfieldNext.UI.Services;
+
+static class Program
+{
+    private static int checks;
+    private static void Expect(bool condition, string message)
+    {
+        if (!condition) throw new InvalidOperationException(message);
+        checks++;
+    }
+    private static Dictionary<string, Dictionary<string, string>> Settings(string enabled = "false", string option = "outfit:a") => new(StringComparer.Ordinal)
+    {
+        ["CustomModel"] = new(StringComparer.Ordinal) { ["hot_switch"] = "true", ["overlay_hotkey"] = "PLUS", ["fast_loading"] = "false" },
+        ["Mod.a"] = new(StringComparer.Ordinal) { ["enabled"] = enabled, ["options"] = option, ["parameters_saved"] = "height:700&old_slider:300" },
+        ["Mod.b"] = new(StringComparer.Ordinal) { ["enabled"] = "false" },
+        ["Unknown"] = new(StringComparer.Ordinal) { ["author"] = "中文作者" }
+    };
+
+    private static void MetadataFixture(string path, string id, string character)
+    {
+        byte[] metadata = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            schema = 1, package_id = id, name = "Test " + id, author = "Synthetic", version = "1.0",
+            target = new
+            {
+                platform = "windows-x64", character_id = character,
+                world_resource = character + ".world", ui_resource = character + ".ui"
+            },
+            default_appearance_id = "a", appearances = new[] { new { id = "a", name = "A" }, new { id = "b", name = "B" } }
+        });
+        using var writer = new BinaryWriter(File.Create(path));
+        writer.Write(new byte[] { 66, 69, 77, 0, 80, 75, 71, 0 }); writer.Write((ushort)1); writer.Write((ushort)0);
+        writer.Write(40u); writer.Write((ulong)(40 + metadata.Length)); writer.Write((ulong)metadata.Length);
+        writer.Write(0u); writer.Write(0u); writer.Write(metadata);
+    }
+
+    public static async Task<int> Main(string[] arguments)
+    {
+        if (arguments.Length > 1) throw new ArgumentException("Provide at most one temporary workspace test directory.");
+        string root = Path.GetFullPath(arguments.Length == 1 ? arguments[0] :
+            Path.Combine(Environment.GetEnvironmentVariable("BE_WORKSPACE_TEMP_ROOT") ?? Path.GetTempPath(),
+                "model-overlay-settings-" + Guid.NewGuid().ToString("N")));
+        Directory.CreateDirectory(root);
+        var baseline = Settings();
+        var latest = Settings("true", "outfit:b");
+        latest["CustomModel"]["opaque_overlay_field"] = "keep";
+        var desired = Settings();
+        desired["CustomModel"]["fast_loading"] = "true";
+        var merged = BemRuntimeSettings.Merge(latest, baseline, desired, null);
+        Expect(merged["Mod.a"]["enabled"] == "true", "Untouched overlay enable state was lost.");
+        Expect(merged["Mod.a"]["options"] == "outfit:b", "Untouched overlay component selection was lost.");
+        Expect(merged["CustomModel"]["fast_loading"] == "true", "The explicit desktop edit was lost.");
+        Expect(merged["CustomModel"]["opaque_overlay_field"] == "keep" && merged["Unknown"]["author"] == "中文作者", "Unknown fields changed.");
+        Expect(merged["Mod.a"]["parameters_saved"] == "height:700&old_slider:300", "Removed slider memory changed.");
+
+        // Explicitly disabling all must act on the newest state, even with a stale UI.
+        merged = BemRuntimeSettings.Merge(latest, baseline, Settings(), new HashSet<string> { "a", "b" });
+        Expect(merged["Mod.a"]["enabled"] == "false" && merged["Mod.b"]["enabled"] == "false", "Disable-all did not close the externally enabled package.");
+        desired = Settings(); desired["Mod.b"]["enabled"] = "true";
+        merged = BemRuntimeSettings.Merge(latest, baseline, desired, new HashSet<string> { "a", "b" });
+        Expect(merged["Mod.a"]["enabled"] == "false" && merged["Mod.b"]["enabled"] == "true", "Explicit same-character selection was not exclusive.");
+
+        // Missing keys represented by UI defaults must not overwrite external values.
+        var defaults = Settings(); defaults["CustomModel"]["overlay_visible"] = "false";
+        latest = Settings(); latest["CustomModel"]["overlay_visible"] = "true";
+        merged = BemRuntimeSettings.Merge(latest, defaults, defaults, null, Settings());
+        Expect(merged["CustomModel"]["overlay_visible"] == "true", "A default overwrote a newly stored setting.");
+
+        string ini = Path.Combine(root, "runtime.ini");
+        var initial = BemRuntimeSettings.Commit(ini, new(StringComparer.Ordinal), Settings(), null);
+        var changed = Settings("true", "outfit:b");
+        BemRuntimeSettings.Commit(ini, initial.Settings, changed, null);
+        var saved = BemRuntimeSettings.Commit(ini, baseline, desired, new HashSet<string> { "a", "b" });
+        Expect(saved.Settings["Mod.b"]["enabled"] == "true" && BemRuntimeSettings.Read(ini)["Mod.a"]["options"] == "outfit:b", "Atomic commit lost a concurrent selection.");
+        var info = new FileInfo(ini);
+        Expect(saved.Stamp == (info.LastWriteTimeUtc.Ticks, info.Length), "Commit stamp does not describe its saved snapshot.");
+        byte[] before = File.ReadAllBytes(ini);
+        using (var occupied = new FileStream(ini, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            try { BemRuntimeSettings.Commit(ini, baseline, desired, null); throw new InvalidOperationException("Expected a locked-file failure."); }
+            catch (IOException) { }
+        }
+        Expect(File.ReadAllBytes(ini).SequenceEqual(before), "Failed commit damaged the old file.");
+        Expect(!Directory.EnumerateFiles(root, "*.tmp").Any(), "Commit leaked a temporary file.");
+        foreach (var (input, expected) in new[] { ("=", "PLUS"), ("+", "PLUS"), ("OEM_PLUS", "PLUS"), ("Shift+=", "SHIFT+PLUS"), ("NUMPAD_PLUS", "ADD"), ("Ctrl+NumPad_Plus", "CTRL+ADD"), ("NONE", "NONE") })
+            Expect(HotkeyService.TryNormalize(input, out string actual) && actual == expected, $"Hotkey normalization failed: {input}");
+        Expect(!HotkeyService.TryNormalize("CTRL", out _), "Modifier-only key was accepted.");
+
+        ConfigurationService.SettingsDirectory = Path.Combine(root, "profile");
+        // The game may well be running while these checks execute; the guarded
+        // operations themselves are what this fixture is about.
+        BemPackageService.GameRunningProbe = () => false;
+        var service = new BemPackageService();
+        Directory.CreateDirectory(service.PackageDirectory);
+        MetadataFixture(Path.Combine(service.PackageDirectory, "a.bem"), "a", "character.one");
+        MetadataFixture(Path.Combine(service.PackageDirectory, "b.bem"), "b", "character.one");
+        MetadataFixture(Path.Combine(service.PackageDirectory, "c.bem"), "c", "character.two");
+        service.Load();
+        Expect(service.Packages.Count == 3, "Synthetic legacy packages failed to load.");
+        Expect(!service.CloneSupport, "Clone support must default off.");
+        Expect(!service.ReleaseRetiredResources, "Retired resource cleanup must default off.");
+        service.ReleaseRetiredResources = true;
+        service.CloneSupport = true;
+        await service.SaveAsync();
+        service.Load();
+        Expect(service.CloneSupport && !service.HotSwitch, "Clone support did not persist independently of hot switch.");
+        Expect(service.ReleaseRetiredResources, "Retired resource cleanup setting did not persist.");
+        service.ReleaseRetiredResources = false;
+        await service.SaveAsync();
+        service.Load();
+        Expect(!service.ReleaseRetiredResources && service.CloneSupport, "Cleanup must turn off independently of clone support.");
+        string runtime = Path.Combine(service.Root, "runtime.ini");
+        var loaded = BemRuntimeSettings.Read(runtime);
+        var external = BemRuntimeSettings.Clone(loaded);
+        external["Mod.a"]["enabled"] = "true"; external["Mod.a"]["appearance"] = "b";
+        external["Mod.c"]["enabled"] = "true";
+        external["CustomModel"]["overlay_visible"] = "true";
+        BemRuntimeSettings.Commit(runtime, loaded, external, null);
+        Expect(service.HasExternalChanges(), "External write was not detectable.");
+        service.FastLoading = true; await service.SaveAsync();
+        var persisted = BemRuntimeSettings.Read(runtime);
+        Expect(persisted["Mod.a"]["appearance"] == "b" && persisted["Mod.a"]["enabled"] == "true", "Real service clobbered overlay package selection.");
+        Expect(service.ModelOverlayVisible && service.Packages.Single(p => p.Id == "a").SelectedAppearance == "b", "Real service failed to adopt acknowledged external state.");
+        Expect(!service.HasExternalChanges(), "Successful service commit has a stale stamp.");
+        await service.SetEnabledAsync(service.Packages.Single(p => p.Id == "b"), true);
+        persisted = BemRuntimeSettings.Read(runtime);
+        Expect(persisted["Mod.a"]["enabled"] == "false" && persisted["Mod.b"]["enabled"] == "true" && persisted["Mod.c"]["enabled"] == "true", "Real service mutual exclusion changed another character or missed its peer.");
+        loaded = BemRuntimeSettings.Read(runtime); external = BemRuntimeSettings.Clone(loaded);
+        external["Mod.a"]["enabled"] = "true"; external["Mod.b"]["enabled"] = "false";
+        external["Mod.missing"] = new(StringComparer.Ordinal) { ["enabled"] = "true", ["opaque"] = "retain" };
+        BemRuntimeSettings.Commit(runtime, loaded, external, null);
+        await service.DisableAllAsync();
+        persisted = BemRuntimeSettings.Read(runtime);
+        Expect(persisted.Where(p => p.Key.StartsWith("Mod.")).All(p => p.Value["enabled"] == "false"), "Real service disable-all missed stale external state.");
+        Expect(persisted["Mod.missing"]["opaque"] == "retain", "Disabling an unavailable package lost its unknown fields.");
+        // Preview drafts must commit atomically without enabling packages or mutating live state on failure.
+        var previewPackage = service.Packages.Single(p => p.Id == "a");
+        previewPackage.RestoreParameters("removed:250");
+        await service.SaveAsync();
+        string oldAppearance = previewPackage.SelectedAppearance;
+        using (var occupied = new FileStream(runtime, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            try { await service.SavePreviewAsync(previewPackage, "b", "removed:250"); throw new InvalidOperationException("Expected preview save failure."); }
+            catch (IOException) { }
+        }
+        Expect(previewPackage.SelectedAppearance == oldAppearance, "Failed preview save changed the live selection.");
+        await service.SavePreviewAsync(previewPackage, "b", "removed:250");
+        persisted = BemRuntimeSettings.Read(runtime);
+        Expect(previewPackage.SelectedAppearance == "b" && persisted["Mod.a"]["appearance"] == "b", "Preview save did not persist and refresh live state.");
+        Expect(persisted["Mod.a"]["enabled"] == "false", "Saving a preview enabled the package.");
+        Expect(persisted["Mod.a"]["parameters_saved"].Contains("removed:250"), "Preview save lost removed slider memory.");
+        await service.SavePreviewAsync(previewPackage, "a", "removed:250");
+        loaded = BemRuntimeSettings.Read(runtime); external = BemRuntimeSettings.Clone(loaded);
+        external["Mod.a"]["appearance"] = "b";
+        BemRuntimeSettings.Commit(runtime, loaded, external, null);
+        await service.SavePreviewAsync(previewPackage, "a", "removed:350");
+        persisted = BemRuntimeSettings.Read(runtime);
+        Expect(persisted["Mod.a"]["appearance"] == "a", "Explicit preview save lost to a concurrent appearance edit.");
+        Expect(persisted["Mod.a"]["parameters_saved"].Contains("removed:350"), "Explicit preview slider draft was not saved.");
+        service.Packages.Remove(previewPackage);
+        try { await service.SavePreviewAsync(previewPackage, "a", ""); throw new InvalidOperationException("Expected removed-package failure."); }
+        catch (InvalidOperationException error) when (!error.Message.StartsWith("Expected")) { checks++; }
+        service.Load();
+        // Readable filenames: a package stored under its bare id is renamed to
+        // "name v1.0 [id tail]", the registry follows, the pass is idempotent, and
+        // a name the user chose by hand is never rewritten.
+        {
+            int renamed = await service.NormalizePackageFileNamesAsync();
+            Expect(renamed == 3, $"Readable-name pass renamed {renamed} of 3 raw-id packages.");
+            var renamedA = service.Packages.Single(p => p.Id == "a");
+            Expect(Path.GetFileName(renamedA.File) == "Test a v1.0 [a].bem",
+                $"Unexpected readable filename: {Path.GetFileName(renamedA.File)}");
+            Expect(File.Exists(renamedA.File) && !File.Exists(Path.Combine(service.PackageDirectory, "a.bem")),
+                "The raw-id file survived the rename.");
+            // The registry stores an absolute path beside the program and a
+            // relative "packages/..." one in the profile fallback; either way it
+            // has to resolve to the renamed file.
+            string storedPackage = BemRuntimeSettings.Read(runtime)["Mod.a"]["package"];
+            string resolvedPackage = Path.GetFullPath(Path.IsPathRooted(storedPackage)
+                ? storedPackage : Path.Combine(service.Root, storedPackage));
+            Expect(resolvedPackage == Path.GetFullPath(renamedA.File),
+                $"The registry still points at the pre-rename path: {resolvedPackage}");
+            Expect(await service.NormalizePackageFileNamesAsync() == 0, "A second readable-name pass must be a no-op.");
+            string custom = Path.Combine(service.PackageDirectory, "我的手改包名.bem");
+            MetadataFixture(custom, "custom", "character.three");
+            service.Load();
+            await service.NormalizePackageFileNamesAsync();
+            Expect(File.Exists(custom), "A hand-chosen package filename must survive normalization.");
+            // Hostile display names must still yield a legal, bounded filename.
+            var hostile = new BemPackage
+            {
+                Id = "bem.0123456789abcdef0123456789abcdef",
+                Name = new string('模', 60) + ":a/b?c", Version = "1.0.0"
+            };
+            Expect(BemPackageService.PackageFileStem(hostile) == new string('模', 40) + " v1.0.0 [89abcdef]",
+                $"Unexpected stem for a hostile name: {BemPackageService.PackageFileStem(hostile)}");
+            var device = new BemPackage { Id = "con", Name = "con" };
+            Expect(BemPackageService.PackageFileStem(device) == "_con [con]",
+                $"A reserved device name must be escaped: {BemPackageService.PackageFileStem(device)}");
+        }
+        // Section 13 driver hotkeys: the table round-trips through the same
+        // `id:key&id:key` shape as parameters, an empty value means unbound, and
+        // a duplicate key is dropped instead of silently driving two controllers.
+        var driverPackage = new BemPackage
+        {
+            Id = "hotkey-test", Name = "Hotkey", Character = "chr", TargetKind = "character",
+            Drivers =
+            [
+                new BemDriverInfo { Id = "thrust", Name = "Thrust" },
+                new BemDriverInfo { Id = "plug", Name = "Plug" },
+                new BemDriverInfo { Id = "cycle", Name = "Cycle" }
+            ]
+        };
+        Expect(!driverPackage.RestoreDriverHotkeys("thrust:F1&plug:CTRL+F2&cycle:"),
+            "A valid hotkey table must not report repairs.");
+        Expect(driverPackage.DriverHotkeys["thrust"] == "F1", "Driver hotkey is restored.");
+        Expect(driverPackage.DriverHotkeys["plug"] == "CTRL+F2", "Modifier hotkey is restored.");
+        Expect(!driverPackage.DriverHotkeys.ContainsKey("cycle"), "An empty value leaves the driver unbound.");
+        Expect(driverPackage.EncodedDriverHotkeys() == "thrust:F1&plug:CTRL+F2&cycle:",
+            "Hotkeys re-encode to the same documented shape.");
+        Expect(driverPackage.RestoreDriverHotkeys("thrust:F1&plug:F1"),
+            "A duplicate key must be reported as a repair.");
+        Expect(driverPackage.DriverHotkeys.Count == 1 && driverPackage.DriverHotkeys["thrust"] == "F1",
+            "The duplicate key is dropped rather than bound twice.");
+        Expect(driverPackage.RestoreDriverHotkeys("removed:F1"),
+            "A binding for a driver the package no longer declares must be dropped.");
+        Expect(driverPackage.DriverHotkeys.Count == 0, "Stale driver bindings are cleared.");
+
+        // Reads the real deployed package, when present, to prove the GUI really
+        // surfaces its section 13 drivers. Read-only: nothing is written back.
+        const string realPackage = @"E:\Better Endfield\models\学院-完全版-anim.bem";
+        if (File.Exists(realPackage))
+        {
+            var real = BemPackageService.ReadMetadata(realPackage);
+            Expect(real.Drivers.Count == 4,
+                $"Real package must expose its 4 drivers, got {real.Drivers.Count}.");
+            Expect(real.Drivers.Any(x => x.Id == "driver_dildo"), "Real package exposes driver_dildo.");
+            Console.WriteLine("real drivers: " + string.Join(", ", real.Drivers.Select(x => x.Id)));
+        }
+
+        // Regression: the clash check used to dereference a default KeyValuePair,
+        // throwing before SaveAsync ran. Binding a key must never throw.
+        {
+            var probe = new BemPackage
+            {
+                Id = "clash", Name = "Clash", Character = "chr", TargetKind = "character",
+                Drivers = [new BemDriverInfo { Id = "a", Name = "A" }, new BemDriverInfo { Id = "b", Name = "B" }]
+            };
+            Expect(probe.DriverHotkeyClash("a", "F1") is null, "No clash expected on a fresh table.");
+            probe.DriverHotkeys["b"] = "F1";
+            Expect(probe.DriverHotkeyClash("a", "F1") == "b", "Clash must be reported as a real driver id.");
+            Expect(probe.DriverHotkeyClash("b", "F1") is null, "A driver never clashes with itself.");
+            Expect(probe.DriverHotkeyClash("a", "NUMPAD1") is null, "Distinct keys must not clash.");
+        }
+
+        // End-to-end: the real package, the real service, a real write. This is the
+        // check that would have caught the binding silently never reaching disk.
+        {
+            var e2eRoot = Path.Combine(root, "e2e");
+            var e2ePackages = Path.Combine(e2eRoot, "catalog", "custom-model", "packages");
+            Directory.CreateDirectory(e2ePackages);
+            const string realSource = @"E:\Better Endfield\models\学院-完全版-anim.bem";
+            if (File.Exists(realSource))
+            {
+                string copied = Path.Combine(e2ePackages, "school.bem");
+                File.Copy(realSource, copied, true);
+                var previousSettings = ConfigurationService.SettingsDirectory;
+                ConfigurationService.SettingsDirectory = e2eRoot;
+                try
+                {
+                    var e2e = new BemPackageService();
+                    e2e.Load();
+                    Expect(e2e.Packages.Count == 1, "E2E package did not load.");
+                    var pkg = e2e.Packages[0];
+                    Expect(pkg.Drivers.Count == 4, $"E2E expected 4 drivers, got {pkg.Drivers.Count}.");
+                    pkg.DriverHotkeys["driver_dildo"] = "F1";
+                    pkg.DriverHotkeys["driver_anal_plug"] = "CTRL+F2";
+                    await e2e.SaveAsync();
+                    string e2eIni = Path.Combine(e2eRoot, "catalog", "custom-model", "runtime.ini");
+                    var disk = BemRuntimeSettings.Read(e2eIni);
+                    string? written = disk.TryGetValue("Mod." + pkg.Id, out var section)
+                        ? section.GetValueOrDefault("driver_hotkeys") : null;
+                    Expect(written is not null, "E2E driver_hotkeys was never written to disk.");
+                    Expect(written!.Contains("driver_dildo:F1"), $"E2E wrote '{written}', expected driver_dildo:F1.");
+                    Expect(written.Contains("driver_anal_plug:CTRL+F2"), $"E2E lost the modifier binding: '{written}'.");
+                    e2e.Load();
+                    var reloaded = e2e.Packages[0];
+                    Expect(reloaded.DriverHotkeys.GetValueOrDefault("driver_dildo") == "F1",
+                        "E2E binding did not survive a reload.");
+                }
+                finally { ConfigurationService.SettingsDirectory = previousSettings; }
+            }
+        }
+        Console.WriteLine($"Model overlay settings: {checks} checks passed.");
+        return 0;
+    }
+}

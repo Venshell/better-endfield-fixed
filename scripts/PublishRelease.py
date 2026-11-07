@@ -1,0 +1,198 @@
+"""Publish an explicitly requested release after uploading and verifying its assets."""
+import argparse
+import hashlib
+import http.client
+import json
+import mimetypes
+import os
+from pathlib import Path
+import subprocess
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+def credentials():
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+    env = os.environ.copy()
+    env.update(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="Never")
+    result = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
+                            text=True, capture_output=True, env=env, check=True)
+    values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if not values.get("password"):
+        raise RuntimeError("GitHub credentials are unavailable")
+    return values["password"]
+
+
+def upload_connection(hostname, timeout=300):
+    """Connect to the upload endpoint, tunnelling through HTTPS_PROXY when set.
+
+    The proxy used to be hardcoded, which made publishing fail on any machine
+    whose proxy listened on another port and silently ignored the environment.
+    """
+    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    if not proxy:
+        return http.client.HTTPSConnection(hostname, timeout=timeout)
+    parsed = urllib.parse.urlsplit(proxy if "//" in proxy else "http://" + proxy)
+    if not parsed.hostname:
+        raise RuntimeError("HTTPS_PROXY is not a usable proxy URL: " + proxy)
+    connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 8080, timeout=timeout)
+    connection.set_tunnel(hostname, 443)
+    return connection
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", required=True)
+    parser.add_argument("--tag", required=True)
+    parser.add_argument("--release-id", type=int, help="Upload into an existing draft by id (drafts are not always visible through the tag endpoint)")
+    parser.add_argument("--target", required=True)
+    parser.add_argument("--name", required=True)
+    parser.add_argument("--notes-file", type=Path, required=True)
+    parser.add_argument("--asset", nargs=2, action="append", metavar=("NAME", "PATH"), required=True)
+    parser.add_argument("--publish", action="store_true")
+    parser.add_argument("--verify-digest", action="store_true",
+                        help="Compute local SHA-256 and compare GitHub asset digests; permits reusing an identical uploaded draft asset")
+    parser.add_argument("--prune-resources", action="store_true",
+                        help="After publishing, delete resource archives superseded by a newer version of the same class; irreversible")
+    args = parser.parse_args()
+    token = credentials()
+    base = "https://api.github.com/repos/" + args.repo
+    headers = {"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "Better-Endfield-release-tool"}
+
+    def api(url, method="GET", body=None):
+        payload = None if body is None else json.dumps(body).encode()
+        request = urllib.request.Request(url, payload, {**headers, "Content-Type": "application/json"}, method=method)
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.load(response) if response.status != 204 else None
+
+    def release_request(url, method, body):
+        """Create or update a release, retrying without target_commitish.
+
+        Pushing the tag before publishing is the normal order, and once the tag
+        exists GitHub answers 422 for a commit SHA in target_commitish even
+        though it accepts a branch name. The tag already fixes the commit, so
+        the field carries no information and dropping it is the correct retry.
+        """
+        try:
+            return api(url, method, body)
+        except urllib.error.HTTPError as error:
+            if error.code != 422 or "target_commitish" not in body:
+                raise
+            return api(url, method, {key: value for key, value in body.items() if key != "target_commitish"})
+
+    assets = [(name, Path(path).resolve()) for name, path in args.asset]
+    if len({name for name, _ in assets}) != len(assets) or any(not path.is_file() for _, path in assets):
+        raise ValueError("Release asset names must be unique and all files must exist")
+    if args.repo.lower() == "dr-hydra/better-endfield":
+        names = {name for name, _ in assets}
+        version = args.tag.removeprefix("v")
+        if f"BetterEndfieldNext-{version}-win-x64.zip" in names:
+            raise ValueError("Windows app releases distribute the installer only")
+        for prefix in ("BEM-Tools-",):
+            if not any(name.startswith(prefix) and name.endswith(".zip") for name in names):
+                raise ValueError("Missing creator release asset: " + prefix)
+    body = args.notes_file.read_text(encoding="utf-8-sig")
+    if args.release_id is not None:
+        if args.release_id <= 0:
+            raise ValueError("Release id must be positive")
+        release = api(base + "/releases/" + str(args.release_id))
+        if release["tag_name"] != args.tag:
+            raise ValueError("Existing release id does not match the requested tag")
+    else:
+        try:
+            release = api(base + "/releases/tags/" + urllib.parse.quote(args.tag, safe=""))
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+            release = release_request(base + "/releases", "POST", {"tag_name": args.tag, "target_commitish": args.target,
+                          "name": args.name, "body": body, "draft": True, "prerelease": False})
+    if not release["draft"]:
+        raise RuntimeError("Refusing to replace assets of an already published release")
+    release = release_request(release["url"], "PATCH", {"tag_name": args.tag, "name": args.name, "body": body, "target_commitish": args.target})
+    upload = urllib.parse.urlsplit(release["upload_url"].split("{", 1)[0])
+    if upload.scheme != "https" or upload.hostname != "uploads.github.com":
+        raise RuntimeError("Unexpected GitHub upload endpoint")
+    expected = {}
+    for name, path in assets:
+        size = path.stat().st_size
+        digest = None
+        if args.verify_digest:
+            with path.open("rb") as stream:
+                digest = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+        expected[name] = (size, digest)
+        existing = next((asset for asset in release["assets"] if asset["name"] == name), None)
+        if (args.verify_digest and existing and existing.get("state") == "uploaded" and
+                (existing["size"], existing.get("digest")) == expected[name]):
+            print("Verified existing draft asset:", name, flush=True)
+            continue
+        # Equal sizes do not prove equal contents. Without explicit digest
+        # verification, upload this invocation's file again even for a draft.
+        if existing:
+            api(existing["url"], "DELETE")
+        connection = upload_connection(upload.hostname)
+        try:
+            connection.putrequest("POST", upload.path + "?" + urllib.parse.urlencode({"name": name}))
+            for key, value in {**headers, "Content-Type": mimetypes.guess_type(name)[0] or "application/octet-stream",
+                               "Content-Length": str(size)}.items():
+                connection.putheader(key, value)
+            connection.endheaders()
+            with path.open("rb") as stream:
+                sent = 0
+                import time
+                t0 = time.time()
+                while chunk := stream.read(2 * 1024 * 1024):
+                    connection.send(chunk)
+                    sent += len(chunk)
+                    pct = (sent / size) * 100
+                    elapsed = max(0.01, time.time() - t0)
+                    speed = (sent / (1024 * 1024)) / elapsed
+                    print(f"\r[{name}] {sent // (1024*1024)}MB / {size // (1024*1024)}MB ({pct:.1f}%) @ {speed:.2f} MB/s", end="", flush=True)
+            print("", flush=True)
+            response = connection.getresponse()
+            result = json.loads(response.read())
+            if response.status != 201 or result.get("state") != "uploaded":
+                raise RuntimeError(f"GitHub asset upload failed: HTTP {response.status}")
+        finally:
+            connection.close()
+        print("Uploaded:", name, size, flush=True)
+    release = api(release["url"])
+    for name, signature in expected.items():
+        asset = next((a for a in release["assets"] if a["name"] == name), None)
+        if (not asset or asset["state"] != "uploaded" or asset["size"] != signature[0] or
+                (args.verify_digest and asset.get("digest") != signature[1])):
+            raise RuntimeError("Uploaded asset verification failed: " + name)
+    if args.publish:
+        release = release_request(release["url"], "PATCH", {"tag_name": args.tag, "target_commitish": args.target,
+                      "draft": False, "prerelease": False, "make_latest": "true"})
+        if release["tag_name"] != args.tag or release["draft"]:
+            raise RuntimeError("GitHub did not publish the requested release tag")
+        # Keep the unified entry in step with normal software releases. Older
+        # installations continue using /releases/latest and the release list.
+        try:
+            resource_release = api(base + "/releases/tags/game-resources")
+        except urllib.error.HTTPError as error:
+            if error.code != 404: raise
+            resource_release = None
+        if resource_release and not resource_release["draft"]:
+            import sys
+            with __import__('tempfile').TemporaryDirectory(prefix='be-distribution-index-') as temporary:
+                software_path=Path(temporary)/'software.json'
+                software_path.write_text(json.dumps(dict(version=args.tag.removeprefix('v'),releaseUrl=release['html_url'],
+                    assets=[dict(name=a['name'],url=a['browser_download_url'],bytes=a['size']) for a in release['assets']])),encoding='utf-8')
+                command = [sys.executable, str(Path(__file__).with_name('PublishResourceRelease.py')),
+                    '--refresh-software', '--software-index', str(software_path), '--output', str(Path(temporary)/'distribution-index.json'), '--publish']
+                if args.prune_resources:
+                    command.append('--prune-assets')
+                subprocess.run(command, check=True)
+    print(json.dumps({"url": release["html_url"], "tag": release["tag_name"], "draft": release["draft"],
+                      "assets": [{"name": a["name"], "bytes": a["size"],
+                                  **({"digest": a.get("digest")} if args.verify_digest else {})}
+                                 for a in release["assets"]]}, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

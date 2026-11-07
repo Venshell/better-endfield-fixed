@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace BetterEndfield::CustomModel {
+namespace BetterEndfieldNext::CustomModel {
 
 // Section 13 waveform set. Every waveform evaluates to 0 at phase 0 so that a
 // driver created with default_playing=false rests on its lower bound instead of
@@ -211,4 +211,4 @@ private:
     std::vector<Driver> drivers_;
 };
 
-}  // namespace BetterEndfield::CustomModel
+}  // namespace BetterEndfieldNext::CustomModel

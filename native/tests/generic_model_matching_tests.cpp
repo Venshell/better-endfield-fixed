@@ -4,34 +4,20 @@
 #include <stdexcept>
 #include <unordered_map>
 
-using namespace BetterEndfield::CustomModel::GenericMatching;
+using namespace BetterEndfieldNext::CustomModel::GenericMatching;
 namespace {
 size_t checks=0;
 void Check(bool value,const char* message) { ++checks; if (!value) throw std::runtime_error(message); }
 int mesh_a,mesh_b,renderer_a,renderer_b,proxy,root,outer,lod,mesh_all;
 Candidate Body(std::string path="Mesh_all/lod0/Body_lod0") {
     return {{"chr_test","chr_test_uimodel",path,ClassifyReceiver(path)},&renderer_a,
-        {DonorOrigin::Pristine,&mesh_a,"Body_lod0_20",51300,true,{}}};
+        {DonorOrigin::Pristine,&mesh_a,"Body_lod0_20",51300,true}};
 }
 Request BodyRequest() { return {"chr_test","chr_test_uimodel","Body_lod0_20",Region::Lod0,51300,true,{}}; }
 Match Find(std::span<const Candidate> candidates,const Request& request) {
     return SelectUnique(candidates,request,[](const auto&) { return true; });
 }
 void PathChecks() {
-    Check(ClonePathEvidenceAvailable(true,2,2),"complete clone path evidence rejected");
-    Check(!ClonePathEvidenceAvailable(false,0,0),"clone without renderer path accepted");
-    Check(!ClonePathEvidenceAvailable(true,2,1),"partial clone bone paths accepted");
-    std::vector<PathObject> nodes{{"Root/A",&renderer_a},{"Root/B",&renderer_b}};
-    std::vector<std::string> wanted{"Root/B","Root/A"};
-    std::vector<void*> resolved;
-    Check(ResolveUniquePaths(nodes,wanted,resolved) && resolved==std::vector<void*>({&renderer_b,&renderer_a}),
-        "clone paths did not resolve in saved bone order");
-    nodes.push_back({"Root/A",&proxy});
-    Check(!ResolveUniquePaths(nodes,wanted,resolved) && resolved.empty(),"ambiguous clone path accepted");
-    nodes.pop_back();wanted[1]="Root/Missing";
-    Check(!ResolveUniquePaths(nodes,wanted,resolved) && resolved.empty(),"missing clone path accepted");
-    wanted[1]=wanted[0];
-    Check(!ResolveUniquePaths(nodes,wanted,resolved) && resolved.empty(),"duplicate saved bone path accepted");
     std::unordered_map<void*,void*> parents{{&root,&outer},{&renderer_a,&lod},{&lod,&mesh_all},{&mesh_all,&root}};
     std::unordered_map<void*,std::string> names{{&renderer_a,"Body_lod0"},{&lod,"lod0"},{&mesh_all,"Mesh_all"}};
     auto path=[&] { return CheckedRelativePath(&root,&renderer_a,[&](void* p) {return parents[p];},
@@ -96,6 +82,26 @@ void IdentityChecks() {
     used.push_back(&renderer_a);
     Check(!DistinctReceivers(used),"two components allowed to claim one receiver");
 }
+void ExplicitResourceChecks() {
+    Check(ReceiverLodAgrees("Mesh_all/lod1/body",1) && ReceiverLodAgrees("Mesh_all/lod1",1),"matching known receiver LOD rejected");
+    Check(!ReceiverLodAgrees("Mesh_all/lod1/body",0) && !ReceiverLodAgrees("Mesh_all/lod1",0),"declared LOD contradicted known receiver path");
+    for (const auto* path:{"","Mesh_all/lod10/body","Weapon/Mesh_all/lod1/body","Shadow_Proxy/SP_Mobile/body","Meshes/body"})
+        Check(ReceiverLodAgrees(path,0),"LOD inferred from an unknown or nested path");
+    auto candidate=Body("Weapon/Meshes/blade");candidate.key.region=Region::Explicit;
+    auto request=BodyRequest();request.region=Region::Explicit;request.verified_receiver_path="Weapon/Meshes/blade";
+    std::vector<Candidate> candidates{candidate};
+    Check(Find(candidates,request).status==MatchStatus::Matched,"explicit non-character path rejected");
+    request.verified_receiver_path="Meshes/blade";
+    Check(Find(candidates,request).status==MatchStatus::Missing,"explicit path fell back to nested weapon name");
+    request.verified_receiver_path="";
+    Check(Find(candidates,request).status==MatchStatus::Missing,"empty root path matched a nested receiver");
+    candidates[0].key.path="";
+    Check(Find(candidates,request).status==MatchStatus::Matched,"explicit root renderer rejected");
+    candidates[0].key.resource="other_resource";
+    Check(Find(candidates,request).status==MatchStatus::Missing,"explicit root path crossed resources");
+    candidates={candidate};request=BodyRequest();
+    Check(Find(candidates,request).status==MatchStatus::Missing,"legacy contract acquired explicitly scoped nested geometry");
+}
 void KnownNameChecks() {
     // Names in the existing Windows reference audit. These verify same-LOD
     // matching only, and do not certify Android lower-LOD Mesh names.
@@ -134,7 +140,7 @@ void LodProxyChecks() {
     Check(lookup({"Android","snapshot-test"})==RelationStatus::Matched && relation.target_mesh=="Body_lod1_8" &&
         relation.target_renderer=="Body_lod1" && relation.target_indices==8000,
         "verified lower-LOD relationship merged Renderer/Mesh or UI/world count identities");
-    for (const auto& scope:{AssetScope{"Android",""},AssetScope{"Windows","snapshot-test"},AssetScope{"Android","new-snapshot"}})
+    for (const auto scope:{AssetScope{"Android",""},AssetScope{"Windows","snapshot-test"},AssetScope{"Android","new-snapshot"}})
         Check(lookup(scope)==RelationStatus::Missing,"unknown platform/version used a precise relation");
     rows[0].mesh_names_confirmed=false;
     Check(lookup({"Android","snapshot-test"})==RelationStatus::Missing,"reference-only record treated as confirmed Mesh name evidence");
@@ -148,9 +154,34 @@ void LodProxyChecks() {
     Check(FindProxyOwner(&mesh_a,visible).status==ProxyOwnerStatus::Ambiguous,"shared visible Mesh owner selected by order");
     Check(FindProxyOwner(&proxy,visible).status==ProxyOwnerStatus::Missing,"dedicated proxy Mesh guessed owner by name");
 }
+void BoundedAndroidFallbackChecks() {
+    Candidate target{{"chr_test","chr_test_postmodel","Mesh_all/lod1/Body_lod1",Region::Lod1},&renderer_a,
+        {DonorOrigin::Pristine,&mesh_a,"Body_lod1_8",7,true}};
+    FuzzyLodRequest request{"chr_test","chr_test_postmodel","Mesh_all/lod0/Body_lod0","Body_lod0_20"};
+    auto validate=[](const auto&) { return true; };
+    std::vector<Candidate> candidates{target};
+    auto result=SelectBoundedAndroidLod1(candidates,request,validate);
+    Check(result.status==MatchStatus::Matched && result.index==0,"bounded Android _8 fallback did not match");
+    candidates[0].pristine.origin=DonorOrigin::CompletedWithoutOriginal;
+    Check(SelectBoundedAndroidLod1(candidates,request,validate).status==MatchStatus::Missing,
+        "bounded fallback reused a completed Mesh as pristine");
+    candidates[0]=target; candidates[0].pristine.indices_known=false;
+    Check(SelectBoundedAndroidLod1(candidates,request,validate).status==MatchStatus::Missing,
+        "bounded fallback accepted unknown index bounds");
+    candidates={target,{{"chr_test","chr_test_postmodel","Mesh_all/lod1/Body_lod1_20",Region::Lod1},&renderer_b,
+        {DonorOrigin::Pristine,&mesh_b,"Body_lod1_20",8,true}}};
+    Check(SelectBoundedAndroidLod1(candidates,request,validate).status==MatchStatus::Ambiguous,
+        "bounded fallback selected between _8/_20 candidates");
+    candidates[1].key.resource="other_postmodel";
+    Check(SelectBoundedAndroidLod1(candidates,request,validate).status==MatchStatus::Matched,
+        "bounded fallback let another resource create ambiguity");
+    candidates={target}; candidates[0].key.path="Mesh_all/lod1/Body_lod1/Child";
+    Check(SelectBoundedAndroidLod1(candidates,request,validate).status==MatchStatus::Missing,
+        "bounded fallback crossed the component path boundary");
+}
 }
 int main() {
-    try { PathChecks(); IdentityChecks(); KnownNameChecks(); LodProxyChecks();
+    try { PathChecks(); IdentityChecks(); ExplicitResourceChecks(); KnownNameChecks(); LodProxyChecks(); BoundedAndroidFallbackChecks();
         std::cout<<"PASS "<<checks<<" generic matching identity, boundaries, lineage, uniqueness and proxy checks\n"; return 0;
     } catch (const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

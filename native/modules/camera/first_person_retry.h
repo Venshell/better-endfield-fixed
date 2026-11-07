@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 // The same source mesh can be shared by multiple renderers. Each binding gets
 // its own retry budget, renewed when the source or a bound patch changes.
 class RetryBudget {

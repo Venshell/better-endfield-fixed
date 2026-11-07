@@ -1,7 +1,7 @@
 #pragma once
 #include "first_person_math.h"
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 struct PerspectivePose {
     FirstPersonMath::Vec3 position{};
     FirstPersonMath::Quat rotation{0,0,0,1};
@@ -41,4 +41,4 @@ inline PerspectivePose StepTransition(TransitionState& state, const PerspectiveP
     state.last.near_clip=state.origin.near_clip+(target.near_clip-state.origin.near_clip)*alpha;
     return state.last;
 }
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

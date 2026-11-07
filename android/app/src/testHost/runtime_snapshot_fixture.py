@@ -18,13 +18,13 @@ def main():
     classes.mkdir(parents=True, exist_ok=True)
     android = Path(__file__).resolve().parents[3]
     files = [
-        str(android / "app/src/main/java/dev/betterendfield/android/RuntimeSnapshot.java"),
-        str(android / "app/src/testHost/java/dev/betterendfield/android/RuntimeSnapshotHostTest.java"),
+        str(android / "app/src/main/java/dev/betterendfield/next/RuntimeSnapshot.java"),
+        str(android / "app/src/testHost/java/dev/betterendfield/next/RuntimeSnapshotHostTest.java"),
     ]
     subprocess.run(["javac", "-encoding", "UTF-8", "--release", "17", "-d", str(classes), *files],
                    check=True)
     subprocess.run(["java", "-Dfile.encoding=UTF-8", "-cp", str(classes),
-                    "dev.betterendfield.android.RuntimeSnapshotHostTest"], check=True)
+                    "dev.betterendfield.next.RuntimeSnapshotHostTest"], check=True)
 
 
 if __name__ == "__main__":

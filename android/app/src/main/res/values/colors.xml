@@ -7,4 +7,56 @@
     -->
     <color name="app_background">#0A0A0A</color>
     <color name="accent">#F4E900</color>
+<color name="surface">#12161C</color>
+    
+<color name="surface_high">#1B212A</color>
+    
+<color name="surface_row">#181E26</color>
+    
+<color name="surface_border">#2B333E</color>
+    
+<color name="surface_border_soft">#1F2630</color>
+
+    
+<color name="accent_dark">#E0A513</color>
+    
+<color name="accent_soft">#1FFFC845</color>
+    
+<color name="accent_ink">#120E03</color>
+    
+<color name="sponsor_background">#FFCFA3</color>
+    
+<color name="sponsor_pressed">#F3B880</color>
+    
+<color name="sponsor_ink">#4A2B18</color>
+
+    
+<color name="text_primary">#F4F6F8</color>
+    
+<color name="text_secondary">#A7B0BC</color>
+    
+<color name="text_muted">#75808E</color>
+
+    
+<color name="input_background">#0C1014</color>
+    
+<color name="icon_background">#151A21</color>
+
+    
+<color name="slider_track">#39424F</color>
+    
+<color name="switch_thumb_off">#C7CEDA</color>
+    
+<color name="switch_track_on">#59FFC845</color>
+    
+<color name="switch_track_off">#3A424E</color>
+
+    
+    
+<color name="overlay_panel">#F00C1016</color>
+    
+<color name="overlay_row">#1B222B</color>
+    
+<color name="overlay_border">#33FFC845</color>
+
 </resources>

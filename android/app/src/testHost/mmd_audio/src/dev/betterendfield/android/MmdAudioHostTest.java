@@ -1,4 +1,4 @@
-package dev.betterendfield.android;
+package dev.betterendfield.next;
 
 import android.media.MediaPlayer;
 import android.os.HandlerThread;

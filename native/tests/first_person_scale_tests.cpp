@@ -1,6 +1,6 @@
 #include "../modules/camera/first_person_scale.h"
 #include <iostream>
-using namespace BetterEndfield::FirstPerson;
+using namespace BetterEndfieldNext::FirstPerson;
 int main() {
     HeadScaleLease lease;
     if (!lease.Acquire({2,-3,4}) || !SameHeadScale(lease.written,{.002f,-.003f,.004f})) return 1;

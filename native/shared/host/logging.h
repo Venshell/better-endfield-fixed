@@ -5,7 +5,7 @@
 #include <mutex>
 #include <string>
 
-namespace BetterEndfield::Host {
+namespace BetterEndfieldNext::Host {
 
 // The log handle is opened once and kept for the process lifetime. Re-opening
 // the file per line costs milliseconds as soon as a real-time scanner watches
@@ -25,4 +25,4 @@ private:
     std::mutex mutex_;
 };
 
-} // namespace BetterEndfield::Host
+} // namespace BetterEndfieldNext::Host

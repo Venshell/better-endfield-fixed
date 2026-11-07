@@ -139,8 +139,8 @@ struct FpSynchronousReadback {
         int count = 0, stride = 0, target = 0;
         if (!GetValue(&methods[Count],buffer,count) || !GetValue(&methods[Stride],buffer,stride) ||
             !GetValue(&methods[Target],buffer,target) || !(target & 4)) return Fail("source CopySource contract");
-        const auto plan = BetterEndfield::FirstPerson::PlanReadback(count,stride,expected);
-        if (plan.error != BetterEndfield::FirstPerson::ReadbackError::None) return Fail("source byte budget");
+        const auto plan = BetterEndfieldNext::FirstPerson::PlanReadback(count,stride,expected);
+        if (plan.error != BetterEndfieldNext::FirstPerson::ReadbackError::None) return Fail("source byte budget");
         FpRoot staging(g_host->object_new(g_host->context,buffer_class.class_info));
         Lease staging_lease{*this,staging};
         if (!staging) return Fail("staging root");

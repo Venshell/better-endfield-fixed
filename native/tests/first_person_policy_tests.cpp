@@ -1,7 +1,7 @@
 #include "../modules/camera/first_person_policy.h"
 #include <iostream>
 #include <string>
-using namespace BetterEndfield::FirstPerson;
+using namespace BetterEndfieldNext::FirstPerson;
 int main() {
     PolicyState state;
     PolicyInput input;

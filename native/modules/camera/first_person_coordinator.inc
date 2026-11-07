@@ -2,16 +2,16 @@
 // User-requested first person remains separate from temporary game ownership.
 struct FpPerspectiveCoordinator {
     FpRoot camera;
-    BetterEndfield::FirstPerson::PolicyState policy;
-    BetterEndfield::FirstPerson::PolicyDecision decision;
-    BetterEndfield::FirstPerson::TransitionState transition;
+    BetterEndfieldNext::FirstPerson::PolicyState policy;
+    BetterEndfieldNext::FirstPerson::PolicyDecision decision;
+    BetterEndfieldNext::FirstPerson::TransitionState transition;
     uint64_t last_time=0, visual_exit_deadline=0;
     unsigned reports=0;
     bool applied=false;
 };
 FpPerspectiveCoordinator g_fp_perspective;
 
-bool FpReadPerspective(void* state,BetterEndfield::FirstPerson::PerspectivePose& pose) {
+bool FpReadPerspective(void* state,BetterEndfieldNext::FirstPerson::PerspectivePose& pose) {
     FpMath::Vec3 position{},correction{};
     FpMath::Quat rotation{},rotation_correction{};
     if (!ReadBytes(state,g_state_layout.raw_position,&position,sizeof(position)) ||
@@ -22,9 +22,9 @@ bool FpReadPerspective(void* state,BetterEndfield::FirstPerson::PerspectivePose&
         !ReadBytes(state,g_state_layout.lens+g_state_layout.lens_near_clip,&pose.near_clip,sizeof(pose.near_clip))) return false;
     pose.position=position+correction;
     pose.rotation=rotation*rotation_correction;
-    return BetterEndfield::FirstPerson::ValidPose(pose);
+    return BetterEndfieldNext::FirstPerson::ValidPose(pose);
 }
-void FpWritePerspective(void* state,const BetterEndfield::FirstPerson::PerspectivePose& pose) {
+void FpWritePerspective(void* state,const BetterEndfieldNext::FirstPerson::PerspectivePose& pose) {
     const FpMath::Vec3 zero{}; const FpMath::Quat identity{0,0,0,1};
     WriteBytes(state,g_state_layout.raw_position,&pose.position,sizeof(pose.position));
     WriteBytes(state,g_state_layout.position_correction,&zero,sizeof(zero));
@@ -41,7 +41,7 @@ void FpResetPerspective() {
     g_fp_perspective.applied=false;
 }
 void FpCoordinateState(void* brain,void* state) {
-    using namespace BetterEndfield::FirstPerson;
+    using namespace BetterEndfieldNext::FirstPerson;
     if (!state || !g_state_layout.ready || g_free_camera_active) return;
     FpRoot camera(Invoke(Contract("unity.camera.main"),nullptr,nullptr));
     if (!camera) {

@@ -1,7 +1,7 @@
 #include "first_person_look_probe.h"
 #include "core/log.h"
 
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 
 // Field names worth asking about by name. The runtime has no field-name
@@ -59,7 +59,7 @@ void ReportFieldNames(const Il2CppRuntime& runtime, const char* assembly,
 ModuleResult FirstPersonLookProbe::Start(Il2CppRuntime& runtime) {
     // Read only. Nothing here hooks, writes, or holds a reference past Start.
     // The component name matters: it is what a reader greps for, and it must
-    // not collide with the camera module's own "betterendfield.camera" lines,
+    // not collide with the camera module's own "betterendfieldnext.camera" lines,
     // which are numerous enough to bury a short probe report.
     LogInfo("fp_look_probe", "probing the game's own first-person look entry point");
 
@@ -105,4 +105,4 @@ ModuleResult FirstPersonLookProbe::Start(Il2CppRuntime& runtime) {
     return {true, "first-person look probe logged its enumeration"};
 }
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext

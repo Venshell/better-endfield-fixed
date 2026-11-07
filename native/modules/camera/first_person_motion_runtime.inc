@@ -205,8 +205,8 @@ FpMath::Quat FpMotionApply(FpMath::Quat control, int mode, float strength) {
         const auto forward = FpMath::Rotate(model_rotation, {0, 0, 1});
         reference_yaw = std::atan2(forward.x, forward.z) * 57.295779513f;
     }
-    if (!BetterEndfield::FirstPerson::AnimationTarget(
-            static_cast<BetterEndfield::FirstPerson::AnimationMode>(mode), facing, reference_yaw, strength, offset)) return control;
+    if (!BetterEndfieldNext::FirstPerson::AnimationTarget(
+            static_cast<BetterEndfieldNext::FirstPerson::AnimationMode>(mode), facing, reference_yaw, strength, offset)) return control;
     const auto result = control * offset;
     return FpMath::Unit(result) ? result : control;
 }

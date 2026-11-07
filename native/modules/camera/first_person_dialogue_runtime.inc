@@ -9,7 +9,7 @@ struct FpDialogueSampler {
         {"Gameplay.Beyond.dll","Beyond.Gameplay.Core","DialogManager",
             "get_isPreparing",nullptr,"System.Boolean",0}};
     BE_ResolvedFieldV1 manager_field{};
-    BetterEndfield::FirstPerson::StaticFieldGet static_get = nullptr;
+    BetterEndfieldNext::FirstPerson::StaticFieldGet static_get = nullptr;
     bool attempted = false;
     bool ready = false;
     unsigned reports = 0;
@@ -59,13 +59,13 @@ struct FpDialogueSampler {
         active=false;
         if (!Init()) return false;
         void* manager_object=nullptr;
-        const auto manager_read=BetterEndfield::FirstPerson::ReadDialogueManager(
+        const auto manager_read=BetterEndfieldNext::FirstPerson::ReadDialogueManager(
             static_get,manager_field.field_info,manager_object);
-        if (manager_read==BetterEndfield::FirstPerson::DialogueManagerRead::Unavailable)
+        if (manager_read==BetterEndfieldNext::FirstPerson::DialogueManagerRead::Unavailable)
             return Unavailable("dialogue manager read unavailable");
         // GameWorld has no dialogue owner before a manager is created. The
         // upstream dialogue path treats this state as inactive as well.
-        if (manager_read==BetterEndfield::FirstPerson::DialogueManagerRead::Absent) return true;
+        if (manager_read==BetterEndfieldNext::FirstPerson::DialogueManagerRead::Absent) return true;
         FpRoot manager(manager_object);
         if (!manager) return Unavailable("dialogue manager could not be rooted");
         bool is_playing=false,is_preparing=false;

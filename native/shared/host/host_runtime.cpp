@@ -12,14 +12,14 @@
 #include <cstring>
 #include <thread>
 
-namespace BetterEndfield::Host {
+namespace BetterEndfieldNext::Host {
 BE_Result HostRuntime::RetireHooks(const std::string& module_id) {
     return hooks_ ? hooks_->RetireModule(module_id) : BE_Result_NotReady;
 }
 
 // Optional named capability leaves the BE_HostApiV1 layout unchanged. A module
 // must pin its DLL and stop accepting work before using this lifecycle path.
-BE_EXPORT BE_Result BE_CALL BetterEndfield_RetireModuleHooksV1(void* context, const char* module_id) {
+BE_EXPORT BE_Result BE_CALL BetterEndfieldNext_RetireModuleHooksV1(void* context, const char* module_id) {
     if (!context || !module_id || !*module_id) return BE_Result_InvalidArgument;
     return static_cast<HostRuntime*>(context)->RetireHooks(module_id);
 }
@@ -29,11 +29,25 @@ constexpr auto kRuntimeWait = std::chrono::seconds(90);
 constexpr auto kRuntimePoll = std::chrono::milliseconds(100);
 constexpr auto kRuntimeSettle = std::chrono::seconds(3);
 
+// "Namespace.Class::Method(parameter types)" for hook diagnostics.
+std::string MethodLabel(const BE_MethodDescriptorV1& descriptor) {
+    std::string label;
+    if (descriptor.namespace_name && *descriptor.namespace_name) {
+        label = std::string(descriptor.namespace_name) + ".";
+    }
+    label += std::string(descriptor.class_name ? descriptor.class_name : "?") + "::" +
+        (descriptor.method_name ? descriptor.method_name : "?") + "(";
+    label += descriptor.parameter_types
+        ? std::string(descriptor.parameter_types)
+        : std::to_string(descriptor.parameter_count) + " args";
+    return label + ")";
+}
+
 } // namespace
 
 HostRuntime::HostRuntime(HMODULE host_module, const void* bootstrap_data)
     : host_module_(host_module), bootstrap_data_(bootstrap_data) {
-    api_.abi_version = BETTER_ENDFIELD_MODULE_ABI_V1;
+    api_.abi_version = BETTER_ENDFIELD_NEXT_MODULE_ABI_V1;
     api_.context = this;
     api_.log = &HostRuntime::LogCallback;
     api_.resolve_method = &HostRuntime::ResolveMethodCallback;
@@ -75,9 +89,14 @@ void HostRuntime::Run() {
 
     logger_ = std::make_unique<Logger>();
     logger_->Initialize(settings_->Paths().log_root);
-    logger_->Write("host", "BetterEndfield.Host starting.");
+    logger_->Write("host", "BetterEndfieldNext.Host starting.");
     logger_->Write("host",
         "Process-lifetime mode active; detach cleanup is intentionally skipped.");
+    hooks_ = std::make_unique<HookBroker>(*logger_);
+    if (!hooks_->Initialize()) {
+        logger_->Write("host", "Hook broker unavailable; native modules disabled.");
+        return;
+    }
 
     const auto deadline = std::chrono::steady_clock::now() + kRuntimeWait;
     while (!GetModuleHandleW(L"GameAssembly.dll")) {
@@ -109,12 +128,6 @@ void HostRuntime::Run() {
         std::this_thread::sleep_for(kRuntimePoll);
     }
 
-    hooks_ = std::make_unique<HookBroker>(*logger_);
-    if (!hooks_->Initialize()) {
-        logger_->Write("host", "Hook broker was not initialized.");
-        resolver_->DetachCurrentThread();
-        return;
-    }
 
     modules_ = std::make_unique<ModuleManager>(*this, *logger_, *settings_);
     const auto module_deadline = std::chrono::steady_clock::now() + kRuntimeWait;
@@ -142,6 +155,7 @@ void HostRuntime::Run() {
     uint64_t configuration_token = settings_->ChangeToken();
     while (!stop_requested_.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        hooks_->Poll();
         const uint64_t next_token = settings_->ChangeToken();
         if (next_token != configuration_token) {
             configuration_token = next_token;
@@ -193,6 +207,9 @@ BE_Result BE_CALL HostRuntime::ResolveMethodCallback(void* context,
     const BE_Result status = runtime->resolver_->ResolveMethod(*descriptor, *result, error);
     if (status != BE_Result_Ok && runtime->logger_) {
         runtime->logger_->Write("host.resolver", error);
+    }
+    if (status == BE_Result_Ok && runtime->hooks_) {
+        runtime->hooks_->DescribeEntry(result->method_pointer, MethodLabel(*descriptor));
     }
     return status;
 }
@@ -333,4 +350,4 @@ void BE_CALL HostRuntime::GCHandleFreeCallback(void* context, uint32_t handle) {
     }
 }
 
-} // namespace BetterEndfield::Host
+} // namespace BetterEndfieldNext::Host

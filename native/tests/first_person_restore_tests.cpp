@@ -2,7 +2,7 @@
 #include <iostream>
 #include <stdexcept>
 
-using namespace BetterEndfield::CameraModule;
+using namespace BetterEndfieldNext::CameraModule;
 
 namespace {
 int renderer, source, clone;

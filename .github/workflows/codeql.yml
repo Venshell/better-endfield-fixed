@@ -151,8 +151,9 @@ jobs:
       - name: Fetch verified headwear catalog
         if: ${{ matrix.build-mode == 'manual' }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          HEADWEAR_CATALOG_URL: ${{ vars.HEADWEAR_CATALOG_URL }}
         run: |
+          python3 -c 'import json,os,pathlib; pathlib.Path("config/workspace.local.json").write_text(json.dumps({"tools":{"android_sdk":os.environ["ANDROID_HOME"],"android_dobby":"tools/android-toolchain/dobby-1.0.5"}}))'
           python3 tools/Camera/fetch_android_headwear_catalog.py --output "$RUNNER_TEMP/headwear"
           echo "HEADWEAR_CATALOG_DIR=$RUNNER_TEMP/headwear/catalog-bundled" >> "$GITHUB_ENV"
 

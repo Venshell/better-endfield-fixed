@@ -1,7 +1,7 @@
 #include "../modules/camera/first_person_dialogue.h"
 #include <iostream>
 
-using namespace BetterEndfield::FirstPerson;
+using namespace BetterEndfieldNext::FirstPerson;
 namespace {
 void* value=nullptr;
 void Get(const void*,void* output) { *static_cast<void**>(output)=value; }

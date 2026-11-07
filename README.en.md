@@ -12,7 +12,7 @@ Better Endfield is an Android LSPosed module for *Arknights: Endfield*, with a s
 | --- | --- | --- |
 | Android ARM64 | Models and BEM appearances, character voice, free camera, first person, camera motion, gyroscope and in-game control panel | LSPosed module and companion settings app |
 
-Appearance packages use the standard BEMv1 `.bem` format. See the [BEM creator guide](docs/BEM_CREATOR_GUIDE.md) for format and conversion limits.
+Appearance packages use the standard BEMv1 `.bem` format. See the [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md) for format and conversion limits.
 
 ## Get started
 
@@ -20,7 +20,7 @@ Appearance packages use the standard BEMv1 `.bem` format. See the [BEM creator g
 2. Install it, enable the module in LSPosed, and select the Endfield package you play.
 3. Configure features in the companion app, fully stop the game, then start it again.
 
-See the [Android guide](android/README.md) for setup, compatibility and troubleshooting. Bundled headwear assets target the native Android game at versionCode 50; other client versions need separate verification.
+See the [Android guide](android/README.md) for setup, compatibility and troubleshooting. Bundled headwear assets target the native Android game at versionCode 61; other client versions need separate verification.
 
 ## Build from source
 
@@ -34,7 +34,7 @@ The Android build requires JDK 21, Android SDK 37, NDK 27.2.12479018, CMake 3.22
 | [Technical reference](docs/TECHNICAL_DETAILS.md) | Module boundaries, loaders, configuration, logs and build details (Chinese) |
 | [Documentation index](docs/README.md) | Current topic guides and historical records (Chinese) |
 | [Changelog](CHANGELOG.md) | Releases and validation boundaries |
-| [BEM creator guide](docs/BEM_CREATOR_GUIDE.md) | Package authoring and validation |
+| [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md) | Package authoring and validation |
 
 For bug reports, use [Issues](https://github.com/NukumizuKazuhiko/better-endfield-fixed/issues) and include the platform, game and module versions, and reproduction steps. The Android app can export its runtime log; review it for personal information before sharing.
 

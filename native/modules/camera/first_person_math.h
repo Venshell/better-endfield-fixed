@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace BetterEndfield::FirstPersonMath {
+namespace BetterEndfieldNext::FirstPersonMath {
 struct Vec3 {
   float x, y, z;
 };
@@ -141,4 +141,4 @@ inline bool FacingRotation(Vec3 forward, Vec3 up, Quat* result) {
   *result = q;
   return true;
 }
-}  // namespace BetterEndfield::FirstPersonMath
+}  // namespace BetterEndfieldNext::FirstPersonMath

@@ -1,6 +1,6 @@
 #include "../modules/camera/first_person_transition.h"
 #include <iostream>
-using namespace BetterEndfield::FirstPerson;
+using namespace BetterEndfieldNext::FirstPerson;
 bool Near(float a,float b) { return std::abs(a-b)<.001f; }
 int main() {
     TransitionState state;

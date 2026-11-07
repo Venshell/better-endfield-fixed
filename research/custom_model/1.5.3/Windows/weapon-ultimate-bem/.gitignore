@@ -1,0 +1,17 @@
+# Keep the small research evidence; never commit extracted game bundles or tools.
+*
+!.gitignore
+!README.md
+!audit.py
+!summary.json
+!protocol_probe.py
+!protocol-probe.json
+!reader-probe.patch
+!efmi-conversion/
+!efmi-conversion/*.py
+!efmi-conversion/README.md
+!efmi-conversion/summary.json
+!weapon-conversion/
+!weapon-conversion/*.py
+!weapon-conversion/README.md
+!weapon-conversion/summary.json

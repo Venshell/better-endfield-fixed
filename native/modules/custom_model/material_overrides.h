@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace BetterEndfield::CustomModel {
+namespace BetterEndfieldNext::CustomModel {
 
 struct BemRootOffset {
     std::string path;
@@ -67,4 +67,4 @@ inline bool ValidOverrideKeyword(const std::string& kw, bool skip_validation = f
     return true;
 }
 
-} // namespace BetterEndfield::CustomModel
+} // namespace BetterEndfieldNext::CustomModel

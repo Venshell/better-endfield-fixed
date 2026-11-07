@@ -1,0 +1,756 @@
+# BEM 格式规范（1.0–1.5）
+
+BEM（Better Endfield Next Model）是《终末地》角色模型替换包，扩展名 `.bem`。Windows 与 Android 读取同一个文件。[BEM 1.4 扩展规范](BEM_V1_4_SPEC.md)定义多资源目标和静态武器。下文保留 1.0–1.3 的协议内容；各版本只在下文标注的地方不同。第 12–14 节收录 BEM 1.5 的材质覆盖、动态时钟驱动器与原生 ZIP 容器。制作流程见 [创作者指南](BEM_CREATOR_GUIDE.md)，游戏内的匹配与限制见 [运行时行为与兼容性](BEM_RUNTIME_COMPATIBILITY.md)。
+
+参考实现：写入与校验 `tools/CustomModel/bem_v1.py`、`bem_v11.py`、`bem_v13.py`、`bem_v14.py`；读取 `native/modules/custom_model/bem.cpp`。
+
+## 1. 版本
+
+| 次版本 | 新增内容 | 必需能力 |
+| --- | --- | --- |
+| 1.0 | 固定外观 `appearances` | `fixed-appearances` |
+| 1.1 | 组合选项 `option_groups` + `component_rules`，按条件选择 draw；keep 部件贴图覆盖 | `composable-options`；覆盖贴图时加 `keep-material-textures` |
+| 1.2 | 贴图槽 `texture_slots`、按资源区分的骨骼名别名、32 字节非压缩蒙皮，以及更高的资源上限 | 按使用加 `texture-slots`、`resource-bone-aliases` |
+| 1.3 | 连续形态参数 `parameters` + 位置增量 `mesh_deformations` | `body-parameters`、`mesh-position-deltas` |
+| 1.4 | 显式资源／平台目标、静态 MeshRenderer 网格，见扩展规范 | `multi-resource-targets`；使用静态目标时加 `static-meshes` |
+| 1.5 | 材质属性与关键字覆盖、根骨骼位移、动态时钟驱动器，见第 12、13 节 | 按使用加 `material-overrides-v1`、`root-offset-v1`、`dynamic-drivers-v1` |
+
+- 写入器按内容选择**能表达该包的最低版本**：不需要新特性的包仍写成旧版本，让旧运行时可读。不能把高版本内容写进低版本头部，读取器会拒绝。
+- 读取器按头部版本执行对应的上限和语义；当前运行时接受 1.0–1.5。ZIP 容器（第 14 节）不依赖头部版本，各版本通用。
+- 1.5 是 1.3 的扩展：包可以继续使用 `character_id` / `world_resource` / `ui_resource` 这套旧目标，不必为了用 1.5 特性重建为 1.4 结构。`multi-resource-targets` 自 1.4 起是**可选的目标结构分支**，走不走显式资源目标由 `target` 里有没有 `resources` 决定，与头部版本无关；声明该能力却不带 `resources`、或带了 `resources` 却不声明，都会被拒绝。目标结构一旦确定，整包按该结构校验（部件不得混用两套字段）。
+- 所有版本都要求能力 `native-materials`、`palette-u8`、`indices-u32`。未知能力、重复能力，或使用了某项功能却没声明对应能力，一律拒绝。只声明不使用是允许的。
+
+## 2. 容器
+
+顺序：40 字节 Header、UTF-8 JSON Manifest、Payload 目录、连续的 Payload 字节。整数一律小端，结构无填充，文件最大 2 GiB，无文件哈希。
+
+| Header 偏移 | 类型 | 字段 |
+| --- | --- | --- |
+| 0 | byte[8] | magic `42 45 4D 00 50 4B 47 00`（`BEM\0PKG\0`） |
+| 8 | uint16 | major = 1 |
+| 10 | uint16 | minor = 0..5 |
+| 12 | uint32 | header_size = 40 |
+| 16 | uint64 | file_size，等于实际文件长度 |
+| 24 | uint64 | manifest_size，1 字节..4 MiB |
+| 32 | uint32 | payload_count |
+| 36 | uint32 | flags = 0 |
+
+Payload 目录每项 32 字节，数组下标就是 Payload ID：
+
+| 项内偏移 | 类型 | 字段 |
+| --- | --- | --- |
+| 0 | uint32 | codec：0 raw，1 Zstd |
+| 4 | uint32 | reserved = 0 |
+| 8 | uint64 | offset（文件绝对偏移） |
+| 16 | uint64 | stored_size |
+| 24 | uint64 | decoded_size |
+
+- 每个 Payload 1 字节..512 MiB；raw 的两个长度相等。
+- 目录按偏移排列：第一块紧接目录，后续块紧接前一块，不允许间隙、重叠、越界或尾随字节。
+- Zstd 必须是独立单帧、无字典、带准确内容长度。压缩等级不影响兼容性；压缩无收益时写 raw。
+- 字节相同的数据共享同一个 Payload ID。
+
+分发时可以把一个或多个 `.bem` 装进标准 ZIP；ZIP 不改变 BEM 本身，管理器会解出后分别管理。
+
+## 3. Manifest 通用规则
+
+- JSON 不允许重复键、NUL 字符，嵌套不超过 48 层。数值字段为 UInt32 整数，`srgb` 为布尔值。
+- 稳定 ID 匹配 `[A-Za-z0-9][A-Za-z0-9_.-]{0,95}`，区分大小写。名称和身份字符串最多 256 UTF-8 字节。
+- 资源之间用数组下标引用，不含本机路径或运行时地址。
+- 未知的普通字段视为可选元数据。会影响渲染结果的新语义必须通过新能力或新版本引入，不能藏在可选字段里。
+
+顶层字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `schema` | 固定 `1` |
+| `package_id` | 包身份；发布更新时保持不变 |
+| `name`、`author`、`version` | 显示名、作者、显示版本 |
+| `required_capabilities` | 必需能力数组 |
+| `target` | 目标角色契约，见第 4 节 |
+| `meshes` | 网格资源，最多 4096 |
+| `textures` | 贴图资源，最多 4096 |
+| 1.0：`default_appearance_id`、`appearances` | 固定外观，见第 5 节 |
+| 1.1+：`option_groups`、`component_rules`、可选 `selection_constraints` | 组合选项，见第 6 节 |
+| 1.2+：可选 `texture_slots` | 见第 9 节 |
+| 1.3：可选 `parameters`、`mesh_deformations` | 见第 10 节 |
+| 1.5：可选 `root_offset`、`drivers` | 见第 12、13 节；draw 内的 `material_overrides` 同属 1.5 |
+
+## 4. Target：目标角色契约
+
+```json
+"target": {
+  "character_id": "chr_0013_aglina",
+  "platform": "windows-x64",
+  "profile_id": "aglina.windows", "revision": "20260918", "snapshot": "",
+  "world_resource": "chr_0013_aglina_postmodel",
+  "ui_resource": "chr_0013_aglina_uimodel",
+  "components": [
+    {"id": 0, "mesh_name": "S_actor_example_body_01_lod0", "original_index_count": 300,
+     "bone_names": ["Bip001_Pelvis"], "materials": ["M_actor_example_body_01"]}
+  ]
+}
+```
+
+- `character_id` 是完整角色 ID。一个包只对应一个角色。
+- `platform` 是格式常量，固定为 `windows-x64`。Android 读取同一个包，不要改成其他值，否则会被拒绝。
+- `world_resource`（场景模型根，`*_postmodel`）和 `ui_resource`（详情模型根，`*_uimodel`）必须不同。
+- `profile_id`、`revision`、`snapshot` 记录资料来源，`snapshot` 可以为空。
+- `components` 列出替换、保留、隐藏以及只作为骨骼或材质来源（donor）的**全部**部件，1..64 项：
+  - `id` 按 0..N-1 连续；`mesh_name` 是原游戏 LOD0 Mesh 的**完整名称**，不可重复；`original_index_count` 是原 Mesh 所有子网格索引数之和，为 3 的正倍数。
+  - `bone_names` 按原生骨骼槽位顺序排列，最多 65536；`materials` 按原生材质槽位顺序排列，最多 256。
+  - 1.2+ 可选 `bone_name_aliases`，见第 9 节。
+
+包里不带 bindpose、骨架或 Shader。运行时使用游戏当前原 Mesh 的 bindpose 和原材质。
+
+## 5. 1.0 固定外观
+
+```json
+"default_appearance_id": "outfit-a",
+"appearances": [
+  {"id": "outfit-b", "name": "另一套服装", "description": "固定状态",
+   "components": [{"target": 0, "operation": "replace", "mesh": 0},
+                  {"target": 1, "operation": "keep"},
+                  {"target": 2, "operation": "hide"}]}
+]
+```
+
+- 1..64 个外观。每个外观独立、完整地列出 target 的全部部件，不继承、不叠加。
+- `operation`：`replace`（换成 `meshes` 中的一项）、`keep`（保留原网格）、`hide`（隐藏）。
+- 可选 `preview`：PNG Payload ID，最多 8 MiB。当前管理界面显示角色公共头像，预览图留给工具使用。
+
+## 6. 1.1+ 组合选项
+
+1.1 起不再使用 `default_appearance_id` 和 `appearances`，改用选项组与部件规则。
+
+```json
+"option_groups": [
+  {"id": "outfit", "name": "服装", "default": "a",
+   "choices": [{"id": "a", "name": "外观 A"}, {"id": "b", "name": "外观 B"}]},
+  {"id": "part21", "name": "局部部件", "default": "on",
+   "available_when": {"eq": ["outfit", "b"]},
+   "choices": [{"id": "on", "name": "显示"}, {"id": "off", "name": "隐藏"}]}
+],
+"component_rules": [
+  {"target": 0, "candidates": [
+    {"when": {"eq": ["outfit", "a"]}, "operation": "keep"},
+    {"when": {"eq": ["outfit", "b"]}, "operation": "replace", "mesh": 0}
+  ]}
+]
+```
+
+**选项组**
+- 每组有稳定 `id`、显示 `name`、`default` 和若干互斥 `choices`。组数上限 64，每组选项数上限见第 11 节。组合总数没有上限。
+- `available_when` 只能引用排在前面的组。组不可用时，界面隐藏它但保留用户的保存值；求值时该组没有有效值，针对它的 `eq` 为 false。重新可用时恢复保存值。
+- 可选 `selection_constraints`：条件数组，全部成立才是合法组合，用来表示源 Mod 实际能到达的状态。默认组合必须合法。
+- 1.3 只有滑条、没有离散选项的包，`option_groups` 可以是空数组，规则用无条件谓词。1.1/1.2 至少需要一个组。
+
+**条件语法**：`true`、`false`、`{"eq":["组","选项"]}`、`{"all":[...]}`、`{"any":[...]}`、`{"not":条件}`。深度不超过 16，`all`/`any` 每个节点 1..32 项。不执行任何源 INI、表达式或 Shader。
+
+**部件规则**
+- `component_rules` 按 `target` 0..N-1 顺序覆盖全部部件。每个候选的操作为 `keep`、`hide` 或 `replace`（带 `mesh`）。
+- 在任意合法组合下，每个部件**恰好**有一个候选成立；`replace` 的网格至少选中一条 draw。创作者工具用精确决策图证明这一点（不抽样），并求出最坏情况下的 draw、索引、贴图数和内存。决策图最多 250000 个节点，超过即拒绝。
+
+**keep 贴图覆盖**（能力 `keep-material-textures`）
+
+保留原网格但替换其材质贴图时，在 keep 候选中写：
+
+```json
+{"operation": "keep", "material_overrides": [
+  {"material_slot": 0, "material_name": "原生材质名", "textures": [0]}]}
+```
+
+槽位按目标部件的原生材质表定位，名称必须一致。每个槽位不得重复，每项至少一张贴图。`hide`、`replace` 不能带这个字段。
+
+**保存与读取**
+- 设置保存为 `组:选项&组:选项`（例如 `outfit:a&part21:on`），缺省的组取 `default`。1.0 保存为外观 ID。
+- 包必须保留所有候选资源，不按安装时的选择裁剪，同一个包可以 A→B→A 切换。
+- 运行时只读取当前选择用到的 payload，未选中的内容不读取、不解压、不上传。
+
+## 7. Mesh
+
+| 字段 | 规则 |
+| --- | --- |
+| `vertex_count` | 1..1,048,576 |
+| `index_size` | 2 或 4（UInt16/UInt32），每个索引小于 `vertex_count` |
+| `streams` | 固定 3 项 `{"stride":N,"payload":ID}`；stride 1..64，payload 长度等于 `vertex_count × stride` |
+| `attributes` | 每项 `[semantic, format, dimension, stream, offset]`，取值为 Unity `VertexAttributeDescriptor` 的枚举 |
+| `bones` | 局部骨骼表（palette），1..256 项 |
+| `draws` | 有序绘制段。候选上限见 §11：1.1 为 512，1.2+ 为 4096；但任一可达状态下同时生效的不得超过 256 |
+| 1.0：`indices`、`index_count` | 整个网格一条索引 payload |
+
+**顶点属性**
+- 最多 16 项；semantic 0..13 且不重复；dimension 1..4；stream 0..2。
+- format 0..11 的元素字节数依次为 `4,2,1,1,2,2,1,1,2,2,4,4`。同一流内按声明顺序紧密排列，offset 等于前面属性大小之和，总和等于 stride。
+- 运行时使用包内的声明构建新网格，不要求与原 Mesh 布局相同。
+
+**蒙皮流（stream 2）**：只允许以下三种，BlendIndices 必须是最后一个属性。
+
+| stride | 声明 | 说明 |
+| --- | --- | --- |
+| 4 | `[13,6,4,2,0]` | UInt8×4 骨骼索引，刚性蒙皮，只用第一个索引，权重 1 |
+| 12 | `[12,4,4,2,0]`、`[13,6,4,2,8]` | UNorm16×4 权重 + UInt8×4 索引 |
+| 32（1.2+） | `[12,0,4,2,0]`、`[13,10,4,2,16]` | Float32×4 权重 + UInt32×4 索引，权重非负、有限 |
+
+每个顶点的权重之和为 1±0.01。运行时另有影响数限制，见运行时文档。
+
+**骨骼表 `bones`**
+
+```json
+{"component": 0, "index": 17, "name": "Bip001_Head"}
+```
+
+顶点骨骼索引指向本表。每项的 donor 部件、索引和名称必须与 target 表及实际游戏资源一致。表长不超过 256；源数据的 16 位骨骼索引可以离线重映射到本表，超过 256 拒绝，不截断、不自动分片。骨骼来源和材质来源可以是不同部件。
+
+**绘制段 `draws`**
+
+1.0：
+
+```json
+{"start": 0, "count": 300, "material_component": 1, "material_slot": 0,
+ "material_name": "M_actor_example_body_01", "textures": [0, 1]}
+```
+
+绘制段必须按顺序、无缝覆盖整条索引流，每段 `count` 为 3 的正倍数。
+
+1.1+：每条 draw 自带索引 payload，不再使用网格级 `indices`/`index_count`：
+
+```json
+{"when": {"eq": ["part21", "on"]}, "indices": 7, "count": 300,
+ "material_component": 0, "material_slot": 0, "material_name": "原生材质名", "textures": [0]}
+```
+
+- `indices` payload 恰好保存 `count × index_size` 字节。几何相同的两条 draw 可以引用同一个 payload。
+- 运行时按清单顺序把选中的 draw 拼成一条索引流，重新计算各段 `start`。
+- 不要把未选 draw 独有的索引和其他 draw 合并进同一个 payload，运行时按 payload 读取。
+
+**材质**：`material_component` + `material_slot` 指定 donor 部件的原生材质槽，`material_name` 必须与该槽的材质名一致。运行时复制原材质，保留原 Shader、关键字、参数和采样状态；包里不带 Shader 程序。
+
+**贴图引用**：`textures` 引用顶层贴图表（1.2+ 也可写 `{"slot":"槽ID"}`）。同一条 draw 不能重复引用同一项，也不能对同一原始贴图赋值两次。
+
+## 8. Texture
+
+| 字段 | 规则 |
+| --- | --- |
+| `width`、`height` | 1..32768；BC 格式要求宽高为 4 的倍数 |
+| `mips` | 1..16；payload 包含完整声明的 mip 链，由大到小连续，每级宽高减半取整且至少为 1，无行填充 |
+| `format` | Unity TextureFormat，见下表 |
+| `srgb` | 颜色空间 |
+| `original_name` | donor 材质上被替换的原 Texture 对象的完整名称 |
+| `payload` | 数据 Payload ID |
+| 可选 `semantic` | `"normal"` 表示法线贴图 |
+| 可选 `normal_encoding` | `"xy-unorm"` 或 `"xyz-unorm"`；Android 转换法线贴图时需要 |
+
+| format | 格式 | 备注 |
+| --- | --- | --- |
+| 4 | RGBA32 | 每像素 4 字节，R/G/B/A 顺序 |
+| 10 | DXT1 (BC1) | |
+| 12 | DXT5 (BC3) | |
+| 25 | BC7 | |
+| 26 | BC4 | |
+| 27 | BC5 | |
+| 48 / 49 / 50 | ASTC 4×4 / 5×5 / 6×6 | 通常由 Android 安装器生成；桌面显卡一般不支持 |
+| 63 | R8 | 每像素 1 字节，`srgb` 必须为 false |
+
+- BC6H 不支持。
+- 运行时在复制出的材质里按 `original_name` 逐字匹配原贴图来替换，不能用源 DDS 文件名代替。
+- 同一份像素数据绑定到不同名称时，复用同一个 payload。
+
+## 9. 1.2 新增
+
+### 贴图槽 `texture_slots`（能力 `texture-slots`）
+
+换色时不必复制 draw：一个槽对应一张原生贴图，按条件选出替换贴图。
+
+```json
+"texture_slots": [
+  {"id": "dress_d", "candidates": [
+    {"when": {"eq": ["colour", "c0"]}, "texture": null},
+    {"when": {"eq": ["colour", "c1"]}, "texture": 7}
+  ]}
+]
+```
+
+- draw 的 `textures` 和 keep 的 `material_overrides[].textures` 可以写 `{"slot":"dress_d"}`。
+- 任意合法组合下每个槽恰好一个候选成立；`null` 表示保留原贴图。
+- 一个槽的所有非空候选必须替换同一张原贴图（`original_name` 相同）。同一 draw 或 keep 列表中，各固定贴图和各槽替换的原贴图互不相同。
+
+### 骨骼名别名 `bone_name_aliases`（能力 `resource-bone-aliases`）
+
+同一个骨骼在场景资源和详情资源里名字不同时使用（例如游戏骨架里的拼写错误）。
+
+```json
+{"id": 13, "mesh_name": "S_actor_typhoea_cloth_01_lod0",
+ "bone_names": ["...", "skirt_base_L_c_03_jnt", "..."],
+ "bone_name_aliases": [{"index": 24, "resource": "world", "name": "skirt_base_R_c_03_jnt"}]}
+```
+
+- `bone_names` 写正确的标准名，palette 照常引用标准名。
+- 每条别名包含 `index`、`resource`（`world` 或 `ui`）和 `name`，不能与标准名相同；同一 `(index, resource)` 只能出现一次。
+- 运行时骨骼名等于标准名或任一别名都接受，绑定的仍是该索引上的骨骼对象。游戏修正名称后，已发布的包无需重建。
+
+### 32 字节蒙皮
+
+见第 7 节蒙皮流表。用于原生 Mesh 本身就是非压缩蒙皮格式的部件（例如提弗洛斯 `cloth_01`）。
+
+## 10. 1.3 形态参数
+
+形态模型与 EFMI ShapeKey 相同：`position = 原始位置 + Σ 参数增量`。只改变位置，原法线、切线、UV、权重、bindpose、骨骼不变。包里只有数据，不含 INI、Shader 或界面脚本。
+
+```json
+"parameters": [
+  {"id": "body", "name": "体型", "min": 0, "max": 1000, "neutral": 0, "default": 0, "step": 1}
+],
+"mesh_deformations": [
+  {"mesh": 0, "parameter": "body", "frames": [
+    {"value": 0, "neutral": true},
+    {"value": 1000, "payload": 12, "count": 350, "encoding": "sparse-position-f32"}
+  ]}
+]
+```
+
+**参数**
+- 最多 64 个。值为 0..1000 的整数刻度，`min < max`，`step ≥ 1`，`max`、`neutral`、`default` 和所有帧值都必须从 `min` 起按 `step` 对齐。
+- `neutral` 是零形变位置；`default` 是作者推荐的初始值，可以不同。
+- 可选 `available_when` 使用选项组条件（只能引用离散选项，不能引用其他滑条）。参数不可用时按 `neutral` 计算，保留用户的保存值。
+- 设置保存为 `id:刻度&id:刻度`，按清单顺序。无效或未知的保存值会被运行时规整，不会用来索引数据。
+
+**形变通道**
+- 最多 4096 个。`mesh` 是网格下标，`parameter` 是参数 ID，同一 `(mesh, parameter)` 唯一。
+- 每个通道 2..64 帧，帧值严格递增，必须覆盖 `min` 和 `max`，并且恰好包含一个 `{"value":neutral,"neutral":true}`（中性帧不带 payload）。
+- 其他帧恰好包含 `value`、`payload`、`count`、`encoding`，`encoding` 固定为 `sparse-position-f32`。`count` 可以为 0（表示零效果端点），不超过网格顶点数。
+- 形变网格必须有 Float32 XYZ 位置属性（semantic 0、format 0、dimension 3）。通道只在该网格被选中替换时生效。多个部件共用同一网格时，相同设置下得到相同几何。
+
+**增量 payload**
+
+| 偏移 | 内容 |
+| --- | --- |
+| 0 | UInt32：JSON 描述的字节长度 J（1..4096） |
+| 4 | J 字节 JSON：`{"count":N,"encoding":"sparse-position-f32"}` |
+| 4+J | N 条记录，每条 16 字节：UInt32 顶点索引 + Float32 ΔX/ΔY/ΔZ |
+
+- 总长度恰好为 `4 + J + 16N`。顶点索引小于顶点数且在同一帧内唯一；增量为有限值。没有记录的顶点增量为 0。
+- 增量的单位和坐标轴与替换网格一致，是相对原始位置的绝对偏移，不是相对上一帧的增量。
+
+**求值**：刻度正好落在某帧时取该帧增量；落在相邻两帧 a、b 之间时，按 `(b-v)/(b-a)` 和 `(v-a)/(b-a)` 线性插值两帧的绝对增量。各通道结果相加后，一次性加到原始位置上。
+
+## 11. 上限汇总
+
+| 项 | 1.0 | 1.1 | 1.2 / 1.3 / 1.4 / 1.5 |
+| --- | --- | --- | --- |
+| 外观 / 选项组 | 1..64 个外观 | 64 组 | 64 组 |
+| 每组选项 | — | 16 | 64 |
+| 部件候选 + draw 候选 + 贴图槽候选（整包合计） | — | 512 | 4096 |
+| 单个部件的候选 draw | — | 512 | 4096 |
+| **单次选择同时生效的 draw**（任一可达状态下的最大值） | — | 256 | 256 |
+| 单次选择的贴图绑定 | 32 | 32 | 64 |
+| 单张贴图（完整 mip 链） | 64 MiB | 64 MiB | 256 MiB |
+| 单次选择的已解码数据 / 常驻资源 | 512 / 512 MiB | 768 / 768 MiB | 1536 / 1536 MiB |
+| Payload 目录项 | 4096 | 4096 | 16384 |
+
+各版本相同：容器 2 GiB；Manifest 4 MiB；单个 Payload 512 MiB；部件 1..64；骨骼表 256；选中索引 16,777,216；顶点 1,048,576；形态参数 64、形变通道 4096。1.4 与 1.5 没有新增容器或资源上限，沿用同一列；1.5 的 `material_overrides` 与 `drivers` 按单个 draw 计配额，见第 12、13 节。
+
+**候选数与生效数是两回事，不要混用。** 一个部件可以声明最多 4096 条候选 draw（`bem_v11.py:720`，整包候选合计同样 ≤4096，`bem_v11.py:774`）；但校验器会按 `component_rules` 展开所有可达状态，要求**任一状态下同时生效的 draw 数 ≤256**（`bem_v11.py:394`，报错文案 `Selected draw limit exceeded`）。所以"上限 4096"只对声明成立，对单次渲染不成立。分段写 1551 条 draw 的包能通过，前提是这些 draw 分属互斥的状态；把它们放进同一个状态就会在 256 处被拒。
+
+预算按单次选择计算，不等于实际显存峰值；1.3 的预算按各通道全部帧保守计算。实际加载开销见运行时文档。
+
+
+## 12. BEM 1.5 材质属性与关键字动态覆盖（material-overrides-v1）
+
+> **致谢**：特别感谢 **@Saberverse** 在 BEM 1.5 格式规范设计、材质属性与关键字动态覆盖方案以及 NPC 路径适配中提供的关键技术支持与审阅材料。
+
+
+BEM 1.5（`minor = 5`）引入了 `material-overrides-v1` 能力，允许在网格绘制候选（draw）上对 Unity 材质实例的属性与关键字进行动态覆盖，以支持透明薄纱、水墨消光、高光抑制等定制视觉需求，且无需替换底层 Shader。
+
+### Capability 声明
+使用该特性的模型包须在 `required_capabilities` 中声明：
+```json
+"required_capabilities": ["native-materials", "material-overrides-v1"]
+```
+
+### Draws 材质覆盖对象
+在 `meshes[].draws[]` 中追加可选的 `material_overrides` 对象：
+- `floats`：键值字典，浮点数范围限制在 `[-128.0, 128.0]`，单 draw 最多 32 项。
+- `colors`：键值字典，4 元 RGBA 浮点数组，通道值限制在 `[0.0, 8.0]`，单 draw 最多 16 项。
+- `vectors`：键值字典，4 元浮点数组，分量值限制在 `[-65536.0, 65536.0]`，单 draw 最多 8 项。
+- `disable_keywords`：字符串列表，禁用指定 Shader Keyword，单 draw 最多 16 项。
+- `enable_keywords`：字符串列表，启用指定 Shader Keyword，单 draw 最多 16 项。
+
+### 属性与关键字命名规范
+- 属性名必须以 `_` 开头，仅含英文字母、数字和下划线，长度 2..96 字符（正则：`^_[a-zA-Z0-9_]{1,95}$`）。
+- 关键字必须仅含大写英文字母、数字和下划线，长度 2..96 字符（正则：`^[A-Z0-9_]{2,96}$`）。
+
+### 实验：关闭模型校验（skip_validation）
+当开启「关闭模型校验」时：
+- 属性名与关键字放宽为 ASCII 可打印字符；
+- 超界浮点数与颜色值自动饱和截断（Clamp）至合法范围；
+- 配额限制放宽至 4 倍（浮点 128 项，颜色 64 项，向量 32 项，关键字各 64 项）。
+
+### 根骨骼位移扩展（root-offset-v1）
+
+BEM 1.5 新增 `root-offset-v1` 能力，允许模型声明对骨骼根节点的局部平移微调，主要用于解决高跟鞋、厚底鞋或悬浮装束导致的角色脚底插地穿模问题。
+
+#### Capability 声明
+```json
+"required_capabilities": [
+  "native-materials",
+  "root-offset-v1"
+]
+```
+
+#### 清单配置结构
+在 `manifest.json` 根级配置 `root_offset`：
+```json
+{
+  "root_offset": {
+    "path": "Bip001",
+    "translation": [0.0, 0.04, 0.0]
+  }
+}
+```
+- `path`：字符串，目标骨骼层级相对路径（1..256 字符，字符集 `[-A-Za-z0-9_ /]`，禁止包含 `..` 或 `//`）。
+- `translation`：包含 3 个浮点数的数组 `[x, y, z]`，代表局部坐标平移量（米）。
+  - 位移模长限制：$\sqrt{x^2 + y^2 + z^2} \le 0.2$ 米。
+  - 在「关闭模型校验」模式下放宽至 1.0 米，并自动饱和截断。
+
+
+## 13. BEM 1.5 动态时钟驱动器与材质调制扩展（dynamic-drivers-v1）
+
+BEM 1.5 扩展支持 dynamic-drivers-v1 能力，允许模型包在清单内直接声明时间连续动画（如道具往复平移）与材质属性动态调制（如发光呼吸灯、战术手电开关、高光渐变），无需外置任何侧车文件。
+
+### 交互原则：双端悬浮窗控制 + 桌面快捷键配置
+
+- **双端同构**：PC（ModelOverlay 悬浮窗）与 Android（GameOverlay 悬浮窗）都在模型详情页渲染「动效」分区，逐条给出 **开始 / 暂停 / 停止** 三个按钮与一条速度滑条，触屏与鼠标交互一致。
+- **PC 快捷键由管理器 GUI 配置**：每个控制器一条「开始／结束」切换键，**缺省为空（不绑定任何键）**。输入方式与 GUI 其它快捷键完全一致（捕获按键、组合键、清除）。快捷键只做二元切换，不提供暂停。
+- **暂停只在悬浮窗提供**：避免一个键承担三态循环的歧义。
+- **当次会话有效**：悬浮窗与快捷键改动只作用于当前运行，不写回包内 `default_playing`，也不修改包内容。重启后回到包的默认状态；要改默认值就改包。
+- **快捷键持久化位置**：快捷键是用户偏好而不是包内容，保存在 `runtime.ini` 的 `[Mod.<包id>]` 段 `driver_hotkeys`，按包隔离；包被禁用或删除后绑定自然失效，重新启用即恢复。
+
+### Capability 声明
+
+```json
+"required_capabilities": [
+  "native-materials",
+  "material-overrides-v1",
+  "dynamic-drivers-v1"
+]
+```
+
+`dynamic-drivers-v1` 不要求显式资源目标：1.3 结构的包（`character_id` / `world_resource` / `ui_resource`）加上该能力就是合法的 1.5 包，读写两端一致。材质绑定的 `component` 仍是 `target.components` 的下标，两种目标结构含义相同。
+
+### 清单配置结构（manifest.json 中的 drivers 字段）
+
+```json
+{
+  "drivers": [
+    {
+      "id": "driver_dildo_thrust",
+      "name": "道具连续抽插",
+      "waveform": "pingpong",
+      "playback": "loop",
+      "default_playing": false,
+      "base_frequency": 1.2,
+      "speed_multiplier": 1.0,
+      "bindings": [
+        {
+          "type": "morph_parameter",
+          "target": "dildo_depth",
+          "range": [0.0, 1.0]
+        }
+      ]
+    },
+    {
+      "id": "driver_insert_once",
+      "name": "单程推入",
+      "waveform": "sawtooth",
+      "playback": "once",
+      "default_playing": false,
+      "base_frequency": 0.5,
+      "bindings": [
+        {
+          "type": "morph_parameter",
+          "target": "anal_plug_depth",
+          "range": [0.0, 1.0]
+        }
+      ]
+    },
+    {
+      "id": "driver_glow_pulse",
+      "name": "战术发光纹路呼吸",
+      "waveform": "sine",
+      "default_playing": false,
+      "base_frequency": 0.8,
+      "bindings": [
+        {
+          "type": "material_float",
+          "component": 2,
+          "material_slot": 0,
+          "property": "_EmissionWeight",
+          "range": [0.0, 1.5]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 字段说明
+
+- **id**：控制器唯一字符串标识符，同一包内不得重复；GUI 的热键配置与悬浮窗控件都按它索引；
+- **name**：控制器显示名称，作为悬浮窗「动效」分区与 GUI 热键行的标题；缺省时回落到 id；
+- **waveform**：波形发生器类型，闭集，见下节；未知名称丢弃该控制器（不静默回退到下界）；
+- **playback**：播放模式，闭集 `loop` / `once`，缺省 `loop`；未知值丢弃该控制器。语义见「播放模式」；
+- **default_playing**：进入游戏后的初始状态，默认必须为 `false`（保持静止）；
+- **base_frequency**：振荡基频（Hz），`0 ≤ f ≤ 10`；`loop` 下相位按 `phase = (phase + Δt × base_frequency × speed_multiplier) mod 1` 累加，`once` 下不取模而是钳制到 1；
+- **speed_multiplier**：初始倍率，`0 ≤ s ≤ 10`，面板滑条可在 0.25x~4.00x 之间实时调整；
+- **bindings**：驱动绑定的受控目标列表，1~32 条；
+- **sound**：可选的内嵌音效，见「驱动音效」；
+- **配额**：单个包最多 16 个控制器。超出部分运行时丢弃并记 `[AnimDriver]` 日志，工具侧在打包时直接报错。
+
+##### 波形（闭集，`phase = 0` 一律输出 0）
+
+| 名称 | 取值 | `once` 末帧权重 | 适用 |
+| --- | --- | --- | --- |
+| `pingpong`（缺省） | `p < 0.5 ? 2p : 2 − 2p` | 0（回到起点） | 往复、抽插 |
+| `sine` | `(1 − cos 2πp) / 2` | 0（回到起点） | 呼吸、脉冲（不是 `sin`，否则 phase 0 会从 0.5 起步） |
+| `jitter` | 相位量化后的确定性哈希 | 哈希值（不保证为 1） | 高频微震 |
+| `sawtooth` | `p` | 1（停在终点） | 单向流水、单程推到底 |
+| `step` | `p < 0.5 ? 0 : 1` | 1（停在终点） | 开关阶跃 |
+
+`jitter` 必须是相位的确定性函数，不得使用 `rand()`：同一包在两次运行间必须产生同一条曲线，否则无法做 A/B 对照。
+
+#### 播放模式 `playback`
+
+| 值 | 行为 |
+| --- | --- |
+| `loop`（缺省） | 相位在 `[0,1)` 内循环取模，无限往复。旧包不写该字段即为此模式，行为与 1.5 早期实现完全一致。 |
+| `once` | 相位从 0 单向推进到 1 后**钳制在 1 并停止推进**；驱动进入「已结束」状态，但仍每帧按 phase = 1 求值并投递，因此顶点、材质属性与关键字都停留在末帧，不会回弹。 |
+
+`once` 的要点：
+
+1. **时长由 `base_frequency` 表达**：`时长 = 1 / (base_frequency × speed_multiplier)` 秒。不新增 duration 字段，也不改变 `loop` 的既有含义；
+2. **末帧在哪由波形决定**：见上表「`once` 末帧权重」。要让「推出去停在最远端」写 `sawtooth` 或 `step`；要让「出去再回来、结束时回到原位」写 `pingpong` 或 `sine`；
+3. **重新开始**：对已结束的驱动再发一次「开始」，相位归零并重新播放；悬浮窗的「开始」按钮与快捷键都遵循这条；
+4. **暂停与停止的区别**（`once`）：暂停冻结在当前相位、继续按该相位投递；停止交还参数并清除「已结束」；
+5. **音效**：`sound` 跟随播放状态。`once` 结束后音效停止，不循环；`loop` 下按 `sound.loop` 决定；
+6. 未知 `playback` 值丢弃该控制器并记 `[AnimDriver]` 日志，与未知 `waveform` 一致，不做静默回退。
+
+#### 控制与状态模型
+
+每个控制器有四个状态，任何状态都可被外部控制（悬浮窗按钮、快捷键、`runtime.ini`）随时改写：
+
+| 状态 | 含义 | 顶点 / 材质 |
+| --- | --- | --- |
+| `stopped` | 停止。不再投递，相位归零 | 交还包内原始姿势；`once` 同时清除「已结束」 |
+| `playing` | 正在推进相位 | 每帧投递 |
+| `paused` | 暂停。冻结当前相位 | 每帧按冻结相位投递，姿势保持不变 |
+| `finished` | 仅 `once` 使用，相位已到 1 | 每帧按 phase = 1 投递，停在末帧 |
+
+控制入口：
+
+| 入口 | 可用操作 | 平台 |
+| --- | --- | --- |
+| 悬浮窗（模型详情页「动效」分区） | **开始 / 暂停 / 停止** + 速度滑条 | PC、Android |
+| 管理器 GUI 配置的快捷键 | **开始 / 结束** 二元切换（无暂停） | 仅 PC |
+| `runtime.ini` `[Mod.<包id>]` 的 `drivers=` | `id:play` / `id:pause` | 双端，无面板时的兼容入口 |
+
+按钮与状态的映射：
+
+- **开始**：`playing = true`。若当前是 `finished` 或 `stopped`，相位归零后重新播放；若当前是 `paused`，从冻结相位继续；
+- **暂停**：`playing = false` 但保留相位，标记为暂停态 → 继续按该相位投递，`once` 冻在当前位置，不回弹；
+- **停止**：进入 `stopped`、相位归零、清除 `finished` → 交还参数，立即回到包内原始姿势（即滑条/加载时所定的基准位置，也就是「开始」之前的静态状态）。**该帧即使形变量正好为零，仍会重新上传一次基准位置**：GPU 上留着的是上一帧的动画姿势，跳过上传会让模型停在半途；
+- **快捷键**：等价于「开始／结束」二元切换。停止态按一下从 0 开始播放，播放或暂停态再按一下进入停止态（不是暂停）。`once` 播完后按一下回到停止态，再按一下重新开始。
+
+**速度滑条**：`0.25x ~ 4.00x`，改写 `speed_multiplier`，不改变相位，因此调速不会让动作跳变。
+
+#### binding 通用字段
+
+- `type`：闭集，`morph_parameter`（别名 `blend_shape`）、`material_float`、`material_color`、`material_keyword`；未知类型丢弃该条绑定并记日志；
+- `component`：目标组件 id（即 `target.components[].id`），材质类绑定必填，缺省 0；
+- `material_slot`：该组件渲染器材质数组的下标，缺省 0；越界时该绑定不会命中任何材质；
+- `range`：`[low, high]` 递增对；缺省 `[0, 1]`。不同绑定类型的含义不同，见下。
+
+#### `morph_parameter`（正式语义）
+
+沿参数的刻度域求值，**不是权重裁剪**：
+
+1. 波形给出 `w ∈ [0,1]`；
+2. 映射到刻度：`tick = round(min + (low + (high − low) × w) × (max − min))`，其中 `min/max` 是该参数的 `parameters[]` 刻度范围，`range = [low, high]` 是刻度域上的归一化区间，必须落在 `[0,1]` 内；
+3. 在 `mesh_deformations` 中该参数的相邻两帧之间按 `tick` 线性插值，得到每顶点的绝对偏移；
+4. 偏移加到基准顶点位置上，按连续顶点 run 写回 Stream 0；
+5. **播放期间接管该参数**，不做双源合并（避免裁剪顺序歧义）。结束方式不同，交还时机不同：
+   - 暂停 → 继续按冻结相位接管，姿势不变；
+   - 停止 / 换包 / 卸载 → 交还加载时采样的手动值；
+   - `once` 播完 → 进入「已结束」，仍按 phase = 1 接管，直到收到停止。
+
+`target` 必须是 `parameters[]` 中已声明的参数 id；未声明时包校验失败。一个控制器可以同时驱动多个参数，同帧下这些通道的偏移在同一个基准上求和后再上传一次。
+
+##### 与手动滑条的共存限制（重要）
+
+**不建议把同一个参数的动画驱动和手动滑条同时用于同一组顶点。** 具体约束：
+
+- 同一参数只应二选一：要么由驱动播放，要么由滑条手动控制；不要在两者之间反复切换同一批顶点。
+- 需要「滑条调基础位置 + 动画做往复」时，请拆成两个参数、两组互不重叠的顶点，或干脆只保留其中一种控制方式。
+- 原因：滑条在加载期按所选刻度重建网格并整条上传；驱动则在运行期每帧改写 Stream 0。两者作用于同一批顶点时，运行期写入的位置与重建时上传的基准姿势会互相覆盖，表现为模型在原位置留下残影、动画过程闪烁、表面发虚。
+- 该限制只针对同一组顶点。不同参数作用于不同顶点区间（例如道具 A 与道具 B）时可以各自独立控制，互不影响。
+
+#### `material_float`
+
+`range = [low, high]` 是**输出区间**：`value = low + (high − low) × w`，缺省 `[0,1]`。输出区间不要求落在 `[0,1]` 内，校验上限为 ±128。表现等价于每帧对该材质槽调用一次 `Material.SetFloat(property, value)`，属性名遵循第 12 节正则 `^_[a-zA-Z0-9_]{1,95}$`。
+
+#### `material_color`
+
+`colors` 为 `[from, to]` 两个 RGBA 四元组，通道取值 `[0,8]`；按 `w` 逐通道线性插值后写入该材质槽（`Material.SetColor`），属性名规则同上。
+
+#### `material_keyword`
+
+`keyword` 遵循第 12 节正则 `^[A-Z0-9_]{2,96}$`；`w > threshold` 时 `EnableKeyword`，否则 `DisableKeyword`；`threshold` 缺省 0.5，必须落在 `[0,1]`。
+
+#### 恢复规则（驱动停止、换包、卸载）
+
+每帧对账：某一帧没有写某个属性，就当它已释放，因此停止、换包、模型卸载、模块退出都走同一条路径，不需要单独的停止回调。
+
+**暂停与 `once` 已结束都不是释放**：两者仍每帧投递冻结相位或末帧的采样值，所以属性与顶点保持不变。只有「停止」才释放。
+
+- 该材质槽在 `material_overrides` 里静态覆盖过同名属性 → 重放静态值；
+- 没有静态覆盖 → 写回该绑定的下界：`material_float` 用 `range[0]`，`material_color` 用 `colors[0]`，`material_keyword` 关闭；
+- `morph_parameter` → 回放加载时采样的帧权重，因此一个驱动接管参数 A 时，参数 B 的手动形变不会被抹掉。
+
+**已知限制**：关键字没有静态覆盖时一律关闭，因为运行时不新增 `Material.IsKeywordEnabled` 反射契约；若目标 shader 原本开着同一关键字，停止后会与包作者的预期不一致。需要保证语义时请用 `material_overrides.enable_keywords` 显式声明。
+
+**已知限制（形态）**：形态驱动走 Stream 0 逐帧局部上传，只改位置分量，不触碰法线/切线/UV（Stream 1）与骨骼（Stream 2），因此不会影响着色与蒙皮。但若同一组顶点同时被手动滑条控制，切换滑条会重建网格并整条上传，与运行期写入的位置叠加，可能出现原位置残影、闪烁与发虚；详见上文「与手动滑条的共存限制」。
+
+#### 桌面快捷键 `driver_hotkeys`（用户配置，非包内容）
+
+快捷键保存在 `runtime.ini` 的 `[Mod.<包id>]` 段，与 `parameters_saved` 同级，按包隔离：
+
+```ini
+[Mod.xueyuan-full]
+enabled=true
+package=packages/xueyuan-full.bem
+parameters_saved=dildo_depth:500&anal_morph:300
+driver_hotkeys=dildo_thrust:F1&anal_plug_thrust:CTRL+F2&vag_cycle:
+```
+
+- 语法：`id:按键` 对以 `&` 连接，与 `parameters_saved` / `options` 一致；**空值表示不绑定**（上例第三条）；
+- 键名语法与 `overlay_hotkey` 完全相同（`F1`、`CTRL+F2`、`NUMPAD1`、`ADD`、`=` 等），由 GUI 的快捷键捕获控件生成；
+- 单个包最多 16 条，与驱动配额一致；同一包内两条绑定到同一个键属于配置错误，GUI 拒绝保存；
+- 与 `overlay_hotkey` 冲突时只警告、不阻止——显示面板与驱动控制是不同用途；
+- 只在游戏窗口位于前台时响应；按键通过只读方式轮询，**不会拦截或吞掉游戏自身的输入**；
+- 该键位表由悬浮窗进程读取并执行，因此面板隐藏时快捷键依然有效；管理器 GUI 关闭不影响；
+- 未绑定的驱动只能通过悬浮窗或 `drivers=` 控制。
+
+### 平台支持情况
+
+| 能力 | Windows | Android |
+| --- | --- | --- |
+| 清单 `drivers` 解析 | ✅ | ✅ |
+| 相位时钟 / 波形求值 | ✅ | ✅ |
+| 形态驱动（`morph_parameter`） | ✅ 默认 `SetNativeArrayForChannelImpl` 整条 Position 通道；可在悬浮窗切到 `InternalSetVertexBufferData` 区间写入 | ✅ 仅 `SetNativeArrayForChannelImpl`（Unity 未导出另两条 icall） |
+| 材质 float / color / keyword | ✅ | ✅ |
+| 内嵌音效 `sound` | ✅ WASAPI 共享模式 | ✅ 每音效一个 `MediaPlayer` |
+| 悬浮窗控制面板 | ✅ ModelOverlay | ✅ GameOverlay |
+| 桌面快捷键 | ✅ | ❌ 无实体键盘 |
+
+Android 的形态投递路径与桌面不同，但语义一致：都从加载期捕获的基准位置重建，只写位置分量，不触碰法线/切线/UV 与骨骼。桌面可在悬浮窗切换两条等价路径用于 A/B 排查，Android 没有可选项。
+
+### 驱动音效 `sound`（可选）
+
+驱动器可以自带一段音效，随动画播放状态启停。音频以普通 Payload 存进包内，运行期解出为缓存文件后由平台音频后端播放。
+
+```json
+{
+  "id": "driver_dildo_thrust",
+  "name": "道具连续抽插",
+  "waveform": "pingpong",
+  "base_frequency": 1.2,
+  "sound": {
+    "payload": 12,
+    "format": "ogg",
+    "gain": 0.8,
+    "loop": true,
+    "offset_seconds": 0.0
+  },
+  "bindings": [
+    { "type": "morph_parameter", "target": "dildo_depth", "range": [0.05, 1.0] }
+  ]
+}
+```
+
+#### 字段说明
+
+| 字段 | 必需 | 说明 |
+| --- | --- | --- |
+| `payload` | 是 | 音频字节所在 Payload ID；解码后 16 B ~ 32 MiB |
+| `format` | 否 | 文件扩展名（`wav`/`mp3`/`m4a`/`aac`/`flac`/`ogg`/`wma`/`mp4`），仅用于命名缓存文件；缺省 `bin` |
+| `gain` | 否 | 线性音量，`[0, 2]`，缺省 1.0 |
+| `loop` | 否 | 循环播放，缺省 `true` |
+| `offset_seconds` | 否 | 起播延迟，`[0, 60]` 秒，缺省 0；用于对齐音画 |
+
+#### 播放语义
+
+1. 音效跟随驱动器的播放状态：开始播放 → 音效开始；暂停、停止、换包、模型卸载 → 音效停止；
+2. 一个驱动器最多一条音效，同一包最多 8 条并发；超出丢弃并记 `[driver-audio]` 日志；
+3. 音效**不参与**动画时钟。解码在后台线程完成，未就绪时动画照常推进，只是暂时无声；
+4. 一个驱动器可以只带 `sound` 而不带 `bindings`（纯音效驱动），但两者都缺省时该驱动器被丢弃。
+
+#### 与游戏音频的关系（重要）
+
+音效**不覆盖、不暂停游戏原有音频**。两端都使用独立于 Unity/Wwise 的音频通道：
+
+- PC：WASAPI **共享模式**渲染流，Windows 在音频端点与游戏自身的流混音；
+- Android：每个音效一个独立 `MediaPlayer`，由系统混音器与游戏音频混合。
+
+因此游戏 BGM、脚步、战斗音效全部照常播放。这一点与 `BetterEndfieldNext.Music` 的本地音乐播放不同——后者会主动暂停游戏 BGM，驱动音效不会。
+
+#### 已知限制
+
+- 播放起点与波形相位没有硬同步：音效是独立时钟，长循环会缓慢漂移。需要严格对齐时请让音效长度与波形周期一致，或使用 `offset_seconds` 校准；
+- PC 端在音频设备格式不是 float32 时静音（不影响动画）；
+- 音效 Payload 计入包体积，建议使用有损压缩（ogg/mp3）并把长度控制在数秒内。
+
+### 已知限制汇总
+
+- **形态与手动滑条不能共用同一组顶点**：滑条在加载期按所选刻度重建网格并整条上传，驱动在运行期每帧改写 Stream 0，两者互相覆盖会出现原位残影、闪烁与表面发虚。需要「滑条定基准 + 动画往复」时拆成两个参数、两组不重叠的顶点；
+- 不同参数作用于不同顶点区间（例如道具 A 与道具 B）时完全独立，可各自播放、暂停、停止；
+- 材质关键字在停止后若没有静态覆盖会一律关闭，因为运行时不新增 `Material.IsKeywordEnabled` 反射契约；需要保持语义时用 `material_overrides.enable_keywords` 显式声明；
+- `once` 的末帧依赖波形，`jitter` 的末帧是哈希值而非 1，不适合需要精确终点的场合。
+
+---
+
+## 14. BEM 原生 ZIP 归档容器规范与多包判定 (BEM ZIP Container Specification)
+
+为大幅降低创作者调试和发布门槛，BEM 全规范全面支持标准 ZIP 容器格式。模型无需经过专用工具封包，可直接以标准 ZIP 格式发布并在双端实机中秒级加载。
+
+### 1. 容器兼容性与文件特征
+- 底层容器：标准 PKZip 2.0 / Zip64 格式；
+- 识别机制：引擎不依赖文件扩展名（.bem 或 .zip 均可），通过文件前 4 字节魔数 0x50 0x4B 0x03 0x04（PK\x03\x04）自动识别 ZIP 容器并切换为内存级流式直读，零临时落盘。
+
+### 2. 标准包内文件布局
+ZIP 容器根目录必须包含 manifest.json。清单里的 `payload` 是整数编号，所以载荷按编号命名，文件名由清单唯一决定，不需要任何映射表：
+```text
+模型包.zip (或 .bem)
+├── manifest.json              # [必需] 核心清单与内化 drivers
+├── preview.png                # [可选] 预览缩略图
+└── payloads/                  # [必需] 按清单中的 payload 编号存放
+    ├── 0000.bin               # payload 0：顶点流、索引、贴图、形变帧都在这里
+    ├── 0001.bin               # payload 1
+    └── 0002.bin
+```
+
+- 文件编号即清单中引用的 `payload` / `indices` / `preview` 整数，从 0 开始连续；缺号会在加载时报 `ZIP package is missing payload N`。
+- 载荷内容就是 BEM 二进制包目录表里那段**未压缩**的字节，容器自身负责压缩。条目可用 STORED 或 DEFLATE，读取端自动解压；加密条目会被拒绝。
+- 也可以用 `0000.bin`（无前导零）或直接放在根目录，用于手工调试包，但正式发布建议用四位补零形式。
+- 可选在清单里写 `"format_version": "1.5"`：ZIP 容器没有二进制头，读取端缺省要靠字段推断版本，写明可避免推断误差。该键属于容器提示，写回二进制包时会被丢弃。
+
+### 3. ZIP 单模型包 vs BEM 合集包的自适应无歧义判定
+引擎与创作者导入工具采用统一的三步无歧义判定算法：
+1. 单模型包（BEM Archive Package）：
+   - ZIP 根目录（或剥离单一顶层包裹目录后）存在合法的 manifest.json，且内部包含 package_id 与 target；
+   - 包内通常不含 .bem 文件；若两者同时存在，以 manifest.json 为准，运行时会按单模型包处理而不是合集包；
+   - 处理策略：直接作为独立模型包挂载与渲染。
+2. 合集分发包（BEM Collection Bundle）：
+   - ZIP 内包含一个或多个 .bem 文件；
+   - 根目录下无单个模型的 manifest.json；
+   - 处理策略：判定为合集包，调度多包导入逻辑将内部各 .bem 提取并注册至模型库。
+3. 顶层目录容错：若 ZIP 包包含且仅包含一个顶层子文件夹，且该文件夹下包含 manifest.json，引擎自动将其视为根目录展开，彻底避免创作者因压缩路径层级导致的识别失败。

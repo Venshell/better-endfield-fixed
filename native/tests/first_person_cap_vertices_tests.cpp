@@ -2,7 +2,7 @@
 #include <iostream>
 #include <stdexcept>
 
-using namespace BetterEndfield::FirstPersonMesh;
+using namespace BetterEndfieldNext::FirstPersonMesh;
 void Check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }

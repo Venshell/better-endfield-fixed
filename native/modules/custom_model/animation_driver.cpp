@@ -9,7 +9,7 @@
 
 #include "../../shared/third_party/nlohmann/json.hpp"
 
-namespace BetterEndfield::CustomModel {
+namespace BetterEndfieldNext::CustomModel {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
@@ -529,4 +529,4 @@ std::vector<std::string> AnimationDriverHost::DrivenParameters() const {
     return result;
 }
 
-}  // namespace BetterEndfield::CustomModel
+}  // namespace BetterEndfieldNext::CustomModel

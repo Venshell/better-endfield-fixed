@@ -1,6 +1,6 @@
 #pragma once
 #include <cmath>
-namespace BetterEndfield::Actions {
+namespace BetterEndfieldNext::Actions {
 enum class Decision { Wait, Keep, Cancel };
 // Current Liino perform: the material dissolve starts before the mesh hide.
 // End particles are separate actions; neither belongs in a sustained flight.
@@ -18,7 +18,7 @@ struct Frame {
     float time = 0;
     float delta = 0;
     float length = 0;
-    bool clip_loop = false;
+    int clip_loop = -1; // Diagnostic only: -1 means the optional getter is unavailable.
     int next_hash = 0;
     bool returning_to_locomotion = false;
     float next_time = 0;
@@ -33,6 +33,11 @@ inline constexpr LoopConstants kAglinaLoop{136.0f / 208.0f, 80.0f / 208.0f, 18.0
 // The low-glide pose bank has an independent 40/60-second clock; this 52/173
 // wrap maintains the Animator state and does not select the visual loop window.
 inline constexpr LoopConstants kLiinoLoop{107.0f / 173.0f, 55.0f / 173.0f, 15.0f / 173.0f, 52.0f / 173.0f};
+// Jsspsi: 5.667-second clips. Rider/mount rewind .315 -> .126;
+// the two side inkbeasts rewind .317 -> .116.
+inline constexpr LoopConstants kJsspsiLoop{.315f, .126f, .06f, .315f - .126f};
+inline constexpr LoopConstants kJsspsiSideLoop{.317f, .116f, .06f, .317f - .116f};
+inline constexpr unsigned kJsspsiSkipEffects = (1u << 10) | (1u << 11) | (1u << 12);
 enum class LoopAction { None, Blend, Abort };
 struct LoopSchedule {
     LoopConstants c = kAglinaLoop;

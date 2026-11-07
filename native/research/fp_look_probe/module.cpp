@@ -14,7 +14,7 @@
 // the default build and from the release layout, exactly like the other research
 // probes, so it cannot reach a shipped artifact.
 
-#include "BetterEndfield/ModuleApi.h"
+#include "BetterEndfieldNext/ModuleApi.h"
 
 #include <Windows.h>
 
@@ -27,7 +27,7 @@
 
 namespace {
 
-constexpr const char* kModuleId = "betterendfield.fp-look-probe";
+constexpr const char* kModuleId = "betterendfieldnext.fp-look-probe";
 
 const BE_HostApiV1* g_host = nullptr;
 
@@ -315,7 +315,7 @@ void Run() {
 }
 
 const BE_ModuleApiV1 kApi{
-    {kModuleId, "First-person look probe", "0.1.0", BETTER_ENDFIELD_MODULE_ABI_V1},
+    {kModuleId, "First-person look probe", "0.1.0", BETTER_ENDFIELD_NEXT_MODULE_ABI_V1},
     &Initialize,
     &ConfigurationChanged,
     &Shutdown,
@@ -398,6 +398,6 @@ BE_Result Initialize(const BE_HostApiV1* host) {
 
 } // namespace
 
-BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfield_GetModuleApiV1(void) {
+BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfieldNext_GetModuleApiV1(void) {
     return &kApi;
 }

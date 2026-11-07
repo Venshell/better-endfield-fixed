@@ -4,12 +4,12 @@
 #include "../modules/camera/first_person_retry.h"
 #include <iostream>
 #include <stdexcept>
-using namespace BetterEndfield::FirstPersonMesh;
+using namespace BetterEndfieldNext::FirstPersonMesh;
 void Check(bool ok,const char* message) {if(!ok)throw std::runtime_error(message);}
 Vertex V(double x,double y,double z,uint32_t bone=0) {Vertex v;v.position={x,y,z};v.bone[0]=bone;v.weight[0]=1;return v;}
 int main() {
     try {
-        BetterEndfield::FirstPerson::RetryBudget retries;
+        BetterEndfieldNext::FirstPerson::RetryBudget retries;
         int renderer_a=0,renderer_b=0,source_a=0,source_b=0;
         Check(retries.Try(&renderer_a,&source_a)&&retries.Try(&renderer_a,&source_a)&&
             !retries.Try(&renderer_a,&source_a),"unchanged binding exceeded retry limit");
@@ -86,7 +86,7 @@ int main() {
         Check(Build(mixed_skin,{mixed_tri},{0,1,2},{},false,false,1.0,true).hidden_triangles==0,
             "partially skinned triangle hidden");
         // Camera math, ported from the upstream enhancer's camera_math.hpp.
-        using namespace BetterEndfield::FirstPersonMath;
+        using namespace BetterEndfieldNext::FirstPersonMath;
         Check(ExpandLookPitch(Quat{0,0,0,1},1.f,1.f)==0.f,"disabled look range produced an offset");
         Check(std::abs(ExpandLookPitch(AxisAngle({1,0,0},-30.f),1.5f,1.f)+15.f)<1e-3f,
             "upward look range not extended by 1.5");
@@ -137,7 +137,7 @@ int main() {
         Check(FacingRotation({1,0,0},{0,1,0},&facing)&&std::abs(Rotate(facing,{0,0,1}).x-1.f)<1e-5f,
             "turned facing rotation not reconstructed");
         Check(!FacingRotation({0,0,0},{0,1,0},&facing),"degenerate facing frame accepted");
-        using ShadowLease = BetterEndfield::FirstPerson::ShadowModeLease;
+        using ShadowLease = BetterEndfieldNext::FirstPerson::ShadowModeLease;
         ShadowLease shadow;
         Check(shadow.Acquire(1) && shadow.Observe(3)==ShadowLease::Refresh::Keep,
             "shadow lease did not retain the original mode");

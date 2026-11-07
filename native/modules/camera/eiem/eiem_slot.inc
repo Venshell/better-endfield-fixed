@@ -389,8 +389,8 @@ static bool MotionBackend_EnterDirectMainThread(bool play,
   if (play)
     DirectVmdRuntime_RequestPlay();
   Log("[P4-DIRECT-ENTER] accepted play=%d entity=%p animator=%p "
-      "backendGeneration=%llu ghostGeneration=%llu clock=BetterEndfield.MmdDirector "
-      "camera=BetterEndfield audio=BetterEndfield.Music tid=%lu",
+      "backendGeneration=%llu ghostGeneration=%llu clock=BetterEndfieldNext.MmdDirector "
+      "camera=BetterEndfieldNext audio=BetterEndfieldNext.Music tid=%lu",
       play ? 1 : 0, g_mainCharEntity, g_cachedAnimator,
       (unsigned long long)g_motionBackend.Generation(),
       (unsigned long long)s_ghostRequestedGeneration.load(
@@ -400,13 +400,13 @@ static bool MotionBackend_EnterDirectMainThread(bool play,
 }
 
 // ===========================================================================
-// Better Endfield slot driver
+// Better Endfield Next slot driver
 // ===========================================================================
 namespace {
-using namespace BetterEndfield;
+using namespace BetterEndfieldNext;
 
 const BE_HostApiV1 *g_beHost = nullptr;
-constexpr char kBeModuleId[] = "betterendfield.camera";
+constexpr char kBeModuleId[] = "betterendfieldnext.camera";
 bool g_beInitialized = false;
 bool g_beAvailable = false;
 bool g_beFaceReady = false;
@@ -578,10 +578,11 @@ const char *TypeName(void *field) {
   return type && il2cpp_type_get_name ? il2cpp_type_get_name(type) : nullptr;
 }
 
-// FindFloorResult as used by EIEM: bool@0, bool@1, float@8, Vector3@0x10,
-// Vector3@0x1C (unboxed). Accept the native call only when metadata agrees.
+// FindFloorResult embeds RaycastHit at 0x10 (unboxed); its point and normal
+// are at +0 and +0xC. Verify both levels before accepting the native call.
 bool VerifyFloorResultLayout(void *method) {
   if (!method || !il2cpp_method_get_param || !il2cpp_class_from_type ||
+      !il2cpp_field_get_type || !il2cpp_field_get_name ||
       il2cpp_method_get_param_count(method) != 7)
     return false;
   void *type = il2cpp_method_get_param(method, 2);
@@ -594,8 +595,8 @@ bool VerifyFloorResultLayout(void *method) {
   }
   struct Expect { int offset; const char *type; bool seen; } expect[] = {
       {0x00, "System.Boolean", false}, {0x01, "System.Boolean", false},
-      {0x08, "System.Single", false}, {0x10, "UnityEngine.Vector3", false},
-      {0x1C, "UnityEngine.Vector3", false}};
+      {0x08, "System.Single", false}, {0x10, "UnityEngine.RaycastHit", false}};
+  void *hitClass = nullptr;
   void *it = nullptr;
   while (void *field = il2cpp_class_get_fields(klass, &it)) {
     if (il2cpp_field_get_flags && (il2cpp_field_get_flags(field) & 0x10)) continue;
@@ -603,10 +604,24 @@ bool VerifyFloorResultLayout(void *method) {
     const char *name = TypeName(field);
     for (auto &e : expect)
       if (e.offset == offset && name && !strcmp(name, e.type)) e.seen = true;
+    if (offset == 0x10 && name && !strcmp(name, "UnityEngine.RaycastHit"))
+      hitClass = il2cpp_class_from_type(il2cpp_field_get_type(field));
   }
   for (const auto &e : expect)
     if (!e.seen) return false;
-  return true;
+  if (!hitClass) return false;
+  bool pointSeen = false, normalSeen = false;
+  it = nullptr;
+  while (void *field = il2cpp_class_get_fields(hitClass, &it)) {
+    if (il2cpp_field_get_flags && (il2cpp_field_get_flags(field) & 0x10)) continue;
+    const int offset = static_cast<int>(il2cpp_field_get_offset(field)) - 16;
+    const char *typeName = TypeName(field);
+    const char *fieldName = il2cpp_field_get_name(field);
+    if (!typeName || strcmp(typeName, "UnityEngine.Vector3") || !fieldName) continue;
+    if (offset == 0 && !strcmp(fieldName, "m_Point")) pointSeen = true;
+    if (offset == 0xC && !strcmp(fieldName, "m_Normal")) normalSeen = true;
+  }
+  return pointSeen && normalSeen;
 }
 
 void *CodeOf(void *method) {
@@ -867,7 +882,7 @@ bool ApiInitialize(const BE_HostApiV1 *host, const std::wstring &log_path,
   if (!log_path.empty())
     g_logHandle = CreateFileW(log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-  Log("=== Better Endfield EIEM DirectVmd port (upstream 1bc9baa) slot %d ===", BE_EIEM_SLOT);
+  Log("=== Better Endfield Next EIEM DirectVmd port (upstream 1bc9baa) slot %d ===", BE_EIEM_SLOT);
   g_beAvailable = ResolveAll(targets);
   if (g_beAvailable) {
     ApplyOptions();
@@ -1078,7 +1093,7 @@ const EiemSlot::Api kApi{
 } // namespace
 } // namespace BE_EIEM_NS
 
-const BetterEndfield::EiemSlot::Api *BetterEndfield::EiemSlot::BE_EIEM_API() {
+const BetterEndfieldNext::EiemSlot::Api *BetterEndfieldNext::EiemSlot::BE_EIEM_API() {
   return &BE_EIEM_NS::kApi;
 }
 

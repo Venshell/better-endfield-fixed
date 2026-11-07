@@ -4,7 +4,7 @@
 #include <atomic>
 #include <algorithm>
 #include <unistd.h>
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 std::atomic<pid_t> g_thread{0};
 std::atomic<FrameCallback> g_clients[static_cast<unsigned>(FrameClient::Count)]{};
@@ -67,6 +67,10 @@ void TakeAndroidLook(int& dx, int& dy) {
 void PublishAndroidPcMouse(bool enabled, bool ready) { g_pc_mouse.Publish(enabled, ready); }
 void SetAndroidPcCursorRequest(bool show) { g_pc_mouse.CursorRequest(show); }
 bool AndroidPcMouseCaptureRequested() { return g_pc_mouse.CaptureRequested(); }
+int AndroidPcCursorMode() { return g_pc_mouse.CursorMode(); }
+void AddAndroidPcMouseAbsolute(float x, float y) { g_pc_mouse.Absolute(x, y); }
+void SetAndroidPcDirectTouch(bool active) { g_pc_mouse.DirectTouch(active); }
+bool ReadAndroidPcMouseAbsolute(float& x, float& y) { return g_pc_mouse.ReadAbsolute(x, y); }
 void SetAndroidPcMouseCaptured(bool captured) { g_pc_mouse.Captured(captured); }
 void AddAndroidPcMouseMotion(float x, float y) { g_pc_mouse.Motion(x, y); }
 bool ReadAndroidPcMouseMotion(float& x, float& y) { return g_pc_mouse.Read(x, y); }

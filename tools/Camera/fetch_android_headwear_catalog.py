@@ -1,41 +1,48 @@
-"""Fetch the pinned public headwear catalog used by Android CI builds."""
+"""Import the pinned v61 catalog from an explicit archive or configured HTTPS URL."""
 
 import argparse
-import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import tempfile
+import urllib.request
 import zipfile
 
+from package_android_headwear_assets import MAX_COUNT, stage
 
-REPOSITORY = "NukumizuKazuhiko/better-endfield-fixed"
-RELEASE_TAG = "v3.3.22-alpha.21"
-ASSET_NAME = "headwear-catalog-v3-834.zip"
-ARCHIVE_SHA256 = "beaf2135063c962d382129098b65a3779d18adf515ebdac1fbd292e7b4644a78"
-EXPECTED_FILES = 835  # 834 fixtures and coverage.json
+EXPECTED_FILES = MAX_COUNT + 1
 MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
 
 
-def fetch(output: Path) -> Path:
+def fetch(output: Path, archive: Path | None = None, url: str | None = None) -> Path:
+    if output.is_symlink():
+        raise ValueError("headwear output must not be a symlink")
     output = output.resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists() and any(output.iterdir()):
         raise ValueError(f"headwear output must be empty: {output}")
-
-    with tempfile.TemporaryDirectory(prefix="headwear-download-", dir=output.parent) as temp:
-        archive = Path(temp) / ASSET_NAME
-        subprocess.run(
-            ["gh", "release", "download", RELEASE_TAG, "--repo", REPOSITORY,
-             "--pattern", ASSET_NAME, "--dir", temp],
-            check=True,
-        )
-        with archive.open("rb") as stream:
-            digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        if digest != ARCHIVE_SHA256:
-            raise ValueError(f"headwear archive SHA-256 mismatch: {digest}")
-
+    if (archive is None) == (not url):
+        raise ValueError("provide --archive or HEADWEAR_CATALOG_URL/--url for the pinned v61 catalog")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="headwear-import-", dir=output.parent) as temp:
+        temporary = Path(temp)
+        if archive is None:
+            if not url.startswith("https://"):
+                raise ValueError("headwear catalog URL must use HTTPS")
+            archive = temporary / "catalog.zip"
+            total = 0
+            with urllib.request.urlopen(url, timeout=30) as source, archive.open("xb") as sink:
+                if not source.geturl().startswith("https://"):
+                    raise ValueError("headwear download redirected outside HTTPS")
+                while chunk := source.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > MAX_ARCHIVE_BYTES:
+                        raise ValueError("headwear archive exceeds size bound")
+                    sink.write(chunk)
+        if archive.stat().st_size > MAX_ARCHIVE_BYTES:
+            raise ValueError("headwear archive exceeds size bound")
+        catalog = temporary / "catalog-bundled"
         with zipfile.ZipFile(archive) as package:
             files = [entry for entry in package.infolist() if not entry.is_dir()]
             names = [entry.filename for entry in files]
@@ -50,20 +57,24 @@ def fetch(output: Path) -> Path:
                         or not (leaf == "coverage.json" or re.fullmatch(r"[A-Za-z0-9_]{1,160}\.behw", leaf))
                         or entry.file_size > 16 * 1024 * 1024
                         or (entry.external_attr >> 16) & 0o170000 == 0o120000):
-                    raise ValueError(f"unsafe headwear archive entry: {name}")
-
-            catalog = output / "catalog-bundled"
-            catalog.mkdir(parents=True, exist_ok=True)
+                    raise ValueError("unsafe headwear archive entry")
+            catalog.mkdir()
             for entry in files:
-                target = catalog / Path(entry.filename).name
-                with package.open(entry) as source, target.open("xb") as sink:
+                with package.open(entry) as source, (catalog / Path(entry.filename).name).open("xb") as sink:
                     shutil.copyfileobj(source, sink)
-    print(f"headwear catalog: {catalog} ({EXPECTED_FILES} files, sha256:{ARCHIVE_SHA256})")
-    return catalog
+        # The producer pins coverage bytes, every fixture hash, inventory and profiles.
+        # No imported catalog becomes visible before that single validation owner passes.
+        stage(catalog, temporary / "verified")
+        output.mkdir(exist_ok=True)
+        catalog.rename(output / "catalog-bundled")
+    print(f"headwear catalog: {output / 'catalog-bundled'} ({EXPECTED_FILES} files, game versionCode 61)")
+    return output / "catalog-bundled"
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--archive", type=Path)
+    parser.add_argument("--url", default=os.environ.get("HEADWEAR_CATALOG_URL"))
     args = parser.parse_args()
-    fetch(args.output)
+    fetch(args.output, args.archive, args.url)

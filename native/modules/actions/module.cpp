@@ -1,6 +1,11 @@
-#include "BetterEndfield/ModuleApi.h"
+#if defined(_WIN32)
+#include "../../shared/game_resources.h"
+#endif
+#include "BetterEndfieldNext/ModuleApi.h"
+#include "BetterEndfieldNext/PoseLease.h"
 #include "dash_policy.h"
 #include "pose_policy.h"
+#include "jsspsi_quality_data.h"
 #include <fstream>
 
 #include <Windows.h>
@@ -15,9 +20,9 @@
 #include <string>
 #include <string_view>
 
-namespace BetterEndfield::Actions {
+namespace BetterEndfieldNext::Actions {
 namespace {
-constexpr char kId[] = "betterendfield.actions";
+constexpr char kId[] = "betterendfieldnext.actions";
 constexpr char kGame[] = "Gameplay.Beyond.dll";
 constexpr char kUnity[] = "UnityEngine.AnimationModule.dll";
 constexpr char kUnityCore[] = "UnityEngine.CoreModule.dll";
@@ -53,6 +58,19 @@ struct CharacterProfile {
     // board at 2.2 s). Deferring those hides keeps the parts visible while the
     // dash repeats; the native Clear still restores them on exit.
     bool defer_mesh_group_hide;
+    bool side_suffixed_perform = false;
+    bool rewind_mount = false;
+    const LoopConstants* side_loop = nullptr;
+    uint32_t skipped_effect_actors = 0;
+    bool freeze_render_vfx = false;
+    // Optional loop quality data (seam split and accessory lap), used only when
+    // jsspsi_quality=true; see loop_quality.inl.
+    const LoopQualityData* quality = nullptr;
+    // Wwise event of the dash start sound that the quality option stops.
+    uint32_t start_sound_event = 0;
+    // Gate named effects on quality and the first rewind, including effects
+    // without particles that only need their lifetime held.
+    bool quality_effects_after_rewind = false;
 };
 constexpr CharacterProfile kCharacters[]{
     {"aglina", "chr_0013_aglina", "CharIntPerform_Aglina_Spdash", L"pose_aglina.bin", kAglinaLoop,
@@ -75,19 +93,49 @@ constexpr CharacterProfile kCharacters[]{
       "P_fxbat_liino_sprint_dash_sp_weapons_base_L_a_01_jnt_lvdong",
       "P_fxbat_liino_sprint_dash_sp_weapons_base_R_a_01_jnt_lvdong"}, false,
      nullptr, {}, true},
+    // Jsspsi (chr_0036_jsspsi): Sustained special dash.
+    // Derived from reverse-engineering research in GitHub Issue #32 by zhuran24.
+    // Uses lightweight native Animator rewind + mount TmpObject sync + render VFX freeze;
+    // avoids external pose overlay banks and runtime disk seam writes.
+    {"jsspsi", "chr_0036_jsspsi", "CharIntPerform_Jsspsi_Spdash", nullptr, kJsspsiLoop,
+     {"P_fxbat_jsspsi_sprint_dash_sp_start_01",
+      "P_fxbat_jsspsi_sprint_dash_sp_start_02", "P_fxbat_jsspsi_sprint_dash_sp_start_02",
+      "P_fxbat_jsspsi_sprint_dash_sp_start_03", "P_fxbat_jsspsi_sprint_dash_sp_start_04",
+      "P_fxbat_jsspsi_sprint_dash_sp_start_05",
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, // 6-12: entry/exit effects
+      "P_fxbat_jsspsi_sprint_dash_sp_Bip001_jnt"}, false, nullptr, {}, false,
+     /*side_suffixed_perform=*/true,
+     /*rewind_mount=*/true,
+     /*side_loop=*/&kJsspsiSideLoop,
+     /*skipped_effect_actors=*/kJsspsiSkipEffects,
+     /*freeze_render_vfx=*/true,
+     /*quality=*/&JsspsiQuality::kData,
+     /*start_sound_event=*/1063030539u,
+     /*quality_effects_after_rewind=*/true},
 };
 constexpr size_t kCharacterCount = std::size(kCharacters);
 
 struct Configuration {
     bool enabled = false;
     bool diagnostics = true;
+    // Second, opt-in level for per-tick and per-effect traces. Everything it
+    // guards was needed while the loop timing was being reverse engineered; a
+    // release install only needs one line per dash and the failure paths, so
+    // this stays off unless someone is chasing a regression.
+    bool verbose = false;
     bool external_loop = false; // v12: external bone-pose data, not AnimationClip bundles.
     bool liino_clean = false; // Optional dash features default off.
+    bool jsspsi_quality = false;
     // One bit per kCharacters entry. A configuration without the key predates the
     // per-character switches and keeps every supported character armed.
     uint32_t characters = (1u << kCharacterCount) - 1;
     bool operator==(const Configuration&) const = default;
 };
+// Per-tick and per-effect traces. Both switches have to be on: diagnostics is
+// what a support log carries, verbose is the one a timing investigation adds.
+inline bool Verbose(const std::shared_ptr<const Configuration>& config) {
+    return config && config->diagnostics && config->verbose;
+}
 #if defined(_WIN32)
 using ConfigurationSlot = std::atomic<std::shared_ptr<const Configuration>>;
 #else
@@ -117,9 +165,6 @@ private:
 #endif
 ConfigurationSlot g_config{std::make_shared<Configuration>()};
 const BE_HostApiV1* g_host = nullptr;
-// Enum literal boxing fails on some clients; the Enum.Parse fallback per
-// constant would spam one line each, so init reports one summary instead.
-int g_enum_parse_fallbacks = 0;
 std::atomic_bool g_stopping{false};
 std::atomic<DWORD> g_game_thread{0};
 
@@ -130,7 +175,7 @@ enum MethodId {
     CurrentState, NextState, InTransition, StateHash, StateTime, StateLength,
     IsPlayingPerform, PerformId, SetDashing, MoveMode, Moving, Airborne,
     FlowTick, PerformClear, PerformState, HandleAlive, StateLoop, AddCommand,
-    TickStateInterrupt, CrossFade, TryExit, CheckTrackEnd, ShowObject,
+    CrossFade, TryInterruptCommand, DoExit, ShowObject,
     AudioMonoPost, AudioMonoComponent, AudioEntityPost, AudioHash,
     EffectName, EffectObject, EffectDuration, EffectFinish, EffectStop,
     ComponentsInChildren, ArrayLength, ArrayItem, ParticleMain,
@@ -140,7 +185,9 @@ enum MethodId {
     ControllerGet, ControllerSet, ControllerClips, OverrideCtor, OverrideClip,
     CurrentClipInfos, InfoClip, DestroyOwned,
     PoseTail, PoseComponentTransform, PoseFind, PoseGetLocal, PoseSetLocal, PoseFrameCount, PoseIsChild,
-    MeshGroupShow, EffectActionPlay, EffectManualFollow, VisualPerformId, VisualPerformEntity, MethodCount
+    MeshGroupShow, EffectActionPlay, EffectManualFollow, VisualPerformId, VisualPerformEntity,
+    JsspsiTmpAnimator, JsspsiPlayRenderVfx, JsspsiPlayVfx, JsspsiVfxTick, JsspsiVfxDelta,
+    JsspsiAudioObjectId, JsspsiStopSound, MethodCount
 };
 struct Method { BE_MethodDescriptorV1 desc; BE_ResolvedMethodV1 resolved{}; };
 Method g_methods[] = {
@@ -180,10 +227,9 @@ Method g_methods[] = {
     {{kGame,kPerformNs,kHandle,"_CheckEntityAlive",nullptr,"System.Boolean",0}},
     {{kUnity,"UnityEngine","AnimatorStateInfo","get_loop",nullptr,"System.Boolean",0}},
     {{kGame,kPerformNs,kHandle,"AddInterruptCommand","Beyond.Gameplay.CharInteractPerformEnums.InterruptReason|Beyond.Gameplay.CharInteractPerformEnums.InterruptType|System.Boolean","System.Void",3}},
-    {{kGame,kView,kCharacterComp,"_TickStatePerformInterrupt",nullptr,"System.Void",0}},
     {{kUnity,"UnityEngine","Animator","CrossFade","System.Int32|System.Single|System.Int32|System.Single|System.Single|UnityEngine.AnimationBlendStyle|UnityEngine.AnimatorTransitionInterruptionSource|System.Boolean","System.Void",8}},
-    {{kGame,kPerformNs,kHandle,"_TryExit","Beyond.Gameplay.Core.CharInteractPerform.InterruptCommandData","System.Boolean",1}},
-    {{kGame,kPerformNs,kHandle,"_CheckTrackEnd",nullptr,"System.Boolean",0}},
+    {{kGame,kPerformNs,kHandle,"_TryGetCurInterruptCommand","Beyond.Gameplay.Core.CharInteractPerform.InterruptCommandData&","System.Boolean",1}},
+    {{kGame,kPerformNs,kHandle,"_DoExit",nullptr,"System.Void",0}},
     {{kGame,kPerformNs,kHandle,"ShowObject","Beyond.Gameplay.Core.CharInteractPerform.ObjectShowActData","System.Void",1}},
     {{kGame,kAnimation,"AnimatorMono","PostAudioEvent","System.UInt32|System.Single","System.Void",2}},
     {{kGame,kAnimation,"AnimatorMono","get_innerAnimatorComponent",nullptr,"Beyond.Gameplay.View.ComplexAnimatorComponent",0}},
@@ -231,11 +277,19 @@ Method g_methods[] = {
     {{kGame,"Beyond.Gameplay","EffectInstance","ManualUpdateFollow",nullptr,"System.Void",0}},
     {{kGame,kPerformNs,kHandle,"get_interactPerformId",nullptr,"System.String",0}},
     {{kGame,kPerformNs,kHandle,"get_entity",nullptr,"Beyond.Gameplay.Core.Entity",0}},
+    {{kGame,kPerformNs,"TmpObjectInst","get_animator",nullptr,"UnityEngine.Animator",0}},
+    {{kGame,"Beyond.Gameplay","EffectInstance","PlayRenderVfx",nullptr,"System.Void",0}},
+    {{kGame,kView,"EntityVFX","PlayVFX","System.String","System.Void",1}},
+    {{kGame,kView,"EntityVFX","Tick","System.Single","System.Void",1}},
+    {{"Rendering.Beyond.dll","Beyond.Rendering","EntityVFXControllerBase","GetDeltaTimeFromLastTick","System.Boolean","System.Single",1}},
+    {{kGame,"Beyond.Gameplay.Audio","AudioManager","GetAudioObjectId","Beyond.Gameplay.Core.Entity","System.UInt64",1}},
+    {{"AK.Wwise.Unity.API.dll","","AkSoundEngine","ExecuteActionOnEvent","System.UInt32|AkActionOnEventType|System.UInt64|System.Int32|AkCurveInterpolation|System.UInt32","AKRESULT",6}},
 };
 static_assert(std::size(g_methods) == MethodCount);
 struct Field { BE_FieldDescriptorV1 desc; BE_ResolvedFieldV1 resolved{}; };
 enum FieldId { TemplateId, Request, RequestHandle, HasCommand,
-    CommandType, CommandReason, ActionLogic, ActionIndex, ActionShow, ActionDelay, Effects, VisualActionHandle, VisualActionData, FieldCount };
+    CommandType, CommandReason, ActionLogic, ActionIndex, ActionShow, ActionDelay, Effects, VisualActionHandle, VisualActionData,
+    JsspsiTmpObjects, JsspsiRenderHelper, JsspsiHelperVfx, JsspsiVfxOwner, FieldCount };
 Field g_fields[] = {
     {{kGame,"Beyond.Gameplay","GameDataWithId","id","System.String"}},
     {{kGame,kView,kCharacterComp,"m_currentRequest","Beyond.Gameplay.View.CharacterAnimationComponent.PerformRequest"}},
@@ -250,6 +304,10 @@ Field g_fields[] = {
     {{kGame,kPerformNs,kHandle,"m_effects","System.Collections.Generic.Dictionary<System.Int32,Beyond.ObjectPtr<Beyond.Gameplay.EffectInstance>>"}},
     {{kGame,kPerformNs,"CharInteractPerformActionBase","m_handle","Beyond.Gameplay.Core.CharInteractPerform.CharPerformHandleBase"}},
     {{kGame,kPerformNs,"CharInteractPerformActionBase","m_actionData","Beyond.Gameplay.Core.CharInteractPerform.CharInteractPerformActionData"}},
+    {{kGame,kPerformNs,kHandle,"m_tmpObjects",nullptr}},
+    {{kGame,kPerformNs,"TmpObjectInst","m_entityRenderHelper",nullptr}},
+    {{kGame,kView,"EntityRenderHelper","m_entityVFX",nullptr}},
+    {{"Rendering.Beyond.dll","Beyond.Rendering","EntityVFXControllerBase","m_owner",nullptr}},
 };
 static_assert(std::size(g_fields) == FieldCount);
 
@@ -268,14 +326,12 @@ TickFn g_flow_tick = nullptr;
 BoolArgFn g_perform_clear = nullptr;
 using CommandFn = void(__fastcall*)(void*, int, int, bool, const void*);
 CommandFn g_add_command = nullptr;
-VoidFn g_tick_state_interrupt = nullptr;
-using TryExitFn = bool(__fastcall*)(void*, void*, const void*);
-TryExitFn g_try_exit = nullptr;
-using CheckTrackFn = bool(__fastcall*)(void*, const void*);
+using TryInterruptCommandFn = bool(__fastcall*)(void*, void**, const void*);
+TryInterruptCommandFn g_try_interrupt_command = nullptr;
 using ShowFn = void(__fastcall*)(void*, void*, const void*);
 using AudioMonoFn = void(__fastcall*)(void*, uint32_t, float, const void*);
 using AudioEntityFn = uint32_t(__fastcall*)(void*, uint32_t, int, void*, void*, const void*);
-CheckTrackFn g_check_track = nullptr;
+VoidFn g_do_exit = nullptr;
 ShowFn g_show = nullptr;
 AudioMonoFn g_audio_mono = nullptr;
 AudioEntityFn g_audio_entity = nullptr;
@@ -334,7 +390,6 @@ struct Session {
     uint32_t natural_end_deferrals = 0;
     int last_progress_bucket = -1;
     uint32_t animation_replays = 0;
-    bool held_state_interrupt = false;
     uint32_t try_exit_calls = 0;
     uint32_t spdash_interrupts_suppressed = 0;
     int last_interrupt_reason = -1;
@@ -345,10 +400,7 @@ struct Session {
 Session g_session;
 bool g_liino_teardown_contract = true, g_effect_follow_contract = true;
 bool g_liino_clean_contract = true;
-#if defined(__ANDROID__)
-// This entry may be absent or inlined; the other interrupt holds still apply.
-bool g_state_interrupt_contract = true;
-#endif
+bool g_ending_skip_contract = true;
 int g_liino_mesh_groups[2]{-1, -1};
 VoidFn g_effect_action_play = nullptr;
 const void* g_hash_fields[2]{};
@@ -399,6 +451,14 @@ bool StringEquals(void* managed, const char* expected) {
     return managed && g_host->copy_managed_string(g_host->context,
         managed, text, sizeof(text)) > 0 && std::strcmp(text, expected) == 0;
 }
+bool PerformMatches(void* managed, const char* expected, bool allow_lr_suffix) {
+    char text[160]{};
+    if (!managed || g_host->copy_managed_string(g_host->context, managed, text, sizeof(text)) <= 0) return false;
+    if (!allow_lr_suffix) return std::strcmp(text, expected) == 0;
+    size_t len = std::strlen(expected);
+    if (std::strncmp(text, expected, len) != 0) return false;
+    return text[len] == '\0' || ((text[len] == 'L' || text[len] == 'R') && text[len + 1] == '\0');
+}
 void* OwnedPerform(void* component, const CharacterProfile* profile) {
     bool ok = true;
     if (!profile || !Value<bool>(IsPlayingPerform, component, ok) || !ok) return nullptr;
@@ -407,7 +467,7 @@ void* OwnedPerform(void* component, const CharacterProfile* profile) {
     void* unboxed = g_host->object_unbox(g_host->context, request);
     if (!unboxed) return nullptr;
     void* id = Invoke(PerformId, unboxed, nullptr, ok);
-    return ok && StringEquals(id, profile->perform_id) ? FieldObject(RequestHandle, request) : nullptr;
+    return ok && PerformMatches(id, profile->perform_id, profile->side_suffixed_perform) ? FieldObject(RequestHandle, request) : nullptr;
 }
 void* InvokeNamed(void* object, const char* name, int count, void** args, bool& ok, bool value_type = false) {
     if (!ok || !object) { ok = false; return nullptr; }
@@ -472,6 +532,9 @@ bool TargetEffectName(void* effect, int index, bool& ok) {
 void MaintainEffects() {
     if (!g_session.component || !g_session.policy.active) return;
     if (!g_session.profile || !g_session.profile->effects[0]) return;
+    // Do not freeze the native start delay (0.39 s on Jsspsi actors 1/2).
+    if (g_session.profile->quality_effects_after_rewind &&
+        (!g_session.config->jsspsi_quality || !g_session.animation_replays)) return;
     for (int slot = 0; slot < (int)std::size(g_session.effects); ++slot) {
         auto& effect = g_session.effects[slot];
         if (!g_session.profile->effects[slot] || effect.disabled || effect.prepared) continue;
@@ -504,13 +567,13 @@ void MaintainEffects() {
         void* component_args[]{g_particle_type, &inactive};
         void* array = Invoke(ComponentsInChildren, go, component_args, ok);
         int count = Value<int>(ArrayLength, array, ok);
-        if (!ok || count <= 0 || count > kMaxHeldParticles) {
-            if (count == 0 && ok) continue;
+        if (!ok || count < 0 || count > kMaxHeldParticles) {
             RestoreEffect(effect, true);
             if (!g_session.effect_error_logged) Log("Sustained dash v9: particle enumeration failed; VFX hold skipped.");
             g_session.effect_error_logged = true;
             continue;
         }
+        if (count == 0 && !g_session.profile->quality_effects_after_rewind) continue;
         for (int i = 0; i < count && ok; ++i) {
             void* item_args[]{&i};
             void* particle = Invoke(ArrayItem, array, item_args, ok);
@@ -543,7 +606,7 @@ void MaintainEffects() {
             Log("Sustained dash v9: particle setup failed; original instance settings restored.");
         } else {
             effect.prepared = true;
-            if (g_session.config->diagnostics) {
+            if (Verbose(g_session.config)) {
                 char message[144];
                 std::snprintf(message, sizeof(message), "Sustained dash v9: effect %d continuous particles prepared: count=%d", slot, effect.count);
                 Log(message);
@@ -555,6 +618,154 @@ void* CurrentRequestHandle(void* component) {
     void* request = FieldObject(Request, component);
     return request ? FieldObject(RequestHandle, request) : nullptr;
 }
+
+void* TmpObjectAt(int slot, void* dictionary) {
+    if (!dictionary) return nullptr;
+    bool ok = true;
+    void* args[]{&slot};
+    void* boxed_ptr = InvokeNamed(dictionary, "get_Item", 1, args, ok);
+    return ok ? boxed_ptr : nullptr;
+}
+
+void* TmpObjectAnimator(int slot) {
+    if (!g_session.handle || !g_fields[JsspsiTmpObjects].resolved.field_info || !g_methods[JsspsiTmpAnimator].resolved.method_info) return nullptr;
+    void* dict = FieldObject(JsspsiTmpObjects, g_session.handle);
+    void* inst = TmpObjectAt(slot, dict);
+    if (!inst) return nullptr;
+    bool ok = true;
+    void* animator = Invoke(JsspsiTmpAnimator, inst, nullptr, ok);
+    return ok && animator ? animator : nullptr;
+}
+
+void SyncTmpObjects(float duration, float offset) {
+    void* animator = TmpObjectAnimator(0);
+    if (!animator) return;
+    bool ok = true;
+    int layer = 0;
+    void* layer_args[]{&layer};
+    void* boxed = Invoke(CurrentState, animator, layer_args, ok);
+    void* state = boxed ? g_host->object_unbox(g_host->context, boxed) : nullptr;
+    int hash = Value<int>(StateHash, state, ok);
+    if (!ok || !hash) return;
+    float transition_time = 0;
+    bool blend_root_motion = false;
+    void* args[]{&hash, &duration, &layer, &offset, &transition_time, &g_blend_style, &g_blend_interrupt, &blend_root_motion};
+    Invoke(CrossFade, animator, args, ok);
+}
+
+void TickSideBeasts() {
+    if (!g_session.profile || !g_session.profile->side_loop) return;
+    const LoopConstants& c = *g_session.profile->side_loop;
+    static uint64_t last_side_rewind[3]{};
+    uint64_t now = GetTickCount64();
+    for (int slot = 1; slot <= 2; ++slot) {
+        void* animator = TmpObjectAnimator(slot);
+        if (!animator) continue;
+        bool ok = true;
+        int layer = 0;
+        void* layer_args[]{&layer};
+        if (Value<bool>(InTransition, animator, ok, layer_args) || !ok) continue;
+        void* boxed = Invoke(CurrentState, animator, layer_args, ok);
+        void* state = boxed ? g_host->object_unbox(g_host->context, boxed) : nullptr;
+        int hash = Value<int>(StateHash, state, ok);
+        float time = Value<float>(StateTime, state, ok);
+        if (!ok || !hash || time < c.begin || time > c.begin + 0.2f || now - last_side_rewind[slot] < 300) continue;
+        float d = c.blend;
+        float o = c.target + (time - c.begin);
+        float transition_time = 0;
+        bool blend_root_motion = false;
+        void* fade_args[]{&hash, &d, &layer, &o, &transition_time, &g_blend_style, &g_blend_interrupt, &blend_root_motion};
+        Invoke(CrossFade, animator, fade_args, ok);
+        last_side_rewind[slot] = now;
+    }
+}
+
+void* g_session_vfx[8]{};
+int g_session_vfx_count = 0;
+void* g_session_vfx_helpers[3]{};
+int g_session_vfx_helper_count = 0;
+bool g_session_vfx_frozen = false;
+thread_local bool g_render_vfx_origin = false;
+
+using PlayRenderVfxFn = void(__fastcall*)(void*, const void*);
+using PlayVfxFn = void(__fastcall*)(void*, void*, const void*);
+using VfxTickFn = void(__fastcall*)(void*, float, const void*);
+using VfxDeltaFn = float(__fastcall*)(void*, bool, const void*);
+
+PlayRenderVfxFn g_play_render_vfx = nullptr;
+PlayVfxFn g_play_vfx = nullptr;
+VfxTickFn g_vfx_tick = nullptr;
+VfxDeltaFn g_vfx_delta = nullptr;
+
+bool OwnedDashEffect(void* effect) {
+    if (!effect || !g_session.profile) return false;
+    char name[200]{};
+    bool ok = true;
+    void* managed = Invoke(EffectName, effect, nullptr, ok);
+    if (!ok || !managed || g_host->copy_managed_string(g_host->context, managed, name, sizeof(name)) <= 0) return false;
+    return std::strstr(name, "jsspsi") != nullptr;
+}
+
+void __fastcall PlayRenderVfxDetour(void* effect, const void* method) {
+    bool mine = g_session.profile && g_session.profile->freeze_render_vfx && OwnedDashEffect(effect);
+    bool saved = g_render_vfx_origin;
+    g_render_vfx_origin = mine;
+    if (g_play_render_vfx) g_play_render_vfx(effect, method);
+    g_render_vfx_origin = saved;
+}
+
+void __fastcall PlayVfxDetour(void* vfx, void* name, const void* method) {
+    if (vfx && g_render_vfx_origin) {
+        bool exists = false;
+        for (int k = 0; k < g_session_vfx_count; ++k) if (g_session_vfx[k] == vfx) { exists = true; break; }
+        if (!exists && g_session_vfx_count < 8) g_session_vfx[g_session_vfx_count++] = vfx;
+    }
+    if (g_play_vfx) g_play_vfx(vfx, name, method);
+}
+
+void __fastcall VfxTickDetour(void* vfx, float delta, const void* method) {
+    if (g_session_vfx_frozen && vfx && g_session.policy.active) {
+        for (int k = 0; k < g_session_vfx_count; ++k) {
+            if (g_session_vfx[k] == vfx) { delta = 0; break; }
+        }
+    }
+    if (g_vfx_tick) g_vfx_tick(vfx, delta, method);
+}
+
+float __fastcall VfxDeltaDetour(void* controller, bool scaled, const void* method) {
+    float delta = g_vfx_delta ? g_vfx_delta(controller, scaled, method) : 0.0f;
+    if (g_session_vfx_frozen && controller && g_fields[JsspsiVfxOwner].resolved.offset > 0) {
+        void* owner = *reinterpret_cast<void**>(static_cast<char*>(controller) + g_fields[JsspsiVfxOwner].resolved.offset);
+        for (int k = 0; owner && k < g_session_vfx_helper_count; ++k) {
+            if (owner == g_session_vfx_helpers[k] && g_session.policy.active) { delta = 0; break; }
+        }
+    }
+    return delta;
+}
+
+void FreezeVfx() {
+    if (g_session_vfx_frozen || !g_session.handle || !g_fields[JsspsiTmpObjects].resolved.field_info) return;
+    void* dict = FieldObject(JsspsiTmpObjects, g_session.handle);
+    if (!dict) return;
+    for (int slot = 0; slot < 3; ++slot) {
+        void* inst = TmpObjectAt(slot, dict);
+        if (!inst) continue;
+        void* helper = FieldObject(JsspsiRenderHelper, inst);
+        if (!helper) continue;
+        if (g_session_vfx_helper_count < 3) g_session_vfx_helpers[g_session_vfx_helper_count++] = helper;
+        void* vfx = FieldObject(JsspsiHelperVfx, helper);
+        if (vfx) {
+            bool exists = false;
+            for (int k = 0; k < g_session_vfx_count; ++k) if (g_session_vfx[k] == vfx) { exists = true; break; }
+            if (!exists && g_session_vfx_count < 8) g_session_vfx[g_session_vfx_count++] = vfx;
+        }
+    }
+    g_session_vfx_frozen = true;
+    if (g_session.config && g_session.config->diagnostics) {
+        Log("Sustained dash Jsspsi: render VFX frozen for temporary ink-beasts.");
+    }
+}
+
 bool CanMove(void* component, const CharacterProfile** matched = nullptr) {
     bool ok = true;
     void* entity = Object(GetEntity, component, ok);
@@ -592,7 +803,14 @@ bool ReadFrame(void* component, Frame& frame, int& current_hash) {
     current_hash = Value<int>(StateHash, state, ok);
     frame.time = Value<float>(StateTime, state, ok);
     frame.length = Value<float>(StateLength, state, ok);
-    frame.clip_loop = Value<bool>(StateLoop, state, ok);
+    // Unity may strip this diagnostic getter. Its absence or invocation failure
+    // must not invalidate the state/time/length needed to maintain the dash.
+    frame.clip_loop = -1;
+    if (ok && g_methods[StateLoop].resolved.method_info) {
+        bool loop_ok = true;
+        bool loop = Value<bool>(StateLoop, state, loop_ok);
+        if (loop_ok) frame.clip_loop = loop ? 1 : 0;
+    }
     frame.current_special = current_hash == g_hashes[0] || current_hash == g_hashes[1];
     if (frame.transitioning) {
         boxed = Invoke(NextState, animator, args, ok);
@@ -606,14 +824,18 @@ bool ReadFrame(void* component, Frame& frame, int& current_hash) {
     }
     return ok;
 }
+const char* ClipLoopText(int loop) { return loop < 0 ? "unknown" : loop ? "1" : "0"; }
 void RefreshLiinoEffectsAfterPose(void* component);
+void ApplyLoopQuality(void* component, float delta);
 #include "external_loop.inl"
 #include "pose_overlay.inl"
+#include "loop_quality.inl"
 void Cancel(const char* reason, bool stop_perform, bool restore_parameter = true) {
     if (!g_session.component) return;
     Session old = std::move(g_session);
     g_session = {};
     if (g_pose_owner.component == old.component) g_pose_owner.clock.End();
+    if (g_quality.component == old.component) EndLoopQuality();
     if (g_external_owner.component == old.component) g_external_owner.pending_restore = true;
     const bool restore_effects = !g_stopping && GetCurrentThreadId() == g_game_thread.load(std::memory_order_relaxed);
     for (auto& effect : old.effects) RestoreEffect(effect, restore_effects);
@@ -628,16 +850,19 @@ void Cancel(const char* reason, bool stop_perform, bool restore_parameter = true
         g_set_dashing(old.blackboard, old.last_requested_dashing, g_methods[SetDashing].resolved.method_info);
     // Clear ownership before invoking the game; stop callbacks may re-enter us.
     if (restore_parameter && old.deferred_flying_stop && old.entity && g_audio_entity) {
-        const uint32_t stop_hash = old.profile ? g_flying_stop_hashes[old.profile - kCharacters] : 0;
         bool ok = true;
-        if (stop_hash && Value<bool>(EntityValid, old.entity, ok) && ok)
-            g_audio_entity(old.entity, stop_hash, g_audio_none, nullptr, nullptr,
+        if (Value<bool>(EntityValid, old.entity, ok) && ok)
+            g_audio_entity(old.entity, old.profile ? g_flying_stop_hashes[old.profile - kCharacters] : 0,
+                g_audio_none, nullptr, nullptr,
                 g_methods[AudioEntityPost].resolved.method_info);
     }
     if (stop_perform && CurrentRequestHandle(old.component) == old.handle && g_interrupt)
         g_interrupt(old.component, g_methods[Interrupt].resolved.method_info);
     if (old.root) g_host->gchandle_free(g_host->context, old.root);
     if (old.handle_root) g_host->gchandle_free(g_host->context, old.handle_root);
+    g_session_vfx_count = 0;
+    g_session_vfx_helper_count = 0;
+    g_session_vfx_frozen = false;
 }
 bool HoldContext(void* component);
 bool ShouldHold(void* component) {
@@ -701,7 +926,37 @@ bool CleanLiinoPerform(void* handle, void* target = nullptr) {
     void* control = Object(GetCharCtrl, entity, ok);
     return Value<bool>(IsMain, control, ok) && ok;
 }
+// Clip-ending effects are queued by the native StartSpDash before the dash
+// session exists, so ownership comes from the action's own perform, not the
+// session. Actor fields are read before any managed identity getter.
+bool SkippedEndingEffect(void* action) {
+    if (!g_ending_skip_contract) return false;
+    auto config = g_config.load();
+    uint32_t skipped = 0;
+    for (size_t i = 0; i < kCharacterCount; ++i)
+        if (config->characters & (1u << i)) skipped |= kCharacters[i].skipped_effect_actors;
+    if (!config->enabled || !skipped) return false;
+    void* data = FieldObject(VisualActionData, action);
+    bool ok = data != nullptr;
+    const int actor = ok ? Unbox<int>(FieldObject(ActionIndex, data), ok) : -1;
+    if (!ok || actor < 0 || actor >= 32 || !(skipped & (1u << actor))) return false;
+    void* handle = FieldObject(VisualActionHandle, action);
+    for (size_t i = 0; handle && i < kCharacterCount; ++i) {
+        const auto& profile = kCharacters[i];
+        if (!(config->characters & (1u << i)) || !(profile.skipped_effect_actors & (1u << actor))) continue;
+        ok = true;
+        void* id = Invoke(VisualPerformId, handle, nullptr, ok);
+        if (!ok || !PerformMatches(id, profile.perform_id, profile.side_suffixed_perform)) continue;
+        void* entity = Object(VisualPerformEntity, handle, ok);
+        if (!ok || !Value<bool>(EntityValid, entity, ok) || !ok) return false;
+        void* control = Object(GetCharCtrl, entity, ok);
+        return ok && Value<bool>(IsMain, control, ok) && ok;
+    }
+    return false;
+}
 void __fastcall EffectActionPlayDetour(void* action, const void* method) {
+    if (action && !g_stopping && GetCurrentThreadId() == g_game_thread.load(std::memory_order_relaxed) &&
+        SkippedEndingEffect(action)) return;
     // All EffectPlayActions belonging to this exact perform are cosmetic:
     // entry/exit particles, continuous trails, and material dissolve/glow VFX.
     if (action && !g_stopping && g_liino_clean_contract &&
@@ -747,7 +1002,7 @@ void __fastcall EffectDurationDetour(void* instance, float delta, const void* me
     if (GetCurrentThreadId() == g_game_thread.load(std::memory_order_relaxed)) {
         for (auto& effect : g_session.effects) {
             if (effect.object == instance && effect.prepared && ShouldHold(g_session.component)) {
-                if (++effect.ticks == 1 && g_session.config->diagnostics)
+                if (++effect.ticks == 1 && Verbose(g_session.config))
                     Log("Sustained dash v9: held target effect lifetime/auto-fade clock; particles keep simulating.");
                 delta = 0; // Only the effect lifetime clock, not ParticleSystem/FollowTick.
                 break;
@@ -781,18 +1036,10 @@ bool ReadMovementState(void* component, int& mode, int& gait, bool& moving, bool
     gait = Value<int>(GaitValue, gait_object, ok);
     return ok;
 }
-void __fastcall StateInterruptDetour(void* component, const void* method) {
-    // The generic callback calls ForceExit and clears m_currentRequest directly.
-    if (ShouldHold(component)) {
-        if (!g_session.held_state_interrupt && g_session.config->diagnostics)
-            Log("Sustained dash: holding _TickStatePerformInterrupt for the owned sprint session (v4).");
-        g_session.held_state_interrupt = true;
-        return;
-    }
-    g_tick_state_interrupt(component, method);
-}
-bool __fastcall TryExitDetour(void* handle, void* command, const void* method) {
-    if (handle == g_session.handle && g_session.component) {
+bool __fastcall TryInterruptCommandDetour(void* handle, void** command_out, const void* method) {
+    const bool result = g_try_interrupt_command(handle, command_out, method);
+    void* command = result && command_out ? *command_out : nullptr;
+    if (command && handle == g_session.handle && g_session.component) {
         ++g_session.try_exit_calls;
         bool ok = true;
         int type = command ? Unbox<int>(FieldObject(CommandType, command), ok) : -1;
@@ -807,17 +1054,21 @@ bool __fastcall TryExitDetour(void* handle, void* command, const void* method) {
             g_session.last_interrupt_type = type;
             g_session.last_interrupt_reason = reason;
             char text[256];
-            std::snprintf(text, sizeof(text), "Sustained dash Perform _TryExit: command=%p, reason=%d, type=%d, suppress=%d, hold=%d, mode=%d, gait=%d, moving=%d, airborne=%d, owned=%d",
+            std::snprintf(text, sizeof(text), "Sustained dash Perform command: command=%p, reason=%d, type=%d, suppress=%d, hold=%d, mode=%d, gait=%d, moving=%d, airborne=%d, owned=%d",
                 command, reason, type, hold && reason == g_sp_dash_end && type == g_force_exit,
                 hold, mode, gait, moving, airborne, owned);
             Log(text);
         }
         // The game's special-dash end command is the expected transition from
         // dash to sprint. Let every other explicit exit retain its semantics.
-        if (hold && reason == g_sp_dash_end && type == g_force_exit)
+        // 1.6.3 inlines _TryExit into _TickMainFlow. Filter its input at the
+        // surviving command dequeue instead of hooking the unused wrapper.
+        if (hold && reason == g_sp_dash_end && type == g_force_exit) {
+            *command_out = nullptr;
             return false;
+        }
     }
-    return g_try_exit(handle, command, method);
+    return result;
 }
 void __fastcall DashingDetour(void* blackboard, bool value, const void* method) {
     if (blackboard == g_session.blackboard && g_session.component) {
@@ -841,10 +1092,13 @@ void __fastcall FlowDetour(void* handle, float delta, const void* method) {
     FlowScope scope(handle);
     g_flow_tick(handle, delta, method);
 }
-// This resource creates props/effects in End. Do not hook/block entry to End.
-bool __fastcall TrackEndDetour(void* handle, const void* method) {
-    bool result = g_check_track(handle, method);
-    if (!result || handle != g_session.handle || !g_session.component) return result;
+// 1.6.3 inlines _CheckTrackEnd, but natural cleanup still reaches _DoExit.
+// End itself must run: the resource creates props/effects on entering it.
+void __fastcall DoExitDetour(void* handle, const void* method) {
+    if (handle != g_session.handle || !g_session.component) {
+        g_do_exit(handle, method);
+        return;
+    }
     bool ok = true;
     bool command = Unbox<bool>(FieldObject(HasCommand, handle), ok);
     int phase = Value<int>(PerformState, handle, ok);
@@ -854,9 +1108,9 @@ bool __fastcall TrackEndDetour(void* handle, const void* method) {
     if (defer) {
         if (++g_session.natural_end_deferrals == 1 && g_session.config->diagnostics)
             Log("Sustained dash v8: deferred owned Perform End track cleanup.");
-        return false;
+        return;
     }
-    return result;
+    g_do_exit(handle, method);
 }
 // Optional: absent on builds where the mesh-group action is unavailable.
 bool g_mesh_group_contract = true;
@@ -881,7 +1135,7 @@ void __fastcall MeshGroupShowDetour(void* handle, void* entity, int group, bool 
         g_session.policy.active && ShouldHold(g_session.component);
     // Model parts are what the player sees appear and disappear, so record every
     // toggle this perform makes rather than only the first deferral.
-    if (owned && g_session.config->diagnostics && g_session.mesh_group_calls < 12) {
+    if (owned && Verbose(g_session.config) && g_session.mesh_group_calls < 12) {
         char text[160];
         std::snprintf(text, sizeof(text), "Sustained dash: mesh group %d show=%d deferred=%d, call=%u",
             group, show ? 1 : 0, defer ? 1 : 0, ++g_session.mesh_group_calls);
@@ -916,12 +1170,13 @@ bool DeferFlyingStop(uint32_t hash) {
     return true;
 }
 void __fastcall AudioMonoDetour(void* mono, uint32_t hash, float clip_in, const void* method) {
-    if (hash != 0 && GetCurrentThreadId() == g_game_thread.load(std::memory_order_relaxed) &&
+    if (GetCurrentThreadId() == g_game_thread.load(std::memory_order_relaxed) &&
         hash == SessionFlyingStopHash() && g_session.component) {
         bool ok = true;
         void* component = Object(AudioMonoComponent, mono, ok);
         if (ok && component == g_session.component && DeferFlyingStop(hash)) return;
     }
+    CaptureQualitySound(mono, hash);
     g_audio_mono(mono, hash, clip_in, method);
 }
 uint32_t __fastcall AudioEntityDetour(void* entity, uint32_t hash, int callback_type,
@@ -933,7 +1188,7 @@ uint32_t __fastcall AudioEntityDetour(void* entity, uint32_t hash, int callback_
 }
 void __fastcall PerformClearDetour(void* handle, bool releasing, const void* method) {
     if (handle == g_session.handle && g_session.component) {
-        if (g_session.config->diagnostics) {
+        if (Verbose(g_session.config)) {
             void* stack[12]{};
             USHORT count = CaptureStackBackTrace(0, 12, stack, nullptr);
             auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(L"GameAssembly.dll"));
@@ -951,7 +1206,7 @@ void __fastcall PerformClearDetour(void* handle, bool releasing, const void* met
     g_perform_clear(handle, releasing, method);
 }
 void __fastcall CommandDetour(void* handle, int reason, int type, bool weak, const void* method) {
-    if (handle == g_session.handle && g_session.component && g_session.config->diagnostics) {
+    if (handle == g_session.handle && g_session.component && Verbose(g_session.config)) {
         char text[144];
         std::snprintf(text, sizeof(text), "Sustained dash Perform interrupt command: reason=%d, type=%d, weak=%d", reason, type, weak);
         Log(text);
@@ -967,83 +1222,22 @@ void __fastcall StartDetour(void* component, int index, const void* method) {
     g_game_thread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     g_start(component, index, method);
     auto config = g_config.load();
-    if (config->diagnostics) {
-        // Logged before every gate: a hold that never arms must still show
-        // that the entry fired, and why it was skipped (disabled config,
-        // stopping runtime, negative index).
-        char text[96];
-        std::snprintf(text, sizeof(text), "StartSpDash fired: index=%d", index);
-        Log(text);
-    }
     if (g_stopping || !config->enabled || !component || index < 0) return;
     const CharacterProfile* profile = nullptr;
-    const bool can = CanMove(component, &profile);
-    if (config->diagnostics) {
-        // The hold silently skips every disqualifying Start; surface which
-        // gate failed (wrong character / not the main entity / movement
-        // state does not read as a dash) or whether Start never fires.
-        bool ok0 = true;
-        void* entity = Object(GetEntity, component, ok0);
-        void* data = ok0 && entity ? Object(GetTemplate, entity, ok0) : nullptr;
-        void* id = ok0 && data ? FieldObject(TemplateId, data) : nullptr;
-        char idbuf[64]{};
-        if (id) g_host->copy_managed_string(g_host->context, id, idbuf, sizeof(idbuf));
-        char text[160];
-        std::snprintf(text, sizeof(text), "StartSpDash template=%s, movement_check=%s",
-                      idbuf[0] ? idbuf : "unreadable", can ? "ok" : "failed");
-        Log(text);
-    }
-    if (!can) return;
+    if (!CanMove(component, &profile)) return;
     if (!(config->characters & (1u << (profile - kCharacters)))) return;
     bool ok = true;
-    // Mobile il2cpp builds refuse to box static fields through
-    // il2cpp_field_get_value_object (same failure as the enum literals);
-    // il2cpp_field_static_get_value reads the storage directly.
-    using StaticGetFn = void(*)(const void*, void*);
-    auto static_get = reinterpret_cast<StaticGetFn>(GetProcAddress(GetModuleHandleW(L"GameAssembly.dll"), "il2cpp_field_static_get_value"));
     // This class is already initialized by the original StartSpDash. Read the
     // game's real state identifiers, not names guessed from documentation.
-    // Each read is judged on its own recovered value: the boxing path may
-    // fail (clearing a shared flag) while the direct storage read succeeds,
-    // so a stale flag must never veto healthy values. The device log proved
-    // exactly that: static_get returned two distinct non-zero hashes while
-    // the shared ok flag still read false.
-    for (int side = 0; side < 2; ++side) {
-        bool boxed = true;
-        g_hashes[side] = Unbox<int>(g_host->field_get_value_object(g_host->context, g_hash_fields[side], nullptr), boxed);
-        if ((!boxed || !g_hashes[side]) && static_get && g_hash_fields[side]) {
-            int value = 0;
-            static_get(g_hash_fields[side], &value);
-            g_hashes[side] = value;
-        }
-    }
-    for (int i = 0; i < 2; ++i) {
-        bool boxed = true;
-        g_locomotion_hashes[i] = Unbox<int>(g_host->field_get_value_object(g_host->context, g_locomotion_fields[i], nullptr), boxed);
-        if ((!boxed || !g_locomotion_hashes[i]) && static_get && g_locomotion_fields[i]) {
-            int value = 0;
-            static_get(g_locomotion_fields[i], &value);
-            g_locomotion_hashes[i] = value;
-        }
-    }
-    if (!g_hashes[0] || !g_hashes[1] || g_hashes[0] == g_hashes[1] ||
-        !g_locomotion_hashes[0] || !g_locomotion_hashes[1]) {
-        if (config->diagnostics)
-            Log((std::string("Sustained dash Start: HASH state unreadable (") +
-                 std::to_string(g_hashes[0]) + "/" + std::to_string(g_hashes[1]) +
-                 "); hold not armed.").c_str());
-        return;
-    }
+    for (int side = 0; side < 2; ++side)
+        g_hashes[side] = Unbox<int>(g_host->field_get_value_object(g_host->context, g_hash_fields[side], nullptr), ok);
+    for (int i = 0; i < 2; ++i)
+        g_locomotion_hashes[i] = Unbox<int>(g_host->field_get_value_object(g_host->context, g_locomotion_fields[i], nullptr), ok);
+    if (!ok || !g_hashes[0] || !g_hashes[1] || g_hashes[0] == g_hashes[1]) return;
     void* blackboard = Object(GetBlackboard, component, ok);
-    if (!ok) {
-        if (config->diagnostics) Log("Sustained dash Start: blackboard unreadable; hold not armed.");
-        return;
-    }
+    if (!ok) return;
     void* handle = OwnedPerform(component, profile);
-    if (!handle) {
-        if (config->diagnostics) Log("Sustained dash Start: no owned SpDash perform handle; hold not armed.");
-        return;
-    }
+    if (!handle) return;
     // Repeated calls for the same perform are not a fresh animation session.
     if (g_session.component == component && g_session.handle == handle) return;
     Cancel("new special dash", true);
@@ -1059,9 +1253,10 @@ void __fastcall StartDetour(void* component, int index, const void* method) {
     g_session.handle_root = g_host->gchandle_new(g_host->context, handle, 1);
     if (!g_session.root || !g_session.handle_root) Cancel("root failed", false);
     else {
-        if (config->external_loop) {
+        if (config->external_loop && profile->pose_file) {
             BeginPoseOverlay(component, profile);
         }
+        BeginLoopQuality(component, profile);
         if (!g_session.external_expected && g_external_owner.component == component) {
             Cancel("external controller rollback pending", true); return;
         }
@@ -1119,7 +1314,7 @@ void __fastcall PreLateDetour(void* component, float delta, const void* method) 
             } else if (loop_action == LoopAction::Blend) {
                 bool ok = true;
                 int layer = 0;
-                float duration = g_session.external_confirmed ? 0.0f : g_session.loop.c.blend;
+                float duration = g_session.external_confirmed ? 0.0f : LoopQualityBlend(g_session.loop.c.blend);
                 float offset = g_session.external_confirmed ? ImportedLoopSchedule::TargetAt(frame.time) : g_session.loop.TargetAt(frame.time);
                 float transition_time = 0;
                 bool blend_root_motion = false;
@@ -1133,12 +1328,15 @@ void __fastcall PreLateDetour(void* component, float delta, const void* method) 
                     // Managed playback may synchronously deliver a native exit.
                 } else if (ok) {
                     ++g_session.animation_replays;
-                    if (g_session.config->diagnostics && (g_session.animation_replays <= 1 || g_session.animation_replays % 64 == 0)) {
+                    if (g_session.profile->freeze_render_vfx) FreezeVfx();
+                    if (g_session.profile->rewind_mount) SyncTmpObjects(duration, offset);
+                    if (Verbose(g_session.config) && (g_session.animation_replays <= 4 || g_session.animation_replays % 16 == 0)) {
                         char text[240];
                         std::snprintf(text, sizeof(text), "Sustained dash %s: hash=%d, source=%.3f, target=%.3f, duration=%.3f, count=%u",
                             g_session.external_confirmed ? "v11 imported loop wrap" : "v9 normalized bob blend", hash, frame.time, offset, duration, g_session.animation_replays);
                         Log(text);
                     }
+                    StopQualitySound(); // Last: the stop is a managed call.
                     // Observe the actual transition/rewind on following ticks;
                     // never fabricate a successful seek or reset frame.time.
                 } else Cancel("loop blend invocation failed", true);
@@ -1148,13 +1346,16 @@ void __fastcall PreLateDetour(void* component, float delta, const void* method) 
                 return; // A synchronous callback started a new session; discard the old frame.
             }
             Decision decision = g_session.component ? g_session.policy.Update(frame) : Decision::Wait;
+            if (g_session.profile && g_session.profile->side_loop && g_session.policy.active) {
+                TickSideBeasts();
+            }
             if (decision == Decision::Keep) MaintainEffects();
             if (decision == Decision::Cancel) {
                 if (g_session.config->diagnostics) {
                     char text[280];
                     std::snprintf(text, sizeof(text),
-                        "Sustained dash exit: hash=%d, next=%d, time=%.3f, length=%.3f, clip_loop=%d, perform=%d, special=%d, entering=%d, outgoing=%d, pending=%.3f",
-                        hash, frame.next_hash, frame.time, frame.length, frame.clip_loop, frame.allowed, frame.current_special, frame.entering_special,
+                        "Sustained dash exit: hash=%d, next=%d, time=%.3f, length=%.3f, clip_loop=%s, perform=%d, special=%d, entering=%d, outgoing=%d, pending=%.3f",
+                        hash, frame.next_hash, frame.time, frame.length, ClipLoopText(frame.clip_loop), frame.allowed, frame.current_special, frame.entering_special,
                         frame.outgoing, g_session.policy.pending_time);
                     Log(text);
                 }
@@ -1164,16 +1365,22 @@ void __fastcall PreLateDetour(void* component, float delta, const void* method) 
                 g_session.last_special_hash = hash;
                 if (g_session.config->diagnostics && (g_session.side_changes < 5 || g_session.side_changes % 16 == 0)) {
                     char text[160];
-                    std::snprintf(text, sizeof(text), "Sustained dash selected state=%s, time=%.3f, length=%.3f, clip_loop=%d",
-                        hash == g_hashes[0] ? "left" : "right", frame.time, frame.length, frame.clip_loop);
+                    std::snprintf(text, sizeof(text), "Sustained dash selected state=%s, time=%.3f, length=%.3f, clip_loop=%s",
+                        hash == g_hashes[0] ? "left" : "right", frame.time, frame.length, ClipLoopText(frame.clip_loop));
                     Log(text);
                 }
             }
             if (g_session.component && frame.current_special && std::isfinite(frame.time)) {
-                // Progress ticks used to log every 100 ms bucket; that flood
-                // is gone — the journal keeps session-level events only.
-                g_session.last_progress_bucket =
-                    static_cast<int>(std::min(100.0f, std::max(0.0f, frame.time)) * 10.0f);
+                int bucket = static_cast<int>(std::min(100.0f, std::max(0.0f, frame.time)) * 10.0f);
+                if (bucket != g_session.last_progress_bucket) {
+                    g_session.last_progress_bucket = bucket;
+                    if (Verbose(g_session.config)) {
+                        char text[224];
+                        std::snprintf(text, sizeof(text), "Sustained dash animation progress: time=%.3f, next=%.3f, transition=%d, length=%.3f, clip_loop=%s, deferred=%u",
+                            frame.time, frame.next_time, frame.transitioning, frame.length, ClipLoopText(frame.clip_loop), g_session.natural_end_deferrals);
+                        Log(text);
+                    }
+                }
             }
         }
     }
@@ -1181,6 +1388,9 @@ void __fastcall PreLateDetour(void* component, float delta, const void* method) 
     g_pre_late(component, delta, method);
 }
 bool __fastcall CheckDetour(void* component, const void* method) {
+    // 1.6.3 inlines _TickStatePerformInterrupt into PreLateTick, but its
+    // condition-3 delegate still invokes ShouldInterruptSpDash through this
+    // entry (CharacterAnimationComponent.cctor registers that exact target).
     // Always retain the original result for every other role and perform.
     bool result = g_check(component, method);
     return result && !ShouldHold(component);
@@ -1207,6 +1417,7 @@ void __fastcall ReleaseDetour(void* component, bool full, const void* method) {
     if (component == g_session.component) Cancel("component release", false, false);
     if (component == g_external_owner.component) RestoreExternal(true);
     if (component == g_pose_owner.component) ReleasePoseOverlay(true);
+    if (component == g_quality.component) ReleaseLoopQuality(true);
     g_release(component, full, method);
 }
 
@@ -1253,8 +1464,10 @@ BE_Result BE_CALL Configure(const char* raw) {
         if (key == "schema_version") { schema_present = true; valid &= value == "1" || value == "2" || value == "3"; }
         else if (key == "enabled") valid &= ParseBool(value, config->enabled);
         else if (key == "diagnostics") valid &= ParseBool(value, config->diagnostics);
+        else if (key == "verbose") valid &= ParseBool(value, config->verbose);
         else if (key == "external_loop") valid &= ParseBool(value, config->external_loop);
         else if (key == "liino_clean") valid &= ParseBool(value, config->liino_clean);
+        else if (key == "jsspsi_quality") valid &= ParseBool(value, config->jsspsi_quality);
         else if (key == "characters") valid &= ParseCharacters(value, config->characters);
     }
     if (!valid || (config->enabled && !schema_present)) {
@@ -1281,12 +1494,30 @@ BE_Result BE_CALL Configure(const char* raw) {
                 written += std::snprintf(text + written, sizeof(text) - written, " %s", kCharacters[i].codename);
         if (!config->characters) std::snprintf(text + written, sizeof(text) - written, " none");
         Log(text);
+        if (config->jsspsi_quality) {
+            std::snprintf(text, sizeof(text), "Sustained dash Jsspsi quality: on (pose=%d lease=%d sound=%d); seam split with hard-cut rewinds, accessory lap, dash sound stop.",
+                g_pose_contract, g_pose_lease_ready.load(std::memory_order_relaxed),
+                g_methods[JsspsiAudioObjectId].resolved.method_info && g_methods[JsspsiStopSound].resolved.method_info);
+            Log(text);
+        }
     }
     return BE_Result_Ok;
 }
 
 BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
-    if (!host || host->abi_version != BETTER_ENDFIELD_MODULE_ABI_V1 ||
+#if defined(_WIN32) || defined(BE_TEST_PC_POSE)
+#if defined(__ANDROID__)
+    g_pose_leases = BetterEndfieldNext_GetPoseLeaseApiV1();
+#else
+    auto lease_getter = reinterpret_cast<BE_GetPoseLeaseApiV1Fn>(GetProcAddress(
+        GetModuleHandleW(L"BetterEndfieldNext.Host.dll"), "BetterEndfieldNext_GetPoseLeaseApiV1"));
+    g_pose_leases = lease_getter ? lease_getter() : nullptr;
+#endif
+    if (g_pose_leases && (g_pose_leases->version != 1 || !g_pose_leases->acquire ||
+        !g_pose_leases->owns || !g_pose_leases->release)) g_pose_leases = nullptr;
+    g_pose_lease_ready.store(g_pose_leases != nullptr, std::memory_order_release);
+#endif
+    if (!host || host->abi_version != BETTER_ENDFIELD_NEXT_MODULE_ABI_V1 ||
         !host->resolve_method || !host->resolve_field || !host->resolve_class || !host->runtime_invoke ||
         !host->object_unbox || !host->field_get_value_object ||
         !host->copy_managed_string || !host->gchandle_new || !host->gchandle_free ||
@@ -1294,10 +1525,13 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     g_host = host;
     for (auto& method : g_methods) {
         if (host->resolve_method(host->context, &method.desc, &method.resolved) != BE_Result_Ok) {
+            if (&method == &g_methods[StateLoop]) {
+                method.resolved = {};
+                Log("Optional action diagnostic unavailable: AnimatorStateInfo.get_loop; clip_loop=unknown.");
+                continue;
+            }
             Log((std::string("Missing action method: ") + method.desc.class_name + "." + method.desc.method_name).c_str());
-#if defined(__ANDROID__)
-            if (&method == &g_methods[TickStateInterrupt]) { g_state_interrupt_contract = false; continue; }
-#endif
+            if (&method >= &g_methods[JsspsiTmpAnimator]) { method.resolved = {}; continue; }
             if (&method == &g_methods[MeshGroupShow]) { g_mesh_group_contract = false; continue; }
             if (&method == &g_methods[EffectActionPlay]) { g_liino_teardown_contract = false; continue; }
             if (&method == &g_methods[EffectManualFollow]) { g_effect_follow_contract = false; continue; }
@@ -1310,6 +1544,7 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     for (auto& field : g_fields) {
         if (host->resolve_field(host->context, &field.desc, &field.resolved) != BE_Result_Ok) {
             Log((std::string("Missing action field: ") + field.desc.field_name).c_str());
+            if (&field >= &g_fields[JsspsiTmpObjects]) { field.resolved = {}; continue; }
             if (&field >= &g_fields[VisualActionHandle]) { g_liino_teardown_contract = false; continue; }
             return BE_Result_ContractMismatch;
         }
@@ -1317,23 +1552,13 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     // Protect against the easy-to-miss static ShouldInterruptSpDash ABI.
     using FlagsFn = uint32_t(*)(const void*, uint32_t*);
     auto flags = reinterpret_cast<FlagsFn>(GetProcAddress(GetModuleHandleW(L"GameAssembly.dll"), "il2cpp_method_get_flags"));
-    if (!flags) {
-        Log("il2cpp_method_get_flags is unavailable in this client.");
-        return BE_Result_ContractMismatch;
-    }
-    // Collect every contract deviation before bailing out: each build/test
-    // round trip is expensive, and early returns used to hide all but the
-    // first mismatch on the mobile client.
-    std::string contract_failures;
-    auto contract_fail = [&](const char* msg) {
-        contract_failures += msg;
-        contract_failures += '\n';
-    };
+    if (!flags) return BE_Result_ContractMismatch;
     for (int i = Start; i <= Release; ++i) {
         uint32_t impl = 0;
         bool is_static = (flags(g_methods[i].resolved.method_info, &impl) & 0x10u) != 0;
         if (is_static != (i == ShouldInterrupt)) {
-            contract_fail("Action hook static/instance contract mismatch.");
+            Log("Action hook static/instance contract mismatch.");
+            return BE_Result_ContractMismatch;
         }
     }
     bool ok = true;
@@ -1342,65 +1567,16 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     // offset or a hard-coded numeric Sprint value.
     using FindFieldFn = void*(*)(const void*, const char*);
     auto find_field = reinterpret_cast<FindFieldFn>(GetProcAddress(GetModuleHandleW(L"GameAssembly.dll"), "il2cpp_class_get_field_from_name"));
-    if (!find_field) {
-        Log("il2cpp_class_get_field_from_name is unavailable in this client.");
-        return BE_Result_ContractMismatch;
-    }
+    if (!find_field) return BE_Result_ContractMismatch;
     auto static_field = [&](const char* ns, const char* cls, const char* name) -> const void* {
         BE_ResolvedClassV1 resolved{};
         if (host->resolve_class(host->context, kGame, ns, cls, &resolved) != BE_Result_Ok) return nullptr;
         return find_field(resolved.class_info, name);
     };
-    // Some mobile il2cpp builds refuse to box enum literals through
-    // il2cpp_field_get_value_object. System.Enum.Parse(type, name) goes
-    // through managed reflection instead and works on every runtime.
-    auto enum_parse_box = [&](const void* enum_class_info, const char* name) -> void* {
-        auto game_module = GetModuleHandleW(L"GameAssembly.dll");
-        using MethodFromNameFn = void*(*)(const void*, const char*, int);
-        using ClassTypeFn2 = const void*(*)(void*);
-        using TypeObjectFn2 = void*(*)(const void*);
-        auto method_from_name = reinterpret_cast<MethodFromNameFn>(GetProcAddress(game_module, "il2cpp_class_get_method_from_name"));
-        auto get_class_type = reinterpret_cast<ClassTypeFn2>(GetProcAddress(game_module, "il2cpp_class_get_type"));
-        auto get_type_object = reinterpret_cast<TypeObjectFn2>(GetProcAddress(game_module, "il2cpp_type_get_object"));
-        if (!method_from_name || !get_class_type || !get_type_object || !enum_class_info) return nullptr;
-        void* type = get_type_object(get_class_type(const_cast<void*>(enum_class_info)));
-        if (!type) return nullptr;
-        BE_ResolvedClassV1 system_enum{};
-        if (host->resolve_class(host->context, "mscorlib.dll", "System", "Enum", &system_enum) != BE_Result_Ok) return nullptr;
-        void* parse = method_from_name(system_enum.class_info, "Parse", 2);
-        if (!parse) return nullptr;
-        void* name_string = host->string_new(host->context, name);
-        if (!name_string) return nullptr;
-        void* args[]{type, name_string};
-        void* exception = nullptr;
-        void* boxed = host->runtime_invoke(host->context, parse, nullptr, args, &exception);
-        return exception ? nullptr : boxed;
-    };
     auto constant = [&](const char* ns, const char* cls, const char* name) {
-        BE_ResolvedClassV1 resolved{};
-        if (host->resolve_class(host->context, kGame, ns, cls, &resolved) != BE_Result_Ok) {
-            ok = false;
-            Log((std::string("Missing enum class: ") + ns + "." + cls).c_str());
-            return -1;
-        }
-        const void* field = find_field(resolved.class_info, name);
-        if (!field) {
-            ok = false;
-            Log((std::string("Missing enum constant: ") + cls + "." + name).c_str());
-            return -1;
-        }
-        void* boxed = host->field_get_value_object(host->context, field, nullptr);
-        if (!boxed) {
-            boxed = enum_parse_box(resolved.class_info, name);
-            if (boxed) ++g_enum_parse_fallbacks;
-        }
-        if (!boxed) {
-            ok = false;
-            Log((std::string("Enum constant ") + cls + "." + name +
-                 ": the static field exists but its value is unreadable on this client.").c_str());
-            return -1;
-        }
-        return Unbox<int>(boxed, ok);
+        const void* field = static_field(ns, cls, name);
+        if (!field) { ok = false; return -1; }
+        return Unbox<int>(host->field_get_value_object(host->context, field, nullptr), ok);
     };
     g_sprint = constant(kCore, "MovementComponent.GroundedMoveGait", "Sprint");
     g_dash_mode = constant(kCore, "MovementComponent.MoveMode", "Dash");
@@ -1418,107 +1594,40 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     }
     auto other_constant = [&](const char* assembly, const char* ns, const char* cls, const char* name) {
         BE_ResolvedClassV1 resolved{};
-        if (host->resolve_class(host->context, assembly, ns, cls, &resolved) != BE_Result_Ok) {
-            ok = false;
-            Log((std::string("Missing enum class: ") + assembly + " " + ns + "." + cls).c_str());
-            return -1;
-        }
+        if (host->resolve_class(host->context, assembly, ns, cls, &resolved) != BE_Result_Ok) { ok = false; return -1; }
         auto field = find_field(resolved.class_info, name);
-        if (!field) {
-            ok = false;
-            Log((std::string("Missing enum constant: ") + ns + "." + cls + "." + name).c_str());
-            return -1;
-        }
-        void* boxed = host->field_get_value_object(host->context, field, nullptr);
-        if (!boxed) {
-            boxed = enum_parse_box(resolved.class_info, name);
-            if (boxed) ++g_enum_parse_fallbacks;
-        }
-        if (!boxed) {
-            ok = false;
-            Log((std::string("Enum constant ") + ns + "." + cls + "." + name +
-                 ": the static field exists but its value is unreadable on this client.").c_str());
-            return -1;
-        }
-        return Unbox<int>(boxed, ok);
+        if (!field) { ok = false; return -1; }
+        return Unbox<int>(host->field_get_value_object(host->context, field, nullptr), ok);
     };
     g_blend_style = other_constant(kUnity, "UnityEngine", "AnimationBlendStyle", "HermiteCubic");
     g_blend_interrupt = other_constant(kUnity, "UnityEngine", "AnimatorTransitionInterruptionSource", "CurrentThenNext");
     g_audio_none = other_constant("Audio.Beyond.dll", "Beyond.Audio", "AudioCallbackType", "None");
     g_particle_stop_clear = other_constant(kParticles, "UnityEngine", "ParticleSystemStopBehavior", "StopEmittingAndClear");
-    if (g_enum_parse_fallbacks)
-        Log((std::to_string(g_enum_parse_fallbacks) +
-             " enum constants read through the System.Enum.Parse fallback"
-             " (this client does not box enum literals).").c_str());
     using NewStringFn = void*(*)(const char*);
     auto new_string = reinterpret_cast<NewStringFn>(GetProcAddress(GetModuleHandleW(L"GameAssembly.dll"), "il2cpp_string_new"));
-    if (!new_string) {
-        Log("il2cpp_string_new is unavailable in this client.");
-        return BE_Result_ContractMismatch;
-    }
-    const bool enums_ok = ok;
+    if (!new_string) return BE_Result_ContractMismatch;
+    g_quality_string_new = new_string;
     for (size_t i = 0; i < kCharacterCount; ++i) {
         const char* event = kCharacters[i].flying_stop_event;
         if (!event) continue; // This character has no continuous audio to defer.
         void* stop_name = new_string(event);
         if (!stop_name) return BE_Result_Failed;
         void* hash_args[]{stop_name};
-        ok = true;
         g_flying_stop_hashes[i] = Unbox<uint32_t>(Invoke(AudioHash, nullptr, hash_args, ok), ok);
-        if (!ok || !g_flying_stop_hashes[i]) {
-            g_flying_stop_hashes[i] = 0;
-            // The mobile client's AudioHashGenerator contract differs from the
-            // desktop build. Deferred flying-stop audio is cosmetic and the
-            // deferral path is keyed on a non-zero hash, so degrade to a no-op
-            // (the game keeps playing its own audio) instead of failing the
-            // whole desktop contract initialization.
-            Log((std::string("Audio hash lookup failed for ") + kCharacters[i].codename +
-                 "; deferred flying-stop audio disabled on this client.").c_str());
-        }
+        if (!ok || !g_flying_stop_hashes[i]) return BE_Result_ContractMismatch;
     }
     g_hash_fields[0] = static_field(kView, kCharacterComp, "HASH_SP_DASH_L");
     g_hash_fields[1] = static_field(kView, kCharacterComp, "HASH_SP_DASH_R");
     g_locomotion_fields[0] = static_field(kView, "CharacterAnimationBlackboard", "HASH_STATE_RUN");
     g_locomotion_fields[1] = static_field(kView, "CharacterAnimationBlackboard", "HASH_STATE_SPRINT");
     uint32_t impl = 0;
-    if (!enums_ok) {
-        contract_fail("A required gameplay enum constant (sprint gait / move mode / "
-            "perform state / interrupt reason) is unresolved; the mobile "
-            "client's metadata differs from the desktop contract.");
-    }
-    if (!g_hash_fields[0] || !g_hash_fields[1] || !g_locomotion_fields[0] || !g_locomotion_fields[1]) {
-        contract_fail("CharacterAnimationComponent HASH_SP_DASH_L/R or CharacterAnimationBlackboard "
-            "HASH_STATE_RUN/SPRINT static fields are unresolved.");
-    }
-    if (flags(g_methods[SetDashing].resolved.method_info, &impl) & 0x10u) {
-        contract_fail("SetDashing is static on this client; the desktop contract expects an instance method.");
-    }
-#if defined(__ANDROID__)
-    for (MethodId id : {FlowTick, PerformClear, AddCommand, CrossFade, TryExit,
-#else
-    for (MethodId id : {FlowTick, PerformClear, AddCommand, TickStateInterrupt, CrossFade, TryExit,
-#endif
-        CheckTrackEnd, ShowObject, AudioMonoPost, AudioMonoComponent, EffectDuration, EffectFinish, EffectStop})
-        if (flags(g_methods[id].resolved.method_info, &impl) & 0x10u) {
-            contract_fail((std::string("Static/instance contract mismatch: ") + g_methods[id].desc.class_name +
-                 "." + g_methods[id].desc.method_name + " is static, expected instance.").c_str());
-        }
+    if (!ok || !g_hash_fields[0] || !g_hash_fields[1] || !g_locomotion_fields[0] || !g_locomotion_fields[1] ||
+        (flags(g_methods[SetDashing].resolved.method_info, &impl) & 0x10u)) return BE_Result_ContractMismatch;
+    for (MethodId id : {FlowTick, PerformClear, AddCommand, CrossFade, TryInterruptCommand,
+        DoExit, ShowObject, AudioMonoPost, AudioMonoComponent, EffectDuration, EffectFinish, EffectStop})
+        if (flags(g_methods[id].resolved.method_info, &impl) & 0x10u) return BE_Result_ContractMismatch;
     for (MethodId id : {AudioEntityPost, AudioHash, UnityAlive})
-        if (!(flags(g_methods[id].resolved.method_info, &impl) & 0x10u)) {
-            contract_fail((std::string("Static/instance contract mismatch: ") + g_methods[id].desc.class_name +
-                 "." + g_methods[id].desc.method_name + " is an instance method, expected static.").c_str());
-        }
-    if (!contract_failures.empty()) {
-        Log("Desktop contract verification failed on this client:");
-        size_t start = 0;
-        while (start < contract_failures.size()) {
-            size_t end = contract_failures.find('\n', start);
-            if (end == std::string::npos) end = contract_failures.size();
-            Log(contract_failures.substr(start, end - start).c_str());
-            start = end + 1;
-        }
-        return BE_Result_ContractMismatch;
-    }
+        if (!(flags(g_methods[id].resolved.method_info, &impl) & 0x10u)) return BE_Result_ContractMismatch;
     auto game_module = GetModuleHandleW(L"GameAssembly.dll");
     g_object_class = reinterpret_cast<ObjectClassFn>(GetProcAddress(game_module, "il2cpp_object_get_class"));
     g_class_method = reinterpret_cast<ClassMethodFn>(GetProcAddress(game_module, "il2cpp_class_get_method_from_name"));
@@ -1528,27 +1637,18 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     auto class_type = reinterpret_cast<ClassTypeFn>(GetProcAddress(game_module, "il2cpp_class_get_type"));
     auto type_object = reinterpret_cast<TypeObjectFn>(GetProcAddress(game_module, "il2cpp_type_get_object"));
     BE_ResolvedClassV1 particle_class{};
-    if (!g_object_class || !g_class_method || !g_class_parent || !class_type || !type_object) {
-        Log("One of the il2cpp reflection helpers (object_get_class / class_get_method_from_name / "
-            "class_get_parent / class_get_type / type_get_object) is unavailable.");
+    if (!g_object_class || !g_class_method || !g_class_parent || !class_type || !type_object ||
+        host->resolve_class(host->context, kParticles, "UnityEngine", "ParticleSystem", &particle_class) != BE_Result_Ok)
         return BE_Result_ContractMismatch;
-    }
-    if (host->resolve_class(host->context, kParticles, "UnityEngine", "ParticleSystem", &particle_class) != BE_Result_Ok) {
-        Log("UnityEngine.ParticleSystem is not resolvable in this client (assembly stripped or renamed).");
-        return BE_Result_ContractMismatch;
-    }
     g_particle_type = type_object(class_type(const_cast<void*>(particle_class.class_info)));
     if (!g_particle_type) return BE_Result_ContractMismatch;
     g_particle_type_root = host->gchandle_new(host->context, g_particle_type, 1);
     if (!g_particle_type_root) return BE_Result_Failed;
     struct Hook { MethodId id; void* detour; void** original; };
     Hook hooks[]{
-#if !defined(__ANDROID__)
-        {TickStateInterrupt, reinterpret_cast<void*>(&StateInterruptDetour), reinterpret_cast<void**>(&g_tick_state_interrupt)},
-#endif
-        {TryExit, reinterpret_cast<void*>(&TryExitDetour), reinterpret_cast<void**>(&g_try_exit)},
+        {TryInterruptCommand, reinterpret_cast<void*>(&TryInterruptCommandDetour), reinterpret_cast<void**>(&g_try_interrupt_command)},
         {FlowTick, reinterpret_cast<void*>(&FlowDetour), reinterpret_cast<void**>(&g_flow_tick)},
-        {CheckTrackEnd, reinterpret_cast<void*>(&TrackEndDetour), reinterpret_cast<void**>(&g_check_track)},
+        {DoExit, reinterpret_cast<void*>(&DoExitDetour), reinterpret_cast<void**>(&g_do_exit)},
         {ShowObject, reinterpret_cast<void*>(&ShowObjectDetour), reinterpret_cast<void**>(&g_show)},
         {AudioMonoPost, reinterpret_cast<void*>(&AudioMonoDetour), reinterpret_cast<void**>(&g_audio_mono)},
         {AudioEntityPost, reinterpret_cast<void*>(&AudioEntityDetour), reinterpret_cast<void**>(&g_audio_entity)},
@@ -1577,21 +1677,17 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
             return BE_Result_Failed;
         }
     }
-#if defined(__ANDROID__)
-    if (g_state_interrupt_contract &&
-        ((flags(g_methods[TickStateInterrupt].resolved.method_info, &impl) & 0x10u) ||
-         host->create_hook(host->context, kId, g_methods[TickStateInterrupt].resolved.method_pointer,
-             reinterpret_cast<void*>(&StateInterruptDetour), reinterpret_cast<void**>(&g_tick_state_interrupt)) != BE_Result_Ok))
-        g_state_interrupt_contract = false;
-    if (!g_state_interrupt_contract)
-        Log("Sustained dash: _TickStatePerformInterrupt hook unavailable; the other interrupt holds remain.");
-#endif
     if (g_liino_teardown_contract &&
         ((flags(g_methods[EffectActionPlay].resolved.method_info, &impl) & 0x10u) ||
          host->create_hook(host->context, kId, g_methods[EffectActionPlay].resolved.method_pointer,
              reinterpret_cast<void*>(&EffectActionPlayDetour), reinterpret_cast<void**>(&g_effect_action_play)) != BE_Result_Ok))
         g_liino_teardown_contract = false;
     if (!g_liino_teardown_contract) Log("Sustained dash Liino: teardown hook unavailable; material dissolve follows native timing.");
+    g_ending_skip_contract = g_liino_teardown_contract;
+    for (int id : {VisualPerformId, VisualPerformEntity})
+        if (!g_methods[id].resolved.method_info || (flags(g_methods[id].resolved.method_info, &impl) & 0x10u))
+            g_ending_skip_contract = false;
+    if (!g_ending_skip_contract) Log("Sustained dash: clip-ending effect skip unavailable; those effects follow native timing.");
     if (g_effect_follow_contract && (flags(g_methods[EffectManualFollow].resolved.method_info, &impl) & 0x10u))
         g_effect_follow_contract = false;
     if (!g_effect_follow_contract) Log("Sustained dash Liino: final-pose effect follow refresh unavailable.");
@@ -1612,6 +1708,28 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
         g_pose_contract = false;
         Log("Sustained dash v12: TailLate hook unavailable; pose overlay disabled, native v9 hold remains.");
     }
+    // jsspsi_quality reuses the pose overlay's TailLate slot and lease. Its only
+    // contracts of its own are optional static audio methods.
+    for (MethodId id : {JsspsiAudioObjectId, JsspsiStopSound})
+        if (g_methods[id].resolved.method_info &&
+            !(flags(g_methods[id].resolved.method_info, &impl) & 0x10u))
+            g_methods[id].resolved = {};
+    if (g_methods[JsspsiPlayRenderVfx].resolved.method_pointer) {
+        host->create_hook(host->context, kId, g_methods[JsspsiPlayRenderVfx].resolved.method_pointer,
+            reinterpret_cast<void*>(&PlayRenderVfxDetour), reinterpret_cast<void**>(&g_play_render_vfx));
+    }
+    if (g_methods[JsspsiPlayVfx].resolved.method_pointer) {
+        host->create_hook(host->context, kId, g_methods[JsspsiPlayVfx].resolved.method_pointer,
+            reinterpret_cast<void*>(&PlayVfxDetour), reinterpret_cast<void**>(&g_play_vfx));
+    }
+    if (g_methods[JsspsiVfxTick].resolved.method_pointer) {
+        host->create_hook(host->context, kId, g_methods[JsspsiVfxTick].resolved.method_pointer,
+            reinterpret_cast<void*>(&VfxTickDetour), reinterpret_cast<void**>(&g_vfx_tick));
+    }
+    if (g_methods[JsspsiVfxDelta].resolved.method_pointer && g_fields[JsspsiVfxOwner].resolved.field_info && g_fields[JsspsiVfxOwner].resolved.offset > 0) {
+        host->create_hook(host->context, kId, g_methods[JsspsiVfxDelta].resolved.method_pointer,
+            reinterpret_cast<void*>(&VfxDeltaDetour), reinterpret_cast<void**>(&g_vfx_delta));
+    }
     Log("Actions module ready; scoped to character special dashes, disabled by default.");
     return BE_Result_Ok;
 }
@@ -1624,15 +1742,21 @@ void BE_CALL Shutdown() {
     RestoreExternal(false);
     FreeExternalAssets(false);
     ReleasePoseOverlay(false);
+    ReleaseLoopQuality(false);
     if (g_particle_type_root) g_host->gchandle_free(g_host->context, g_particle_type_root);
     g_particle_type_root = 0;
     g_particle_type = nullptr;
 }
-const BE_ModuleApiV1 kApi{{kId, "Sustained Dash", "1.13.4", BETTER_ENDFIELD_MODULE_ABI_V1},
+const BE_ModuleApiV1 kApi{{kId, "Sustained Dash", "1.14.3", BETTER_ENDFIELD_NEXT_MODULE_ABI_V1},
     &Initialize, &Configure, &Shutdown};
 } // namespace
-} // namespace BetterEndfield::Actions
+} // namespace BetterEndfieldNext::Actions
 
-BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfield_GetModuleApiV1() {
-    return &BetterEndfield::Actions::kApi;
+BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfieldNext_GetModuleApiV1() {
+    return &BetterEndfieldNext::Actions::kApi;
+}
+
+// Camera checks this handshake before permitting a body writer alongside Actions.
+BE_EXPORT uint32_t BE_CALL BetterEndfieldNext_ActionsPoseLeaseVersionV1() {
+    return BetterEndfieldNext::Actions::g_pose_lease_ready.load(std::memory_order_acquire) ? 1u : 0u;
 }

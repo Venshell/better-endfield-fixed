@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 
 void LogInfo(const char* component, const char* message);
 void LogError(const char* component, const char* message);
@@ -13,4 +13,4 @@ void LogError(const char* component, const char* message);
 // tails). A stale cursor — one from before the ring existed — restarts at 0.
 std::string CopyNativeLogSince(std::size_t& cursor);
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext

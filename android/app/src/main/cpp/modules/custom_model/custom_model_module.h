@@ -2,7 +2,7 @@
 
 #include "core/hook_broker.h"
 #include "core/runtime.h"
-#include "BetterEndfield/ModuleApi.h"
+#include "BetterEndfieldNext/ModuleApi.h"
 #include "modules/module.h"
 #include "bem.h"
 #include "mesh_skin_metadata_adapter.h"
@@ -13,13 +13,15 @@
 #include <string>
 #include <vector>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 
 class CustomModelModule final : public Module {
 public:
-    const char* Id() const override { return "betterendfield.custom_model"; }
+    const char* Id() const override { return "betterendfieldnext.custom_model"; }
     ModuleResult Start(Il2CppRuntime& runtime) override;
     BE_Result RetireSharedHooks(const char* module_id);
+    static bool QueueConfiguration(const std::string& configuration);
+    static void ApplyPendingConfiguration();
 
 private:
     static CustomModelModule* instance_;
@@ -49,6 +51,7 @@ private:
     static void HostGcHandleFree(void*, uint32_t);
     static void* HostFieldGetValueObject(void*, const void*, void*);
     bool InitializeSharedReplacement(const std::string& config);
+    bool UpdateSharedReplacement(const std::string& config);
 
     using FinishFn = void(*)(void*, void*, void*);
     using CopyFn = void(*)(void*, void*);
@@ -81,7 +84,7 @@ private:
     std::filesystem::path package_path_;
     std::vector<std::filesystem::path> package_paths_;
     std::string appearance_;
-    BetterEndfield::CustomModel::BemPocData package_{};
+    BetterEndfieldNext::CustomModel::BemPocData package_{};
     std::atomic<uint32_t> matched_{0};
     std::atomic<uint32_t> deliveries_{0};
     struct HookRecord { std::string module_id; void* stub = nullptr; };

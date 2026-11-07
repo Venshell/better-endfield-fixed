@@ -160,7 +160,7 @@ appearance=<外观 ID>
 
 Android 端在「第三方模型」页管理同样的包，导入时同样逐个外观校验并保留原始包字节。差异在于纹理：手机 GPU 的纹理格式与桌面不同，包内纹理在实机显示异常时可对该包执行「转换手机纹理」，成功后发布新一代并保留启用状态与已选外观，失败或取消则保持当前包不变；缺少已验证法线编码信息的包可以导入，但无法转换。两端都需要在切换包或外观后重启游戏。
 
-创作者流程、转换自动化边界与完整字段见 [BEM 创作者指南](BEM_CREATOR_GUIDE.md) 与 [BEM v1 规范](BEM_V1_SPEC.md)。
+创作者流程、转换自动化边界与完整字段见 [BEM 创作者指南](custom_model/BEM_CREATOR_GUIDE.md) 与 [BEM v1 规范](custom_model/history/bem-1.0/BEM_V1_SPEC.md)。
 
 ## 移动端界面与触控输入
 
@@ -196,7 +196,7 @@ OmniMix instance shared memory
   -> 游戏 Music Bus
 ```
 
-只有共享流、预缓冲、格式回调和采样回调全部健康后，模块才按登录、主界面/基地、游戏内三个独立范围暂停对应原生 Playing ID。它不会静音全局 Music Bus；Audio Input 暂态失败会退避重试，可闻游标额外保留 100 ms 输出队列余量。OmniMix 项目组的完整对接契约见 [集成交接文档](OMNIMIX_INTEGRATION_HANDOFF.md)。
+只有共享流、预缓冲、格式回调和采样回调全部健康后，模块才按登录、主界面/基地、游戏内三个独立范围暂停对应原生 Playing ID。它不会静音全局 Music Bus；Audio Input 暂态失败会退避重试，可闻游标额外保留 100 ms 输出队列余量。OmniMix 项目组的完整对接契约见 [集成交接文档](music/OMNIMIX_INTEGRATION_HANDOFF.md)。
 
 Better Endfield 在实例握手中声明播放队列管理和 Seek 能力，因此可以直接在 OmniMix 中向该游戏实例添加、插入、移动和清空队列。
 

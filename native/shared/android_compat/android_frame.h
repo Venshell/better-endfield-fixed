@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
-namespace betterendfield {
-enum class FrameClient : unsigned { Camera, Ui, Count };
+namespace betterendfieldnext {
+enum class FrameClient : unsigned { Camera, Ui, MediaScreen, Count };
 using FrameCallback = void (*)(bool suspend);
 // Only DispatchAndroidFrame calls clients, on the nativeRender thread. No timer
 // thread is permitted to mutate Unity objects or Time.timeScale.

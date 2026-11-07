@@ -6,7 +6,7 @@
 struct Point { float x = 0, y = 0, z = 0; };
 
 int main() {
-    BetterEndfield::CameraFollow::Anchor<Point> anchor;
+    BetterEndfieldNext::CameraFollow::Anchor<Point> anchor;
     Point delta{};
     assert(!anchor.Sample(true, true, 1, 10, true, {1, 2, 3}, delta));
     assert(anchor.Sample(true, true, 1, 10, true, {3, 5, 7}, delta));

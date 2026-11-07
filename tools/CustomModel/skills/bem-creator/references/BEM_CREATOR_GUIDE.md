@@ -1,206 +1,513 @@
-# BEM 1.0/1.1 创作者指南
+# BEM 创作者指南
 
-正式扩展名 `.bem`。玩家只需安装包，不需要 Python、原 Mod 注入框架、角色数据库或手工 runtime.ini。
-Windows 与 Android 使用同一个标准包：Android 编译共用的 `native/modules/custom_model` 读取器，作者无需另出一份手机包。包头 `target.platform` 仍固定为 `windows-x64`，这是现有格式常量。手机纹理不兼容时，Android 可对安装包执行「转换手机纹理」；法线编码缺少已验证声明时不能转换。两端保存选项后均在下次启动游戏时应用。1.0 字段见 `BEM_V1_SPEC.md`，组合外观的 1.1 字段见 `BEM_V1_1_SPEC.md`。
+BEM（`.bem`）是 Better Endfield Next 的模型替换包。1.0–1.3 包对应一个角色；1.4 包对应一个角色或武器 ID，可分别替换普通形态、大招 prefab 或武器资源，并保留外观选项和位置滑条。Windows 和 Android 可使用同一个包，但包必须为各平台声明对应资源与 donor 合同。
 
-## 选择 1.0 还是 1.1
+| 文档 | 内容 |
+| --- | --- |
+| 本文 | 工具、制作流程、导入测试、分发、常见问题 |
+| [格式规范](BEM_FORMAT_SPEC.md) | 1.0–1.3 的文件结构、字段、上限 |
+| [BEM 1.4 扩展](BEM_V1_4_SPEC.md) | 多资源目标、武器、静态网格和平台声明 |
+| [运行时行为与兼容性](BEM_RUNTIME_COMPATIBILITY.md) | 游戏内如何匹配部件、几何和贴图要求、显存开销、热切换、第一人称、日志对照 |
+| [其他来源 Mod 转换](BEM_SOURCE_MOD_CONVERSION.md) | EFMI / 3DMigoto Mod 的自动转换范围、配方、身份规则、转换报错 |
 
-固定的少量完整外观可以继续用 BEM 1.0；`appearances[]` 最多 64 项。服装、局部部件、材质或贴图可独立组合时使用 BEM 1.1 的 `option_groups[]`，一个包对应一个角色，玩家在一个包卡片中设置各组。组数最多 64、每组最多 16 项；所有组的组合数没有固定上限，创作者工具用精确条件图验证可达状态。源包只有一个按键却联动多个变量时，应合并为一个组或声明 `selection_constraints`，避免生成源 Mod 实际到不了的组合。
+## 工具
 
-原生网格不变、但源 Mod 对它的材质贴图有活跃覆盖时，1.1 的 `keep` 候选应写 `material_overrides`，以原生 `material_slot`/`material_name` 和顶层纹理 ID 定位；同时把 `keep-material-textures` 加入 `required_capabilities`。创作者须逐槽确认原纹理名在材质中唯一；不能因 `keep` 保留网格就省去贴图效果。详见 `BEM_V1_1_SPEC.md`。
-
-1.1 的 `available_when` 只控制局部组选项是否适用。组暂时隐藏时，保存值仍在；切回原服装会恢复原局部选择。每个组件对任何可达组合必须恰好有一条 `keep`、`hide` 或 `replace` 规则成立。替换 mesh 的每条候选 draw 自带索引 payload，可用 `when` 决定是否使用。共享顶点流和真正相同的索引可去重；不要把未选 draw 独有索引与当前 draw 强行放到一个 payload，因为运行时按 payload 读取。详细条件语法、资源预算和 `project.json` 清单见 `BEM_V1_1_SPEC.md`。
-
-当前 `convert` 自动路线仍主要生成 1.0 的默认静态外观。制作 1.1 时先用已审阅的源 INI 状态、原游戏资料和 EFMI 身份映射准备可编辑项目，再用 `pack project.json -o 成品.bem` 与 `validate 成品.bem` 校验。普通项目的 `manifest` 放入 1.1 字段，`payload_files` 仍按 payload ID 指向项目目录内的二进制文件。`unpack` 后可以编辑再打包；不能把源脚本直接放进 manifest 当规则执行。
-
-1.1 包保留所有可选内容，使同一个包以后能 A→B→A 热切换而不重新导入；现有管理 UI **没有热切换入口**，选择后仍需重启游戏。游戏加载时只读取所选组合引用的模型/贴图 payload；Android 首次安装时复制完整包到游戏私有**磁盘**目录，以便日后选择其他组合。这不等于运行时把整包读入内存。Shader/RabbitFX 效果、逐帧动画、连续滑块和任意 INI 命令不属于静态组合能力。源 INI 的广告、注释杂讯不得变成选项组；无法等价转换的效果须在报告中写明，不可悄悄忽略。
-
-转换现有 Mod 时，可以移除当前版本不支持的 Shader 特效、低模 LOD 和新增动画系统；逐包报告的 `excluded_features` 应具体列出移除的功能。选定角色 LOD0 的基础网格、活动基础材质贴图及全部有效静态外观仍须保留。若 RabbitFX 或自定义 Shader 负责基础绘制、骨骼变换或基础贴图绑定，应先把这些内容映射到受支持的 BEM 表达；不能仅因它们位于特效命令中就删除。仅通过离线校验的包应标明 `render_verified=false`。
-
-洁尔佩塔完整版是第四条参考路径：先固定源 INI 的 70 条 LOD0 draw、对应 LOD1 守卫与范围，再按已审阅的原生 Mesh、材质和贴图身份构建资源全集，最后把 33 个持久开关写为 1.1 组选项与逐 draw 条件。创作者工具精确证明 301,056 种有效静态选择均有唯一组件操作且不越过资源预算；源规则局部真值表、同部件绘制顺序、原生读取和 A→B→A 另行核对。这条路径需要人工确认源规则与资源映射，并不表示自定义 Shader 效果得到支持或做过实机渲染验证。
-
-1.1.4 补充：源 DDS 支持 BC 格式及紧密排列的 RGBA32、R8；BGRA32 可按通道顺序无损整理为 RGBA32。未压缩 DDS 的 FourCC 为零是正常声明，不表示压缩包损坏。带行填充、数组/立方体/体积 DDS 仍明确拒绝。使用新增纹理格式时需同时更新原生模块；读取源压缩包成功也不等于包内自定义材质已经适配。
-
-## 能做什么
-
-一个包对应一个角色，可放多种固定外观。支持部件替换/保留/隐藏、分离骨骼与材质来源、合并骨骼 palette、
-按绘制段使用游戏材质、替换指定原生纹理，以及 UInt16/UInt32 几何索引。
-
-逐绘制段和 RabbitFX 的兼容性边界见 `BEM_PER_DRAW_COMPATIBILITY_20260920.md` 与 `BEM_RABBITFX_COMPATIBILITY_20260920.md`。Stable Textures 可在目标材质映射明确时自动转换；GlowFX 目前只生成效果报告；RabbitFX 实验性骨架/Shader 重写仍需人工适配。
-支持共享资源和独立 Zstd 压缩，保持顶点与贴图精度。洁尔佩塔 Outfit B 实际正式包约 36.04 MB。
-压缩降低下载与磁盘占用，不降低高模和大贴图的 GPU 开销。
-
-每部件最多 256 个局部骨骼、256 个 draw；每个选定外观最多 32 个纹理绑定。BEM 1.0 的已解码 payload 缓存合计和重建后常驻资源分别最多 512 MiB，BEM 1.1 两项分别最多 768 MiB；单个 payload 仍最多 512 MiB。
-源 16 位骨骼索引会重映射，输出是 UINT8 局部索引。超限会报告失败；没有自动分片、低 LOD 生成。
-不执行源热键脚本、任意 Shader 或形态键。1.1 支持有限的静态选项组合，但当前游戏内不做实时切换；管理 UI 保存后下次启动生效。
-
-## 使用软件界面
-
-1. 打开“角色外观”→“其他来源 Mod 转换”，先选择转换、解包、打包或制作 ZIP 合集中的一项。
-2. 转换任务选择已解压目录或 ZIP、RAR、7z 后自动读取并检查，不需要预先解压或安装解压软件，不直接运行包内程序。
-3. 查看识别的内容和下一步说明。成品 BEM/合集会提示直接导入；未适配源包显示待适配原因。
-4. 角色资料不由普通用户手选。工具用源资源身份匹配随工具发布的角色资料，核对索引数、顶点流、骨骼及材质；完整转换检查通过才显示“转换为 BEM”。点击转换后选择导出位置。
-5. 尚未自动支持的来源，可保存报告。开发者已有完整离线转换规则时，可在高级项加载规则校验。成功后返回管理页导入并启用。
-6. 实机核对世界、详情页等所需场景。转换成功不等于外观已经实机验证。
-
-源 Mod 的 ZIP、RAR、7z 只是不同封装，解压后使用相同的格式识别和转换规则。压缩格式支持不代表其中 Mod 的材质和绘制逻辑一定可转换。成品 BEM 仍使用 ZIP 合集分发。
-RAR、7z 读取使用随工具附带的 7-Zip 26.03；源码、许可证见工具的 `7zip/NOTICE.txt` 与 `7zip/License.txt`。有密码、损坏或缺少分卷的源包会报告读取错误。
-
-导入会校验包内资源；1.0 验证全部固定外观，1.1 创作者工具精确验证所有可达组合的规则与资源预算，并在 `validate` 报告的 `selection_space` 中给出可达选择数及资源峰值。安装器至少验证默认组合。导入/更新/删除时关闭游戏，避免延迟加载读取正在变动的文件；开关与选择可先保存，下一次启动生效。
-更新采用相同 `package_id`；保留本机启用状态及仍有效的外观或选项组 ID，移除/不可达的选择提示并回退默认项。
-
-## 转换自动化边界
-
-| 来源 | 能自动完成 | 需要人工资料的情况 |
+| 工具 | 位置 | 用途 |
 | --- | --- | --- |
-| 标准 ComponentN | 资源身份匹配、默认静态开关、绘制段、原生材质重放及打包；匹配完整资料时无需配方 | 缺角色资源身份/布局/贴图映射，非标准分发流程、动态状态或特殊材质 |
-| Hash/LOD | 已验证 profile 下静态条件与绘制段的转换 | 未识别控制语句、自定义蒙皮、缺材质规则 |
-| 经审阅的特殊 draw/Shader 包 | 匹配审阅配方的特定源程序转换 | 源 INI 或 Shader 改变需重新审阅，不能视为通用 Shader 支持 |
-| 不明/动态格式 | 列出入口与解析问题 | 需要作者导出静态结果、补配方或明确不支持 |
+| 独立创作者 GUI `BetterEndfieldNext.BemTools.exe` | 独立工具包 `BEM-Tools-win-x64.zip` 根目录，完整解压后双击使用 | 工程、工作区、转换、打包、解包与合集；无需安装主程序、Python 或 .NET |
+| BEM Tools 命令行 `BetterEndfieldNext.BemConverter.exe` | 程序目录 `tools/BemConverter/`，或独立工具包根目录 | 转换、打包、校验、解包、合集，所有功能的核心 |
+| 主程序创作者窗口 | 角色外观页 →“BEM 创作者工具…”；旧版入口为“其他来源 Mod 转换…” | 与独立 GUI 共用窗口代码，调用同一个命令行 |
+| Blender 导出插件 | 独立工具包 `blender_addon/bem_exporter/` | 从带有 `BEM_C<number>` 对象的 Blender 工程导出可编辑 BEM 工程 |
+| 桌面模型管理页 | 角色外观页 | 导入、启用、选择外观和选项、调滑条 |
+| Android 模型页 | Better Endfield Next App | 导入、启用、选择，以及手机纹理转换 |
+| AI Skill `bem-creator` | 独立工具包 `skills/bem-creator` | 复制到 AI 工具的技能目录（Codex 为 `~/.codex/skills`），用 `$bem-creator` 调用。只辅助准备配方和解释报告，不能代替校验 |
 
-全角色 profile 解决目标游戏资源资料，不能自动推断作者的 Shader 意图。
-手工工作主要是确认骨骼、材质、组件和静态外观状态；完成映射后可重复自动转换，无需每次重新建模。
-多外观不会盲目枚举源热键所有组合。1.1 的每个组、可达约束与条件 draw 都需要源 INI 状态和原生资源映射证据。
+BEM Tools 1.6.4 支持写入和读取 BEM 1.0–1.5，并提供独立 GUI；旧的 1.5.0 正式发行包不包含 BEM 1.4。工具版本与 BEM 格式版本不同，当前 `--version` 输出为 `BEM Tools 1.6.4 / BEM 1.0+1.1+1.2+1.3+1.4+1.5`。从源码运行时，用 `python tools/CustomModel/bem_tool.py` 代替 exe。发行压缩包名为 `BEM-Tools-win-x64.zip`，文件名不带版本号，**版本只能靠 `--version` 确认**，不要从文件名推断。
 
-检查报告提供 `automation` 分类，独立于文件 `format`：
+独立工具请完整解压后运行 `BetterEndfieldNext.BemTools.exe`，保留同目录的命令行和支持文件。GUI 跟随系统语言；可将一个 `.bemproj.json` 工程拖到 EXE 图标上打开，或通过命令行传入该工程路径。主程序中的创作者窗口仍使用主程序的语言设置。
 
-- `standard_candidate`：标准 ComponentN 候选；未完成角色匹配或转换校验时仍为 `conversion_ready=false`，具体缺项见 `issues`。
-- `ready`：角色匹配和默认外观完整结构校验通过，可不带 `--recipe` 执行转换。仍须用户实机测试。
-- `requires_mapping`：Hash/LOD＋合并骨架，或包含逐绘制段贴图槽覆盖的 ComponentN；可通用解析结构，但需核对材质/骨架映射。
-- `manual_only`：发现作者自定义 Shader（含随包辅助 INI）、外部材质框架、形态键或混合入口；明确不能按标准规则自动转换，角色资料齐全也不自动放行。
+本树附带的目标数据更新昼雪的 Windows 1.6.3 原生合同与来源身份，并保留 1.5.3 新增的祀、明河资料，随工具附带在 catalog/ 和 profiles/。请以各资料的准备状态及缺项为准；运行时采集不等于源 Mod 可自动转换或替换模型已实测。本次不声明 Android 新版游戏兼容。
 
-ComponentN 包也可能依赖 RabbitFX；来源格式识别成功与材质能够自动转换是两件事。
-当前工具保守地拦截 RabbitFX，并不表示其声明无法解析。后续计划为“只指定贴图且原生对应明确”的情况建立可复用规则；特有 Shader 效果和动态绘制仍需单独判断。该计划尚未实现，不承诺 RabbitFX 通用视觉等价。
+## 三种制作方式
 
-当前女管理员 casualwear 已完成无配方转换。庄方宜为 Hash/LOD＋合并骨架、UINT16 输入骨骼索引，需映射；洁尔佩塔有自定义 Shader，属于专门适配。
-佩丽卡只依据游戏原生数据接入资料和 EFMI 原资源身份，没有查看源 Mod 或引入旧样包的 RabbitFX 近似材质、绘制纠正规则。身份资料齐全也不代表任意该角色 Mod 的自定义逻辑可转换。
+1. **转换现有 Mod**：标准 EFMI ComponentN Mod 通常可以直接转换；其他格式需要配方。见 [其他来源 Mod 转换](BEM_SOURCE_MOD_CONVERSION.md)。
+2. **编辑现有 BEM**：`unpack` 成可编辑项目，修改后 `pack`。
+3. **直接制作**：按[格式规范](BEM_FORMAT_SPEC.md)准备 `project.json` 和二进制 payload，再 `pack`。
 
-BEM Tools 1.1.3 已接入 32 个角色、370 个可复用 LOD0 部件的原生资料，补齐 360 个完整单子网格入口和 1,181 项角色内纹理身份。世界/UI 验证后复用，差异部件排除；62 个部件的布局或多子网格暂不支持自动转换。共享同 hash 的公共贴图会覆盖所有已核实的原生名称。资料及政策边界见 `BEM_CHARACTER_CATALOG_20260919.md` 和 `BEM_EFMI_IDENTITIES_20260920.md`。
+无论哪种方式，都建议用**导出工程**（`.bemproj.json`）保存参数，之后可以一键重复导出。
 
-ComponentN 当前处理标准本地骨架入口、三路顶点流、UINT16/UINT32 几何索引、零 base vertex、可静态求值的默认开关与固定贴图覆盖。
-源组件编号仅是包内标签，不固定对应角色部位；同一 hash 的原生索引数改变时拒绝使用旧资料。
-空绘制回调或默认关闭的全部绘制会隐藏该部件；多个原生材质按游戏顺序重放。只生成一套默认外观，不执行热键或源脚本。
-公共雨雪覆盖只有尺寸/编码与输入资源内容身份符合既有核实记录时才沿用游戏原资源；改写过的全局效果明确拒绝，不静默丢弃。
+## 直接制作 BEM 工程
 
-```powershell
-BetterEndfield.BemConverter.exe inspect source.zip --report inspection.json
-BetterEndfield.BemConverter.exe convert source.zip -o appearance.bem --report conversion.json
+如果作者使用 Blender、Maya、3ds Max 或其他建模工具，可以跳过 EFMI 转换，直接准备 BEM 可编辑工程。作者自己的源文件通常包括：
+
+```text
+outfit.blend                 # 或其他建模工程
+textures/                    # PNG、TGA、DDS 等作者贴图
+project.json                 # BEM 工程清单
+payloads/*.bin               # 网格、索引和贴图的原始字节
+export.bemproj.json          # 可重复导出的任务工程
 ```
 
-自动转换创建新的 package_id；需要更新已发布包时应在解包项目中保留原 ID。`matching` 记录资料版本、组件对应及保留资源提示。
-庄方宜样本身体首段与后续段的颜色/法线绑定槽不同，既有转换按核实的贴图语义适配，不是通用逐槽照搬。
-识别依据是实际 INI 声明，不按角色名、压缩包文件名或作者文本直接放行。
+`project.json` 是低层 BEM 工程，适合由导出插件或高级工具生成，不建议手工从零编写。建模软件负责网格、权重、UV、法线和贴图；BEM Tools 负责版本选择、payload 去重、压缩、校验和最终打包。
 
-## 转换配方
+当前随工具提供的 Blender 导出器先支持经过核实的 16/12/12 蒙皮布局、固定外观和显式贴图身份，输出旧角色目标工程。对象名使用 `BEM_C0`、`BEM_C1` 等，或者设置对象自定义属性 `bem_component_id`。插件尚不直接导出 1.4 多资源或静态武器；这些项目使用下述可编辑工程流程。特殊顶点布局、选项组和形态滑条仍应使用可编辑工程或配方流程。
 
-随工具提供 `examples/conversion.recipe.json`。路径相对配方所在目录；UI 选择的 source 作为默认源路径。
-每个 appearance 可另写 `source`，以组合来自不同静态源的外观，但目标契约必须完全一致。
+直接制作仍需要针对目标角色确认组件、骨骼名称、材质槽、贴图身份和世界/UI 资源关系。`catalog/` 提供这些身份与布局资料，但不包含随工具分发的完整角色模型。作者应自行准备建模参考或本地模板。
+
+BEM 不包含 Shader。每个绘制段仍需选择游戏中的原生材质作为 donor；作者自己的贴图替换原生材质上的明确纹理槽。Blender 中看起来正确，不代表没有完成材质身份映射。
+
+推荐的工程目录是：
+
+```text
+my-outfit/
+├─ source/                   # 作者自己的 blend、FBX 或其他源文件
+├─ textures/                # 作者贴图
+├─ project/                 # 导出插件生成的 project.json 和 payloads
+├─ recipe/                  # 可选的人工映射资料
+├─ dist/                    # 最终 .bem
+├─ reports/                 # inspect / validate 报告
+└─ character.bemproj.json   # 稳定的导出任务
+```
+
+最终给玩家分发 `.bem`；源工程、配方和 `project.json` 只在作者需要发布可编辑工程时一并提供。
+
+## 导出工程
+
+桌面创作者窗口默认就是“创建 / 打开导出工程”：选择源 Mod 或可编辑项目，填写包名称、作者、版本和输出路径，保存为 `*.bemproj.json` 后导出。以后打开同一工程，改参数后点“保存参数并导出 BEM”。
 
 ```json
 {
-  "schema": 1,
-  "package": {"id":"creator.character.outfits","name":"外观合集","author":"作者名","version":"1.0.0"},
-  "target": {"character_id":"chr_0013_aglina","world_resource":"chr_0013_aglina_postmodel",
-    "ui_resource":"chr_0013_aglina_uimodel","profile_id":"aglina.windows","revision":"20260918"},
-  "default_appearance_id":"default",
-  "appearances":[{"id":"default","name":"默认外观","format":"hash-lod",
-    "profile":"profiles/verified-native.json","ini":"角色.ini"}]
+  "schema": 1, "kind": "bem-export-task", "mode": "pack",
+  "source": "editable/project.json",
+  "recipe": "",
+  "deformations": "body-morphs.json",
+  "output": "dist/character.bem",
+  "report": "reports/build.json",
+  "package": {"id": "creator.my-character", "name": "我的角色", "author": "作者", "version": "1.0.0"}
 }
 ```
 
-`format` 可以是 `auto`、`component-n`、`hash-lod`、`reviewed-draws`。
-auto 只负责入口格式识别，不能生成缺失的 mapping。
-`description` 可写外观说明；`preview` 可指向不超过 8 MiB 的 PNG，打包后共享存储，当前管理页以角色公共头像展示。
+- `mode`：`pack` 打包可编辑项目；`convert` 转换源 Mod，可配 `recipe`。
+- 路径相对工程文件所在目录。另存工程时会自动调整相对路径。
+- `package.id` 首次创建时确定，之后每次导出都保持不变，玩家导入新版本即为更新。ID 规则为 `[A-Za-z0-9][A-Za-z0-9_.-]{0,95}`。
+- 导出失败时保留原有成品，不会留下损坏的文件。
 
-Hash/LOD 使用现有 schema=2 且 `verified=true` 的原生 profile，包含每组件的
-`mesh_name/original_index_count/strides/attributes/bone_names/materials`，以及 entries 中的蒙皮和材质规则。
-profile 中的验证标记必须有真实离线/运行时证据支撑，不能只改布尔值放行。
-
-ComponentN 额外支持 `source_profile` 和 `material_profile`。原生 profile 还必须给替换组件提供
-`v24_draws`（内部几何转换桥接需要的明确映射；它不表示正式包兼容旧格式）：
-
-```json
-{"v24_draws":[{"start":0,"count":300,"material_component":0,"material_slot":0,"textures":[0]}]}
-```
-
-纹理编号对应中间转换结果的记录顺序，profile 的 `texture_names` 提供每个原纹理的完整名称。
-无法证明这些对应关系时转换器拒绝，不按贴图文件名猜测。
-
-特殊审阅格式使用 appearance 的 `reviewed` 对象：`recipe`、`database`、`observations`、`native_textures`、`texture_dir`。
-这些分别指向审阅配方、标准化离线数据库、运行时观测、原生纹理清单与纹理字节目录。
-只复制/重排已审阅语义，不执行源 Shader。此路线需要维护者准备资料，不属于任意 Mod 一键转换。
-
-## 直接制作 BEM
-
-创作者也可绕过其他 Mod 格式，按正式 Manifest 和原生顶点流直接导出。
-项目 JSON 包含 `manifest` 和 `payload_files`；后者按 Payload ID 顺序列出二进制文件路径。
-工具会检查索引、权重索引范围、声明、draw 分区、纹理大小、外观引用，再压缩写包。
-`examples/README.md` 提供入口说明；正式协议不保存 Python/C++ 结构体布局。
-
-## 命令行
-
-发布目录入口：`tools/BemConverter/BetterEndfield.BemConverter.exe`；开发时可用 `python tools/CustomModel/bem_tool.py`。
+命令行：
 
 ```text
-BetterEndfield.BemConverter.exe inspect "mod目录" --report inspection.json
-BetterEndfield.BemConverter.exe convert "mod目录" --recipe conversion.recipe.json -o appearance.bem --report conversion.json
-BetterEndfield.BemConverter.exe pack project.json -o appearance.bem --report packing.json
-BetterEndfield.BemConverter.exe validate appearance.bem --report validation.json
-BetterEndfield.BemConverter.exe unpack appearance.bem -o editable-project --report unpack.json
-BetterEndfield.BemConverter.exe pack editable-project/project.json -o edited.bem
-BetterEndfield.BemConverter.exe bundle first.bem second.bem -o collection.zip --report bundle.json
-BetterEndfield.BemConverter.exe inspect collection.zip --report inventory.json
-BetterEndfield.BemConverter.exe unpack collection.zip -o extracted-packages --report extracted.json
-BetterEndfield.BemConverter.exe --version
+BetterEndfieldNext.BemConverter.exe new-project editable/project.json --mode pack -o character.bemproj.json
+BetterEndfieldNext.BemConverter.exe new-project source-mod.zip --recipe conversion.recipe.json -o character.bemproj.json
+BetterEndfieldNext.BemConverter.exe build character.bemproj.json
 ```
 
-退出码 0 表示该操作完成；inspect 完成只代表检查结束。非零表示未完成，报告的 issues 给出原因。
-`conversion_ready` 与 `render_verified` 分开；新转换始终 `render_verified=false`。
-正式输出使用临时文件写完后替换，失败不会把部分字节当作有效包。
+`new-project` 可选参数：`--deformations`、`--export-output`、`--package-id`、`--name`、`--author`、`--package-version`。`build` 只读取工程文件，输出路径、配方、形态配置都在工程里修改。
 
-## 多 Mod ZIP 与可编辑项目
+如果希望把输入文件和输出目录整理成可移动的完整工程，可以使用工作区初始化：
 
-网站分发可以使用标准 `.zip`，里面装一个或多个 `.bem`。每个 BEM 仍只对应一个角色，可包含多个外观。
-推荐用 `bundle`：逐包校验后以 ZIP “仅存储”模式封装，不对已 Zstd 压缩的数据重复压缩。
-不把 BEM 直接改名成 ZIP；普通 ZIP 软件也能打开真正的分发合集。
+```text
+BetterEndfieldNext.BemConverter.exe workspace init 我的角色工程 --source 原始Mod.zip --mode convert
+BetterEndfieldNext.BemConverter.exe build 我的角色工程/export.bemproj.json
+```
 
-管理页“导入 BEM / ZIP”会预先校验、列出角色/包版本/外观，让用户勾选导入。
-坏包独立报错，有效包仍可导入；重复包 ID（包括仅大小写不同）对应的所有候选会跳过。
-相同角色的不同 ID 可同时安装，但同时只能启用一个。同 ID 与已安装包对应时视为更新。
-未选择的包不会安装，新包默认停用。忽略说明文件、脚本和嵌套 ZIP，不执行任何包内代码。
-ZIP 支持 stored/deflate，不支持加密；每个 BEM 最大 2 GiB，最多 256 包，合集及累计解包字节最多 4 GiB。
+工作区会复制源文件或 `project.json` 及其 payload，创建 `source`、`project`、`textures`、`dist`、`reports` 等目录，并继续使用同一个 `.bemproj.json` 格式。目标目录必须为空或不存在。
 
-`unpack BEM` 输出 `project.json` 和 `payloads/NNNN.bin`，共享 Payload 只输出一次。
-这些是原生顶点/索引、压缩纹理和预览字节，未转换成 Blender/FBX，也不会恢复源 INI/Shader。
-编辑后用 `pack project.json` 导出。重新打包会保持数据与配置语义，不保证压缩字节完全相同。
-payload 文件路径限制在项目目录内；解包要求输出目录尚不存在，避免混入旧文件。
-`unpack ZIP` 只解出有效的 BEM 文件；要编辑其中一包，再对该 BEM 执行一次 unpack。
+## 可编辑项目
 
-## 独立工具链与 AI Skill
+`unpack` 把 BEM 解成 `project.json` 和 `payloads/NNNN.bin`：
 
-开发构建运行 `scripts/BuildBemTools.ps1`，生成 `artifacts/bem-tools/dist/BEM-Tools-win-x64.zip`。
-解压即用，无需安装 Python，不附带游戏采样数据库；和玩家 UI 使用同一套 CLI 核心。
-目录内含 exe、依赖、文档、配方示例与 `skills/bem-creator`。CLI 报告带 `tool_version`、`format_version`；
-目标 profile 的 ID/revision 和快照保留在输出包及报告中。
+```json
+{"manifest": {正式 BEM Manifest}, "payload_files": ["payloads/0000.bin", "payloads/0001.bin"]}
+```
 
-可将完整 `bem-creator` 文件夹复制到所用 AI 工具支持的技能目录（Codex 为 `~/.codex/skills`），
-通过 `$bem-creator` 调用。该 Skill 可辅助准备配方、调用命令和解释缺项；它不替代校验器，
-也不能绕过缺失证据。普通玩家不需要安装 Skill。
+- `payload_files` 的顺序就是 Payload ID。路径必须在项目目录内，不能是绝对路径或含 `..`。最多 16384 个文件，单个不超过 512 MiB，合计不超过 2 GiB。
+- payload 是原生顶点、索引、压缩贴图的原始字节，不是 Blender/FBX，也不会还原源 INI 或 Shader。
+- `unpack` 要求输出目录不存在。重新 `pack` 保持数据语义，但压缩后的字节不保证相同。
+- `pack` 会自动补齐用到的能力声明、选择最低可用的格式版本、共享相同字节。
+
+## 选择格式版本
+
+一般不需要手动指定版本，`pack` 会按内容选择。制作时只需决定用哪种外观结构：
+
+| 需求 | 用法 |
+| --- | --- |
+| 少量固定的完整外观 | 1.0 `appearances`，最多 64 套 |
+| 服装、部件、贴图可以独立组合 | 1.1+ `option_groups` + `component_rules` |
+| 换色而不复制 draw | 1.2 贴图槽 `texture_slots` |
+| 场景与详情模型骨骼名不同 | 1.2 骨骼别名 `bone_name_aliases` |
+| 8K 等大贴图（单张超过 64 MiB） | 1.2 及以上 |
+| 连续体型调节 | 1.3 `parameters` + `mesh_deformations` |
+| 普通形态与独立大招资源分别替换 | 1.4 `target.resources` + 组件 `resource`/`renderer_path` |
+| 静态武器 MeshRenderer + MeshFilter | 1.4 `renderer_kind: static`，不添加伪骨骼 |
+| 同包包含 Windows 与 Android 的不同 LOD/donor | 1.4 按资源声明 `platforms` 和 `lod` |
+
+## 武器与大招工程（1.4）
+
+| 入口 | 1.4 支持范围 |
+| --- | --- |
+| `pack` / `unpack` / `build` / `validate` | 显式多资源、静态/蒙皮网格、原有选项与位置滑条 |
+| `inspect` / `validate --resource ID --platform PLATFORM` | 查看指定资源的选中计划；`validate` 仍校验整个包 |
+| `bundle` | 将旧角色包与 1.4 包放入同一个标准 ZIP |
+| `target-profile` | 从精确原生图谱生成未验证的 profile 和全 `keep` 项目起点 |
+| 源 Mod `convert` | 仍是已有角色资料和审阅配方入口，不是任意武器/大招的自动转换器 |
+| Blender 插件 | 仍输出旧角色工程，尚不直接导出 1.4 资源表或静态网格 |
+
+一个角色包的 `target.kind` 为 `character`，`target.id` 为角色 ID；武器包使用 `weapon` 和武器 ID。`target.resources` 中每个资源有独立 ID、根名、prefab 路径、平台和 LOD。组件必须声明所属 `resource`、精确 `renderer_path`、`renderer_kind`、原 Mesh/索引、材质及骨骼身份。每个 mesh 的全部 donor 必须来自自己的资源；跨资源共享几何时复制 descriptor 并共享 payload，不能借另一个 prefab 的 donor。
+
+独立工具包包含可直接构建的合成工程：
+
+```powershell
+BetterEndfieldNext.BemConverter.exe build examples/multi-resource/project/export.bemproj.json
+BetterEndfieldNext.BemConverter.exe inspect examples/multi-resource/project/dist/synthetic.bem --resource ultimate --platform windows-x64 --report ultimate-plan.json
+BetterEndfieldNext.BemConverter.exe validate examples/multi-resource/project/dist/synthetic.bem --resource weapon --platform android-arm64 --report android-plan.json
+```
+
+示例使用虚构资源，只验证制作和格式流程，不能安装为游戏 Mod。制作真实资源时，先准备相应平台的原生图谱与目标 spec：
+
+```powershell
+BetterEndfieldNext.BemConverter.exe target-profile NATIVE_GRAPH.json --spec SPEC.json -o TARGET_PROFILE.json --project project.json
+BetterEndfieldNext.BemConverter.exe pack project.json -o target.bem --report build.json
+```
+
+生成器不会自动放行来源 Mod 映射或实机渲染：profile 的 `conversion_ready`、`runtime_verified` 保持 false。作者再加入替换几何、draw 与贴图映射，执行完整 `validate` 并实机检查。BEM 沿用游戏的大招触发和武器装备逻辑，不实现源 Mod 的脚本或技能状态机。
+
+Windows 当前只执行显式 LOD0。Android 可声明自身 LOD1 接收器和 donor，保留手机原有 LOD 设计；不同平台合同应使用不同 resource ID。`target.platform` 仍保留历史常量 `windows-x64`，实际平台由 `resources[].platforms` 决定，不要把顶层常量改为 Android。不能只给 Windows 资源补上 `android-arm64` 标签来宣称兼容。没有 Android 资源声明的包不能在 Android 导入；转换贴图也不会补齐资源、骨骼或 LOD 合同。
+
+## 组合外观（1.1+）
+
+- 每个部件在任意合法组合下都必须恰好有一条 `keep`、`hide` 或 `replace` 规则成立，工具会精确证明这一点，并在 `validate` 报告的 `selection_space` 中给出可达组合数和最坏情况的资源量。
+- 源 Mod 一个按键联动多个变量时，合并为一个组，或用 `selection_constraints` 限定，避免生成源 Mod 实际到不了的组合。
+- `available_when` 只控制某个组是否显示；组被隐藏时保存值保留，切回后恢复。
+- 只换贴图、保留原网格时，用 keep 的 `material_overrides`，并确认原贴图名在该材质中唯一。
+- 每条 draw 使用自己的索引 payload，可以带 `when` 条件。相同几何可以共享 payload，但不要把只在某个选项出现的索引和其他 draw 合并。
+- 源 INI 中的广告、注释不要做成选项组。
+
+组合包保留全部候选资源，玩家切换选项不需要重新导入。游戏只读取当前选择用到的数据。
+
+## 形态滑条（1.3）
+
+在建模软件中做出形态，**保持导出网格的顶点数量和顺序不变**（包括 UV 和法线接缝处的重复顶点），然后提供目标位置或稀疏增量。滑条只改变位置，原骨骼蒙皮、材质、法线和切线保留；形变较大时光照、穿插和轮廓可能不自然。身体变形通常需要衣服和配件做相同形变。
+
+形态配置文件（在导出工程的 `deformations` 中引用）：
+
+```json
+{
+  "schema": 1, "kind": "bem-position-morphs",
+  "parameters": [{"id": "body", "name": "体型", "min": 0, "max": 1000, "neutral": 0, "default": 0, "step": 1}],
+  "mesh_deformations": [{"mesh": 0, "parameter": "body", "frames": [
+    {"value": 0, "neutral": true},
+    {"value": 1000, "target_positions": "body-target.json"}
+  ]}]
+}
+```
+
+- `mesh` 是导出 BEM 中的网格下标。
+- 每个非中性帧恰好一种输入：
+  - `target_positions`：每个顶点一组 XYZ，JSON 数组或 Float32 二进制文件。工具减去原始位置，只保存非零增量。
+  - `deltas`：`[顶点索引, dx, dy, dz]` 列表，可以为空，表示零效果端点。
+  - `efmi`：绑定源 Mod 的 ShapeKey，见 [转换文档](BEM_SOURCE_MOD_CONVERSION.md#8-shapekey-绑定到-13-滑条)。
+- 坐标轴和单位必须与导出网格一致。顶点数相同并不代表拓扑相同，顺序需要作者保证。
+- 中性值在中间时（例如体型可增可减），写三帧：`0`、`500 neutral`、`1000`。多帧之间分段线性插值，每帧都是相对原始位置的绝对偏移。
+- 身体、衣服、配件使用同一个参数 ID，就会一起变化。参数可以带 `available_when`，例如只在某套服装下显示。
+
+可运行示例：
+
+```text
+python examples/body-slider/create_project.py --output demo-body-slider
+BetterEndfieldNext.BemConverter.exe build demo-body-slider/export.bemproj.json
+BetterEndfieldNext.BemConverter.exe validate demo-body-slider/dist/synthetic.bem
+```
+
+这是一个三角形的格式测试，不是可用的角色包。
+
+## 校验与报告
+
+```text
+BetterEndfieldNext.BemConverter.exe validate character.bem --report validation.json
+BetterEndfieldNext.BemConverter.exe inspect source-mod.zip --report inspection.json
+```
+
+- 退出码 0 表示操作完成，失败时为 2，原因在报告的 `issues` 中。`inspect` 完成只代表检查结束，不代表可以转换。
+- 报告包含 `tool_version`、`format_version`、`conversion_ready`、`render_verified`、`issues`。新导出的包 `render_verified` 始终为 `false`。
+- `--report` 不能覆盖任何输入或输出文件。
+
+## 导入与测试
+
+| | Windows | Android |
+| --- | --- | --- |
+| 导入 | 模型管理页“导入 BEM / ZIP”，或把文件拖进页面；ZIP 合集可勾选要导入的包。**需要关闭游戏** | App 模型页导入单个 `.bem`，也可以从文件管理器“打开方式”或“分享”导入 |
+| 新包状态 | 默认停用 | 默认启用，并停用与其资源冲突的其他包 |
+| 存放位置 | 程序目录 `models/`（不可写时为 `%LOCALAPPDATA%\BetterEndfieldNext\catalog\custom-model\packages`） | App 私有目录，并发布给游戏 |
+| 更新 | 相同 `package_id` 即覆盖更新，保留启用状态和仍有效的选择 | 每次导入生成新版本，保留选择 |
+| 生效 | 下次启动游戏；已开启热切换时，选择变化由游戏帧调度处理已加载实例 | 同左；1.4 按 Android 显式资源发现，仍需手机实机验收 |
+
+- 旧角色包同一角色同时只能启用一个；1.4 按当前平台的资源根检查冲突，普通形态与大招包只有在资源不重叠时才能共同启用。同一 package ID 更新不能改变 target kind/id。
+- 校验未通过的包不能导入。有“关闭模型校验”实验选项可以跳过兼容性检查，仅用于开发测试，可能渲染错误或崩溃。
+- 实机测试至少检查场景、角色详情页和配队界面；1.4 还应检查实际武器、大招主体和声明的其他 prefab，以及启用、停用、再次启用。Android 旧包的场景模型由详情模型构建，1.4 显式资源使用自身 donor，规则见[运行时文档](BEM_RUNTIME_COMPATIBILITY.md#3-lod)。
+- 游戏里没有生效时，先确认包已启用、外观选择正确，再查看日志中的拒绝原因，对照[运行时日志表](BEM_RUNTIME_COMPATIBILITY.md#11-日志拒绝信息对照)。
+
+## 面向手机的注意事项
+
+- 大多数手机不支持 BC 格式贴图。玩家需要在 App 中对该包点“转换纹理”，转为 ASTC 或 RGBA32。
+- 转换后单张贴图不超过 8192 像素和 64 MiB，超出时自动降一级分辨率。面向手机的包建议使用 4K 或 2K 贴图。
+- **法线贴图需要声明编码**，否则无法转换：在 `project.json` 的贴图项中加入 `"semantic": "normal"` 和 `"normal_encoding": "xy-unorm"`（BC5 等只存 XY 的法线）或 `"xyz-unorm"`。工具不会根据文件名自动推断。
+- 贴图越大，加载时的瞬时内存和显存越高，与包文件大小无关，见[运行时文档第 7 节](BEM_RUNTIME_COMPATIBILITY.md#7-加载开销与显存)。
+
+## 第一人称
+
+头发、头饰、耳朵的权重只绑到 Head 子树或尾巴骨骼，第一人称时才会被正确隐藏；身体和衣服不要绑到 Head 上。详见[运行时文档第 9 节](BEM_RUNTIME_COMPATIBILITY.md#9-第一人称兼容)。
+
+## 分发
+
+- 分发 `.bem` 文件和许可说明即可。原始 dump、游戏贴图、日志不需要附带。
+- 多个包可以做成 ZIP 合集：
+
+```text
+BetterEndfieldNext.BemConverter.exe bundle first.bem second.bem -o collection.zip --report bundle.json
+```
+
+  `bundle` 会逐包校验后以“仅存储”方式打包。不要把 `.bem` 直接改名为 `.zip`。
+- 合集限制：最多 256 个包，每个不超过 2 GiB，合计解包不超过 4 GiB；不支持加密 ZIP。说明文件、脚本和嵌套 ZIP 会被忽略。ID 重复（包括仅大小写不同）的包全部跳过，其余照常导入。
+- Android 目前只能导入单个 `.bem`，ZIP 合集需要先解出。
+- 发布更新时保持 `package_id`、选项组 ID、选项 ID 和参数 ID 不变，玩家的设置才能保留。只改显示名不影响。
+
+## 命令速查
+
+```text
+BetterEndfieldNext.BemConverter.exe inspect  <源目录|zip|rar|7z|bem> [--ini 路径] [--report r.json]
+BetterEndfieldNext.BemConverter.exe convert  <源> -o out.bem [--recipe recipe.json] [--ini 路径] [--deformations m.json] [--report r.json]
+BetterEndfieldNext.BemConverter.exe pack     project.json -o out.bem [--deformations m.json] [--report r.json]
+BetterEndfieldNext.BemConverter.exe validate pkg.bem [--report r.json]
+BetterEndfieldNext.BemConverter.exe unpack   pkg.bem|collection.zip -o 新目录 [--report r.json]
+BetterEndfieldNext.BemConverter.exe bundle   a.bem b.bem ... -o collection.zip [--report r.json]
+BetterEndfieldNext.BemConverter.exe new-project <源|project.json> -o task.bemproj.json [--mode convert|pack] [--recipe r.json] [...]
+BetterEndfieldNext.BemConverter.exe workspace init <目录> --source <源|project.json> [--mode convert|pack] [--recipe r.json]
+BetterEndfieldNext.BemConverter.exe build    task.bemproj.json [--report r.json]
+BetterEndfieldNext.BemConverter.exe --version
+```
+
+不带 `--recipe` 直接 `convert` 时，每次生成新的随机包 ID；需要稳定 ID 请使用导出工程。
 
 ## 常见问题
 
-- `ENTRY_SELECTION`：存在多个或没有已识别 INI，检查解压层级并明确入口。
-- `TARGET_PROFILE`：缺目标布局/骨骼/材质资料；使用与角色、平台、游戏资源版本相符的 verified profile。
-- `source INI/shader differs`：特殊包与审阅版本不同，需要重新审阅。
-- `Legacy ... differs`：开发转换桥接结果与 profile 不符；不是要求安装旧运行时。
-- `palette / bone index`：输入映射不正确或超过 256 项，不能截断骨骼索引。
-- `Draws must partition IB`：绘制段需连续覆盖索引流，重叠绘制应显式复制对应索引范围。
-- `texture identity`：需原游戏 Texture 名称，并证明其对应关系。
-- 转换成功但游戏不显示：先看运行时目标声明/材质身份拒绝日志，再检查启用包、外观和 LOD；不要把解析成功当作渲染通过。
+- **转换成功但游戏里没变化**：确认包已启用、外观选择正确、游戏已重启（或热切换已生效）；查看日志里的 `Package refused`、`Generic model donor is missing` 等信息。
+- **游戏更新后包失效**：原 Mesh 名或索引数变化后，旧包会被拒绝（`Generic model donor is missing/ambiguous`），需要用更新后的角色资料重新导出。
+- **手机上贴图不显示或报格式不支持**：在 App 中对该包执行“转换纹理”。提示缺少法线编码时，按上一节声明 `normal_encoding`。
+- **第一人称时身体被裁掉，或头发没隐藏**：检查相关顶点的骨骼权重，见第一人称一节。
+- **配队界面偶尔缺少部位**（例如管理员的眼睛）：已知问题，原因尚未确认，退出并重新进入配队界面即可恢复。
 
-## 资料与分发
 
-作者分发 `.bem` 和许可/说明即可。原始 dump、原游戏纹理字节、采样日志属于研究证据，不要求随成品发给玩家。
-角色 profile 是可复用工具资料；包只内嵌使用到的目标契约和 donor 子集。
-本轮采集的 32 个角色原生资料已随工具提供；缺少 EFMI 资源对应与缺少原生采样是不同问题，报告分别说明。当前转换器不会因缺资料自动启动游戏采样。
-详情页和开屏补采已验证可用；探针与跨重启采集脚本保留在 `tools/CustomModel/developer-tools/`，游戏更新后复用。完整自动加载队列仍属后续计划。
+## 材质属性与关键字覆盖（BEM 1.5）
+
+> **致谢**：特别感谢 **@Saberverse** 在 BEM 1.5 格式规范设计、材质属性与关键字动态覆盖方案以及 NPC 路径适配中提供的关键技术支持与审阅材料。
+
+
+从 BEM 1.5（`material-overrides-v1`）起，您无需制作或替换自定义 Shader，即可通过在网格绘制项（draw）中指定 `material_overrides`，直接调校角色材质在游戏原生 NPR/PBR 着色器下的透明度、水墨色调与光泽表现。
+
+### 常用视觉配方
+
+#### 1. 半透水墨薄纱 / 蕾丝透光与深度写入
+解决半透物体在场景中穿插穿透或发黑的问题：
+```json
+{
+  "material_overrides": {
+    "floats": {
+      "_TransparentDepthWrite": 1.0,
+      "_ZWrite": 1.0,
+      "_Cutoff": 0.5,
+      "_Smoothness": 0.15
+    },
+    "colors": {
+      "_BaseColor": [0.08, 0.08, 0.08, 0.75]
+    }
+  }
+}
+```
+
+#### 2. 消光与抑制各向异性高光
+去除某些原版衣服、发丝上自带的各向异性光圈或清漆高光，呈现哑光/水墨质感：
+```json
+{
+  "material_overrides": {
+    "disable_keywords": [
+      "_ANISOTROPY_SPECULAR_ON",
+      "_CLEARCOAT",
+      "_EMISSION"
+    ]
+  }
+}
+```
+
+#### 3. 启用特定透明变体
+```json
+{
+  "material_overrides": {
+    "enable_keywords": [
+      "_ALPHAPREMULTIPLY_ON"
+    ]
+  }
+}
+```
+
+> **注意**：
+> - 属性名必须以 `_` 开头且为合法标识符（如 `_BaseColor`、`_Metallic`）；关键字须为大写标识符（如 `_CLEARCOAT`）。
+> - 若使用「实验：关闭模型校验」，工具链和游戏端将放宽命名限制并自动截断超界数值。
+
+### 骨骼根节点抬升配置（解决高跟鞋插地）
+
+当 Mod 包含高跟鞋或悬浮姿势导致脚底陷入地面时，可在工程的清单中添加 `root_offset`，无需修改骨骼绑定或刷平顶点：
+
+```json
+{
+  "root_offset": {
+    "path": "Bip001",
+    "translation": [0.0, 0.04, 0.0]
+  }
+}
+```
+- `translation` 中的第二个分量为 Y 轴垂直方向（单位为米，如 `0.04` 代表抬高 4cm）。
+- 系统内置了防累积漂移保护与卸载回滚机制，无论切换多少次配队或外观形态，均会自动锁定原始坐标基准，不会随换装飞天。
+
+## 连续动效与时钟驱动器（BEM 1.5）
+
+`dynamic-drivers-v1` 让模型包在清单里声明随时间变化的动效，不需要外置任何侧车文件。动效可以是**无限循环**，也可以是**播放一次后停在末帧**。
+
+### 能力声明与配置位置
+
+清单 `required_capabilities` 中加 `dynamic-drivers-v1`，然后在根级写 `drivers` 数组：
+
+```json
+{
+  "required_capabilities": ["native-materials", "material-overrides-v1", "dynamic-drivers-v1"],
+  "drivers": [
+    {
+      "id": "glow_pulse",
+      "name": "发光纹路呼吸",
+      "waveform": "sine",
+      "playback": "loop",
+      "default_playing": false,
+      "base_frequency": 0.8,
+      "speed_multiplier": 1.0,
+      "bindings": [
+        {"type": "material_float", "component": 2, "material_slot": 0,
+         "property": "_EmissionWeight", "range": [0.0, 1.5]}
+      ]
+    },
+    {
+      "id": "insert_once",
+      "name": "单程推入",
+      "waveform": "sawtooth",
+      "playback": "once",
+      "default_playing": false,
+      "base_frequency": 0.5,
+      "bindings": [
+        {"type": "morph_parameter", "target": "anal_plug_depth", "range": [0.0, 1.0]}
+      ]
+    }
+  ]
+}
+```
+
+### 循环还是单次：`playback`
+
+| 值 | 效果 |
+| --- | --- |
+| `loop`（缺省） | 无限往复，适合呼吸灯、抽插、流水。 |
+| `once` | 从 0 播到 1 后停住并保持末帧，适合「推到底就停住」这类一次性动作。 |
+
+`once` 的两个要点：
+
+- **时长由 `base_frequency` 决定**：`时长 = 1 / (base_frequency × speed_multiplier)` 秒。想要 2 秒播完就写 `0.5`；
+- **末帧在哪由波形决定**：`sawtooth` / `step` 停在终点（权重 1），`pingpong` / `sine` 会回到起点（权重 0）。所以「推出去停住」要用 `sawtooth`，不是 `pingpong`。
+
+### 波形怎么选
+
+| waveform | 形态 | 适合 | `once` 末帧 |
+| --- | --- | --- | --- |
+| `sine` | 余弦平滑往复 | 呼吸灯、心跳、脉冲 | 回到起点 |
+| `pingpong` | 三角线性往复 | 机械活塞、道具往复平移 | 回到起点 |
+| `sawtooth` | 单向锯齿 | 流水、单向位移、单程推到底 | 停在终点 |
+| `jitter` | 高频微噪波 | 小幅震颤、故障抖动 | 哈希值，不适合要精确终点 |
+| `step` | 阶跃开关 | 开关灯、档位切换 | 停在终点 |
+
+`base_frequency` 是基频（Hz），`speed_multiplier` 是初始倍速。归一化值落在 0..1，再线性映射到 `range`。
+
+### 绑定类型
+
+- `material_float`：每帧写材质浮点属性，开销接近零，最稳。
+- `material_color`：写颜色属性（如 `_EmissionColor`）。
+- `material_keyword`：开关着色器关键字。
+- `morph_parameter`：驱动包内已有的形态参数，走 `mesh_deformations` 的逐帧形变：按参数刻度域插值出每顶点位置偏移，逐帧写回位置分量。只改位置，不碰法线/切线/UV 与骨骼，因此不影响着色与蒙皮。
+  **重要限制**：不要把同一个参数的动画驱动和手动滑条同时用于同一组顶点。滑条会在加载期重建网格并整条上传，驱动在运行期每帧改写同一批位置，两者会互相覆盖，表现为原位置残影、播放时闪烁与表面发虚。需要「滑条定基准 + 动画往复」时，请拆成两个参数并绑定互不重叠的顶点区间；不同顶点区间上的不同参数可以各自独立控制。
+
+### 音效（可选）
+
+控制器可以带一段内嵌音效，随播放状态启停，且**不会覆盖或暂停游戏原有音频**：
+
+```json
+"sound": { "payload": 12, "format": "ogg", "gain": 0.8, "loop": true, "offset_seconds": 0.0 }
+```
+
+音频以普通 Payload 存进包内。`once` 播完后音效停止；`loop` 下由 `loop` 字段决定。音效与波形是独立时钟，长循环会缓慢漂移，需要严格对齐时让音效长度等于一个波形周期。
+
+### 现在能用到什么程度
+
+- `default_playing` 必须写 `false`。规范要求进游戏先保持静止，避免加载瞬间就开始动。
+- **Windows 与 Android 都会跑驱动器**，行为一致；形变在两端都只写位置分量。桌面可在悬浮窗里切换两条等价的顶点上传路径做 A/B 排查，Android 只有一条。
+- **悬浮窗已有完整控件**：每个控制器一行「开始 / 暂停 / 停止」三个按钮加一条 0.25x~4.00x 速度滑条，PC 与 Android 都有。改动只在当次会话有效，不写回包。
+- **桌面快捷键在管理器 GUI 里配置**：每个控制器一条「开始／结束」切换键，**默认不绑定**，语法与 GUI 其它快捷键相同。快捷键只做二元切换，没有暂停；暂停只在悬浮窗里。
+- 老的侧车 `.anim.json` 是开发期验证形态，运行时只认清单内化的 `drivers`。正式发布不要带侧车。
+
+## 用 ZIP 容器发布模型（无需专用封包工具）
+
+BEM 支持标准 ZIP 容器，双端按文件头魔数识别，不看扩展名。所以创作者可以直接用系统压缩软件打包，不经过任何工具也能被运行时加载。
+
+### 最快的手工做法
+
+1. 先得到一份普通的 `.bem` 二进制包；
+2. 用本工具链把它展开成可编辑的载荷目录：
+
+```bash
+python tools/CustomModel/bem_tool.py unpack model.bem -o project/
+```
+
+这会生成 `project/project.json` 和 `project/payloads/0000.bin`、`0001.bin`……
+
+3. 把 `project.json` 改名为 `manifest.json`，与 `payloads/` 放同一目录，整体压成 ZIP：
+
+```text
+model.zip
+├── manifest.json
+└── payloads/
+    ├── 0000.bin
+    └── 0001.bin
+```
+
+4. 可选加一张 `preview.png` 作为预览图。
+
+### 用工具一条命令完成
+
+```bash
+python tools/CustomModel/bem_tool.py pack-zip model.bem -o model.zip
+```
+
+`pack-zip` 会先完整校验源包，再按上面的布局写出 ZIP，最后把写出的文件重新读一遍确认可读。它使用固定时间戳，同样的输入产生逐字节相同的输出，便于比对和入库。
+
+反向操作同样支持：
+
+```bash
+python tools/CustomModel/bem_tool.py unpack model.zip -o project/   # ZIP → 可编辑工程
+python tools/CustomModel/bem_tool.py pack project/ -o model.bem                # 工程目录 → 二进制包
+python tools/CustomModel/bem_tool.py pack project/project.json -o model.bem    # 等价写法
+```
+
+`pack` 的第一个参数给工程目录或目录里的 `project.json` 都可以，两者产出完全相同。
+
+这条往返路径是**字节级等价**的：`.bem → ZIP → 工程 → .bem` 得到与原文件完全相同的二进制包。
+
+### 约定与限制
+
+- `payloads/` 下的编号就是清单里的 `payload` 整数，必须从 0 开始连续。缺号会报 `ZIP package is missing payload N`。
+- 条目可以是存储或 Deflate，读取端自动解压；加密条目会被拒绝。
+- 包里可以带一层顶层目录（例如整个 `MyModel/` 文件夹压进去），运行时会自动展开；但**只能有一层**，多一层就会判定失败。
+- 同一目录下同时存在 `manifest.json` 和 `.bem` 时，以 `manifest.json` 为准，按单模型包处理。
+- 想在清单里明确版本，可以写 `"format_version": "1.5"`。ZIP 没有二进制头，不写就只能靠字段推断版本；写回二进制包时这个键会被丢弃。

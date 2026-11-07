@@ -4,7 +4,7 @@
 
 int main(int argc, char** argv) {
     if (argc != 2) return 2;
-    BetterEndfield::ThirdParty::ThirdPartyHost host;
+    BetterEndfieldNext::ThirdParty::ThirdPartyHost host;
     if (!host.Start(argv[1], "android-arm64",
             [](const std::string& id, const std::string& message) {
                 std::cerr << id << ": " << message << '\n';

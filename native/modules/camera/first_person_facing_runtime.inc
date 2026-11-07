@@ -55,7 +55,7 @@ struct Runtime {
     unsigned failures = 0;
     FpRoot entity, skeleton;
     FpMath::Quat original{0,0,0,1}, written{0,0,0,1};
-    BetterEndfield::FirstPerson::FacingState state{};
+    BetterEndfieldNext::FirstPerson::FacingState state{};
     uint64_t last_time = 0;
 
     void Failure(const char* stage) {
@@ -135,7 +135,7 @@ struct Runtime {
         return Call(Alive,nullptr,parameters,result) && Unbox(result,alive);
     }
     static bool Same(FpMath::Quat a,FpMath::Quat b) {
-        return BetterEndfield::FirstPerson::SameOwnedRotation(a,b);
+        return BetterEndfieldNext::FirstPerson::SameOwnedRotation(a,b);
     }
     bool Restore() {
         if (!owns_visual) return true;
@@ -266,10 +266,10 @@ void FpFacingUpdate(bool active,FpMath::Vec3 view,float limit) {
         std::min(float(now-runtime.last_time)*.001f,.1f) : 0.f;
     runtime.last_time=now;
     const float yaw=std::atan2(view.x,view.z)*57.295779513f;
-    const auto result=BetterEndfield::FirstPerson::StepFacing(runtime.state,
+    const auto result=BetterEndfieldNext::FirstPerson::StepFacing(runtime.state,
         {true,yaw,{axes.x,0,axes.y},limit,elapsed});
-    if (result.mode==BetterEndfield::FirstPerson::FacingMode::Inactive) { runtime.Release(); return; }
-    if (result.mode==BetterEndfield::FirstPerson::FacingMode::Entity) {
+    if (result.mode==BetterEndfieldNext::FirstPerson::FacingMode::Inactive) { runtime.Release(); return; }
+    if (result.mode==BetterEndfieldNext::FirstPerson::FacingMode::Entity) {
         FpRoot rotator(runtime.Object(Rotator,runtime.entity.object)); FpMath::Quat rotation{};
         if (!rotator || !runtime.Value(EntityRotation,runtime.entity.object,rotation) || !FpMath::Unit(rotation)) {
             runtime.Release(); return;

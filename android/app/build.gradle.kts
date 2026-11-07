@@ -1,13 +1,30 @@
 // Explicit imports: inside a build script `java` resolves to Gradle's java
 // extension, so `java.util.zip.ZipFile` has to be imported by name.
+import groovy.json.JsonSlurper
 import java.io.File
 import java.util.Properties
 import java.util.zip.ZipFile
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.OutputDirectory
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Generated asset directories are registered with AGP's Variant API so the
+// producer dependency and generated/read-only ownership remain explicit.
+abstract class GeneratedAssetCopy : Copy() {
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+}
+abstract class GeneratedAssetSync : Sync() {
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+}
+abstract class GeneratedAssetExec : Exec() {
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+}
+
+
 
 // testHost 的独立 main 检查不是 JUnit；统一门禁拥有编译、执行和计数。
 // 每次执行重新编译，不能把 Gradle NO-SOURCE 或旧 class 当成回归通过。
@@ -58,8 +75,22 @@ fun signingProperty(buildType: String, key: String): String? =
 fun signingStoreFile(buildType: String): File? =
     signingProperty(buildType, "storeFile")?.let { rootProject.file(it) }
 
+@Suppress("UNCHECKED_CAST")
+val beWorkspace = rootProject.extra["beWorkspace"] as Map<String, Any?>
+@Suppress("UNCHECKED_CAST")
+val workspacePaths = beWorkspace["paths"] as Map<String, Any?>
+@Suppress("UNCHECKED_CAST")
+val workspaceTools = beWorkspace["tools"] as Map<String, Any?>
+@Suppress("UNCHECKED_CAST")
+val resourceUpdate = beWorkspace["resource_update"] as Map<String, Any?>
+@Suppress("UNCHECKED_CAST")
+val sharedOutputs = resourceUpdate["outputs"] as Map<String, Any?>
+val nativeStaging = File(workspacePaths["build"] as String, "next/android/native/app")
+val generatedAssets = layout.buildDirectory.dir("generatedAssets")
+
+
 android {
-    namespace = "dev.betterendfield.android"
+    namespace = "dev.betterendfield.next"
     compileSdk = 37
     ndkVersion = "27.2.12479018"
 
@@ -71,14 +102,14 @@ android {
     }
 
     defaultConfig {
-        applicationId = "dev.betterendfield.android"
+        applicationId = "dev.betterendfield.next"
         // The libxposed API 102 service is the only framework entry point, and it
         // needs Android 10. The legacy API 82 build was dropped in 3.3.0.
         minSdk = 29
         targetSdk = 35
-        versionCode = 30402
-        versionName = "3.4.2"
-        testInstrumentationRunner = "dev.betterendfield.android.BemInstallerTest"
+        versionCode = 40108
+        versionName = "4.1.8"
+        testInstrumentationRunner = "dev.betterendfield.next.BemInstallerTest"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -87,7 +118,8 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++20")
-                arguments += listOf("-DANDROID_STL=c++_static")
+                arguments += listOf("-DANDROID_STL=c++_static",
+                    "-DDOBBY_ROOT=${workspaceTools["android_dobby"]}")
             }
         }
     }
@@ -130,7 +162,7 @@ android {
             // hooked game process - see proguard-rules.pro. The module's names
             // that are read from outside the type system -- the libxposed entry
             // point in META-INF/xposed/java_init.list, and the JNI symbols of
-            // libbetterendfield_installer.so -- are pinned in proguard-rules.pro
+            // libbetterendfieldnext_installer.so -- are pinned in proguard-rules.pro
             // and asserted by verifyReleaseEntryPoints.
             isMinifyEnabled = true
             // The release identity, not AGP's debug one: release APKs are what
@@ -169,12 +201,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    sourceSets {
-        getByName("main").assets.srcDir(
-            layout.buildDirectory.dir("generated/androidResourceAssets").get().asFile)
-        getByName("main").assets.srcDir(
-            layout.buildDirectory.dir("generated/headwearAssets").get().asFile)
-    }
 }
 
 // A signing identity that is described but unusable has to fail where it is
@@ -221,7 +247,8 @@ tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     dependsOn(checkReleaseSigning)
 }
 
-val prepareAndroidResourceAssets by tasks.registering(Copy::class) {
+val prepareAndroidResourceAssets by tasks.registering(GeneratedAssetCopy::class) {
+    outputDirectory.set(layout.buildDirectory.dir("generated/androidResourceAssets"))
     from(rootProject.file("resources/voice-catalog-index.json"))
     from(rootProject.file("resources/character-names.json"))
     from(rootProject.file("resources/character-presets.json"))
@@ -231,26 +258,53 @@ val prepareAndroidResourceAssets by tasks.registering(Copy::class) {
         include("pose_*.bin")
         into("actions")
     }
-    into(layout.buildDirectory.dir("generated/androidResourceAssets"))
+    into(outputDirectory)
 }
 
 // Every APK carries the complete verified catalog. Missing input is a build
 // failure, never an APK that silently depends on an earlier external directory.
-val prepareHeadwearAssets by tasks.registering(Exec::class) {
+val androidCoreSource = JsonSlurper().parse(rootProject.file("resources/resource-source.json")) as Map<*, *>
+val androidCoreGame = (androidCoreSource["provenance"] as Map<*, *>)["gameVersion"] as String
+val resourcePackRegistry = JsonSlurper().parse(rootProject.file("../config/resource-packs.json")) as Map<*, *>
+val androidCoreRevisions = (((resourcePackRegistry["revisions"] as Map<*, *>)["core"] as Map<*, *>)["android"] as Map<*, *>)
+val bundledAndroidCoreArchive = File(workspacePaths["build"] as String,
+    "resource-pack-archives/BE-Core-Android-$androidCoreGame.${androidCoreRevisions[androidCoreGame] ?: 1}.zip")
+
+val prepareBundledAndroidCoreAssets by tasks.registering(GeneratedAssetSync::class) {
+    outputDirectory.set(generatedAssets)
+    dependsOn("stageAndroidCoreResources")
+    // The baseline pack is data, extracted into the same external resource store.
+    // Optional preview geometry/textures are still downloaded separately.
+    from(bundledAndroidCoreArchive) { into("bundled-resources"); rename { "core.zip" } }
+    from(rootProject.file("../resources/bem-preview")) { exclude("*.zip"); into("bem-preview") }
+    into(outputDirectory)
+}
+
+// Build the external companion and the identical offline baseline for the APK.
+val stageAndroidCoreResources by tasks.registering(Exec::class) {
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine(workspaceTools["python"] as String, "scripts/BuildResourcePacks.py",
+        "--platform", "android", "--type", "core",
+        "--output", File(workspacePaths["build"] as String, "resource-packs").absolutePath,
+        "--archives", File(workspacePaths["build"] as String, "resource-pack-archives").absolutePath)
+}
+
+
+val prepareHeadwearAssets by tasks.registering(GeneratedAssetExec::class) {
+    outputDirectory.set(layout.buildDirectory.dir("generated/headwearAssets"))
     val catalog = providers.gradleProperty("headwearCatalogDir")
     val script = rootProject.file("../tools/Camera/package_android_headwear_assets.py")
     inputs.file(script)
     inputs.file(rootProject.file("../tools/Camera/build_android_headwear_fixture.py"))
     inputs.file(rootProject.file("../tools/Camera/android_headwear_asset_profiles.json"))
     catalog.orNull?.let { inputs.dir(file(it)) }
-    outputs.dir(layout.buildDirectory.dir("generated/headwearAssets"))
     doFirst {
         check(catalog.isPresent) {
             "Generate the v3 headwear catalog, then pass -PheadwearCatalogDir=<catalog directory>."
         }
         commandLine(providers.gradleProperty("headwearPython").orElse("python").get(),
             script.absolutePath, "--catalog", file(catalog.get()).absolutePath,
-            "--output", layout.buildDirectory.dir("generated/headwearAssets").get().asFile.absolutePath)
+            "--output", outputDirectory.get().asFile.absolutePath)
     }
 }
 
@@ -294,6 +348,7 @@ val verifyDesktopModelHookParity by tasks.registering {
 
 tasks.named("preBuild").configure {
     dependsOn(prepareAndroidResourceAssets)
+    dependsOn(prepareBundledAndroidCoreAssets)
     dependsOn(prepareHeadwearAssets)
     dependsOn(verifyDesktopModelHookParity)
 }
@@ -310,7 +365,7 @@ val moduleJavaSources = fileTree("src/main/java") { include("**/*.java") }
 //
 //   * META-INF/xposed/java_init.list -> the libxposed entry class, instantiated
 //     reflectively by the framework;
-//   * the Java_dev_betterendfield_android_* exports of the .so files this APK
+//   * the Java_dev_betterendfieldnext_android_* exports of the .so files this APK
 //     ships, whose export name *is* the class and method name, plus the one
 //     method JNI looks up with GetStaticMethodID;
 //   * the merged manifest's components, which AGP turns into keep rules.
@@ -336,18 +391,18 @@ val verifyReleaseEntryPoints by tasks.registering {
         check(apks.isNotEmpty()) { "no release APK to verify in ${apkDirectory.get().asFile}" }
 
         // Classes named in META-INF/xposed/java_init.list.
-        val frameworkEntryClasses = listOf("dev.betterendfield.android.XposedEntry")
+        val frameworkEntryClasses = listOf("dev.betterendfield.next.XposedEntry")
         // Manifest-declared components: AGP generates these keep rules, this
         // asserts they were actually generated for the merged manifest.
         val manifestComponents = listOf(
-            "Ldev/betterendfield/android/ModuleApplication;",
-            "Ldev/betterendfield/android/MainActivity;",
-            "Ldev/betterendfield/android/BemInstallActivity;",
+            "Ldev/betterendfield/next/ModuleApplication;",
+            "Ldev/betterendfield/next/MainActivity;",
+            "Ldev/betterendfield/next/BemInstallActivity;",
             // The overlay's settings channel. The framework instantiates this
             // one by name from the game process' call(), so a renamed provider
             // is not a shrinking win but a ClassNotFoundException at the point
             // the panel tries to read the model list.
-            "Ldev/betterendfield/android/OverlaySettingsProvider;",
+            "Ldev/betterendfield/next/OverlaySettingsProvider;",
             "Lio/github/libxposed/service/XposedProvider;"
         )
         // Methods the native code reaches by name without being an export. Both
@@ -363,8 +418,8 @@ val verifyReleaseEntryPoints by tasks.registering {
         //     src/main/cpp/core/local_music_android.cpp. Renamed, the interface
         //     is refused and MMD works play silently without their music track.
         val jniCallbacks = mapOf(
-            "dev.betterendfield.android.BemInstaller" to listOf("conversionProgress"),
-            "dev.betterendfield.android.NativeCommandBridge" to listOf(
+            "dev.betterendfield.next.BemInstaller" to listOf("conversionProgress"),
+            "dev.betterendfield.next.NativeCommandBridge" to listOf(
                 "audioOpen", "audioControl", "audioStatus", "audioError")
         )
         // Exports with no Java declaration behind them any more. The panel-to-
@@ -373,11 +428,11 @@ val verifyReleaseEntryPoints by tasks.registering {
         // carries the old entry points, so they cannot come out of the dex --
         // they are simply never resolved. R8 renaming that class is harmless.
         val obsoleteJniExports = setOf(
-            "dev.betterendfield.android.NativeCommandBridge.key",
-            "dev.betterendfield.android.NativeCommandBridge.releaseKeys",
-            "dev.betterendfield.android.NativeCommandBridge.status",
-            "dev.betterendfield.android.NativeCommandBridge.submit",
-            "dev.betterendfield.android.NativeCommandBridge.probeIl2Cpp"
+            "dev.betterendfield.next.NativeCommandBridge.key",
+            "dev.betterendfield.next.NativeCommandBridge.releaseKeys",
+            "dev.betterendfield.next.NativeCommandBridge.status",
+            "dev.betterendfield.next.NativeCommandBridge.submit",
+            "dev.betterendfield.next.NativeCommandBridge.probeIl2Cpp"
         )
 
         // Every `native` method in the module's own Java sources, qualified with
@@ -410,9 +465,9 @@ val verifyReleaseEntryPoints by tasks.registering {
         // A regex that stops matching would silently disable the checks below,
         // so pin the set that is known to exist today.
         val expectedNatives = setOf(
-            "dev.betterendfield.android.BemInstaller.inspectNative",
-            "dev.betterendfield.android.BemInstaller.convertNative",
-            "dev.betterendfield.android.BemInstaller.cancelNative"
+            "dev.betterendfield.next.BemInstaller.inspectNative",
+            "dev.betterendfield.next.BemInstaller.convertNative",
+            "dev.betterendfield.next.BemInstaller.cancelNative"
         )
         check(declaredNatives.containsAll(expectedNatives)) {
             "native-method scan drifted: found ${declaredNatives.sorted()}, " +
@@ -448,20 +503,20 @@ val verifyReleaseEntryPoints by tasks.registering {
         // their own classes rather than being folded into a shared holder with
         // the library - see the merged-<clinit> evidence in proguard-rules.pro.
         val gameProcessClasses = listOf(
-            "dev.betterendfield.android.XposedEntry",         // libxposed entry
-            "dev.betterendfield.android.RuntimeBootstrap",    // module attach
-            "dev.betterendfield.android.HeadwearAssets",      // bundled resource adapter
-            "dev.betterendfield.android.HeadwearAssetStore",  // verified catalog owner
-            "dev.betterendfield.android.RuntimeLog",          // journal
-            "dev.betterendfield.android.GameOverlay",         // the in-game panel
-            "dev.betterendfield.android.OverlaySurface",      // Compose view owner
-            "dev.betterendfield.android.OverlayViewOwners",   // owner tag bridge
-            "dev.betterendfield.android.OverlayFeatures",
-            "dev.betterendfield.android.NativeCommandBridge", // file relay
-            "dev.betterendfield.android.ModuleConfigurations",
-            "dev.betterendfield.android.ModuleSettings",
-            "dev.betterendfield.android.Hotkeys",
-            "dev.betterendfield.android.FrameworkSettings",
+            "dev.betterendfield.next.XposedEntry",         // libxposed entry
+            "dev.betterendfield.next.RuntimeBootstrap",    // module attach
+            "dev.betterendfield.next.HeadwearAssets",      // bundled resource adapter
+            "dev.betterendfield.next.HeadwearAssetStore",  // verified catalog owner
+            "dev.betterendfield.next.RuntimeLog",          // journal
+            "dev.betterendfield.next.GameOverlay",         // the in-game panel
+            "dev.betterendfield.next.OverlaySurface",      // Compose view owner
+            "dev.betterendfield.next.OverlayViewOwners",   // owner tag bridge
+            "dev.betterendfield.next.OverlayFeatures",
+            "dev.betterendfield.next.NativeCommandBridge", // file relay
+            "dev.betterendfield.next.ModuleConfigurations",
+            "dev.betterendfield.next.ModuleSettings",
+            "dev.betterendfield.next.Hotkeys",
+            "dev.betterendfield.next.FrameworkSettings",
         )
 
         apks.forEach { apk: File ->
@@ -498,7 +553,7 @@ val verifyReleaseEntryPoints by tasks.registering {
                     "${apk.name} lost names that are resolved at runtime: " +
                         missing.joinToString { it.trim('L', ';') }
                 }
-                check(entryList.contains("dev.betterendfield.android.XposedEntry")) {
+                check(entryList.contains("dev.betterendfield.next.XposedEntry")) {
                     "${apk.name} does not declare the libxposed entry point"
                 }
 
@@ -507,7 +562,7 @@ val verifyReleaseEntryPoints by tasks.registering {
                 //    still carry its original name.
                 val unaccounted = mutableListOf<String>()
                 nativeLibraries.forEach { (library, bytes) ->
-                    val prefix = "Java_dev_betterendfield_android_"
+                    val prefix = "Java_dev_betterendfieldnext_android_"
                     var at = bytes.indexOf(prefix)
                     while (at >= 0) {
                         var end = at + prefix.length
@@ -516,7 +571,7 @@ val verifyReleaseEntryPoints by tasks.registering {
                         // C++ mangles the enclosing function, so the tail after
                         // the JNI name is garbage (e.g. "..._convertNativeE3"):
                         // a prefix match is the honest test.
-                        val qualified = "dev.betterendfield.android." +
+                        val qualified = "dev.betterendfield.next." +
                             bytes.substring(at + prefix.length, end).replaceFirst('_', '.')
                         val known = declaredNatives.any { qualified.startsWith(it) } ||
                             obsoleteJniExports.any { qualified.startsWith(it) }
@@ -617,6 +672,8 @@ tasks.matching { it.name == "packageRelease" }.configureEach {
 }
 
 dependencies {
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.10")
     compileOnly("io.github.libxposed:api:102.0.0")
     implementation("io.github.libxposed:service:102.0.0")
 
@@ -633,4 +690,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.savedstate:savedstate-compose:1.5.0")
     implementation("androidx.core:core-ktx:1.19.1")
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.assets?.apply {
+            addGeneratedSourceDirectory(prepareAndroidResourceAssets) { it.outputDirectory }
+            addGeneratedSourceDirectory(prepareBundledAndroidCoreAssets) { it.outputDirectory }
+            addGeneratedSourceDirectory(prepareHeadwearAssets) { it.outputDirectory }
+        }
+    }
 }

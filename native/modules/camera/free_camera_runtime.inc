@@ -235,7 +235,7 @@ void MmdCameraLoaded(CameraFiles::Result&& result);
 void ClearMouseInput() {
 #if defined(__ANDROID__)
     int ignored_x = 0, ignored_y = 0;
-    betterendfield::TakeAndroidLook(ignored_x, ignored_y);
+    betterendfieldnext::TakeAndroidLook(ignored_x, ignored_y);
 #endif
     g_mouse_dx.store(0, std::memory_order_relaxed);
     g_mouse_dy.store(0, std::memory_order_relaxed);
@@ -688,7 +688,7 @@ void StepFreeCamera() {
     int dy = g_mouse_dy.exchange(0, std::memory_order_relaxed);
 #if defined(__ANDROID__)
     int touch_x = 0, touch_y = 0;
-    betterendfield::TakeAndroidLook(touch_x, touch_y);
+    betterendfieldnext::TakeAndroidLook(touch_x, touch_y);
     dx += touch_x;
     dy += touch_y;
 #endif

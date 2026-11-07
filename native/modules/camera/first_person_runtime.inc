@@ -1,8 +1,8 @@
 // Included inside CameraModule's anonymous namespace, after the model scanner.
 // Engine bindings are resolved by name; no Unity native object layouts are read.
-namespace FpMesh = BetterEndfield::FirstPersonMesh;
+namespace FpMesh = BetterEndfieldNext::FirstPersonMesh;
 #if defined(__ANDROID__)
-namespace FpProfiles = BetterEndfield::FirstPersonProfiles;
+namespace FpProfiles = BetterEndfieldNext::FirstPersonProfiles;
 
 std::string FpModelName(std::string name) {
     const auto hash=name.rfind('#');
@@ -145,14 +145,14 @@ bool FpIsHeadAttachment(const HeadPartProbe& part) {
 #if defined(__ANDROID__)
         if(!g_fp_head_bones.Read(part.renderer, bones)) return false;
         void* model_root=FindModelTransform();
-        if(!model_root) return BetterEndfield::FirstPerson::AllBonesUnderHead(
+        if(!model_root) return BetterEndfieldNext::FirstPerson::AllBonesUnderHead(
             bones,g_first_person.head,parent);
         return model_root && std::all_of(bones.begin(),bones.end(),[&](void* bone) {
             return FpBoneKind(bone,model_root)==1;
         });
 #else
         return g_fp_head_bones.Read(part.renderer,bones) &&
-            BetterEndfield::FirstPerson::AllBonesUnderHead(bones,g_first_person.head,parent);
+            BetterEndfieldNext::FirstPerson::AllBonesUnderHead(bones,g_first_person.head,parent);
 #endif
     }
     void* game_object = Invoke(Contract("unity.component.game_object"), part.renderer, nullptr);
@@ -161,9 +161,9 @@ bool FpIsHeadAttachment(const HeadPartProbe& part) {
 #if defined(__ANDROID__)
     void* model_root=FindModelTransform();
     return model_root ? FpBoneKind(transform,model_root)==1 :
-        BetterEndfield::FirstPerson::IsUnderHead(transform,g_first_person.head,parent);
+        BetterEndfieldNext::FirstPerson::IsUnderHead(transform,g_first_person.head,parent);
 #else
-    return BetterEndfield::FirstPerson::IsUnderHead(transform,g_first_person.head,parent);
+    return BetterEndfieldNext::FirstPerson::IsUnderHead(transform,g_first_person.head,parent);
 #endif
 }
 #if defined(__ANDROID__)
@@ -419,7 +419,7 @@ struct FpPatch {
 };
 struct FpMeshSession {
     std::vector<FpPatch> patches;
-    BetterEndfield::FirstPerson::RetryBudget attempts;
+    BetterEndfieldNext::FirstPerson::RetryBudget attempts;
     uint64_t last_scan=0;
     bool scanned=false,fill=false;
     bool tree_logged=false;
@@ -432,8 +432,8 @@ FpMeshSession g_fp_mesh_session;
 // mesh patch does for matched head parts (triangles removed, shadow proxy
 // kept), used wherever the mesh patch cannot reach: non-skinned renderers
 // and skinned ones whose patch attempts are exhausted.
-constexpr int kShadowCastingShadowsOnly=BetterEndfield::FirstPerson::ShadowModeLease::kShadowsOnly;
-struct FpShadowHide { FpRoot renderer; BetterEndfield::FirstPerson::ShadowModeLease lease; };
+constexpr int kShadowCastingShadowsOnly=BetterEndfieldNext::FirstPerson::ShadowModeLease::kShadowsOnly;
+struct FpShadowHide { FpRoot renderer; BetterEndfieldNext::FirstPerson::ShadowModeLease lease; };
 std::vector<FpShadowHide> g_fp_shadow_hides;
 unsigned g_fp_shadow_reports=0;
 void FpShadowReport(const char* reason) {
@@ -460,16 +460,16 @@ void FpApplyShadowHide(const HeadPartProbe& part) {
     if(!part.renderer)return;
     for(auto& hide:g_fp_shadow_hides)if(hide.renderer.object==part.renderer) {
         const auto action=hide.lease.Observe(FpGetShadowMode(part.renderer));
-        if(action==BetterEndfield::FirstPerson::ShadowModeLease::Refresh::Reassert &&
+        if(action==BetterEndfieldNext::FirstPerson::ShadowModeLease::Refresh::Reassert &&
             !FpSetShadowMode(part.renderer,kShadowCastingShadowsOnly)) FpShadowReport("reassertion rejected");
-        if(action==BetterEndfield::FirstPerson::ShadowModeLease::Refresh::Relinquish)
+        if(action==BetterEndfieldNext::FirstPerson::ShadowModeLease::Refresh::Relinquish)
             FpShadowReport("another owner changed shadow mode; preserving its value");
         return;
     }
     if(g_fp_shadow_hides.size()>=static_cast<size_t>(kMaxPartScanNodes))return;
     const int original=FpGetShadowMode(part.renderer);
     FpRoot renderer(part.renderer);
-    BetterEndfield::FirstPerson::ShadowModeLease lease;
+    BetterEndfieldNext::FirstPerson::ShadowModeLease lease;
     if(!renderer||!lease.Acquire(original))return;
     // Acquire the GC root before writing; a failed setter may still have
     // applied the value and must remain restorable on exit.
@@ -488,8 +488,8 @@ void FpReleaseShadowHides(bool closing=false) {
             const bool alive=IsObjectAlive(hide.renderer.object);
             const int current=alive?FpGetShadowMode(hide.renderer.object):-1;
             const auto action=hide.lease.PlanRestore(current,alive);
-            if(action==BetterEndfield::FirstPerson::ShadowModeLease::Restore::Done)break;
-            if(action==BetterEndfield::FirstPerson::ShadowModeLease::Restore::Retry) {
+            if(action==BetterEndfieldNext::FirstPerson::ShadowModeLease::Restore::Done)break;
+            if(action==BetterEndfieldNext::FirstPerson::ShadowModeLease::Restore::Retry) {
                 if(!hide.lease.blocked)hide.lease.RestoreResult(false);
                 continue;
             }
@@ -534,7 +534,7 @@ bool FpTryRestore(FpPatch& patch) {
 }
 void ReleaseNeckCap() {
 #if defined(__ANDROID__)
-    betterendfield::AndroidRestoreHeadwearFixture();
+    betterendfieldnext::AndroidRestoreHeadwearFixture();
 #endif
     FpReleaseShadowHides();
     std::vector<FpPatch> retained;
@@ -545,8 +545,8 @@ void ReleaseNeckCap() {
 void FpCloseNeckCap() {
 #if defined(__ANDROID__)
     for(unsigned attempt=0;attempt<3;++attempt)
-        if(betterendfield::AndroidRestoreHeadwearFixture())break;
-    betterendfield::AndroidDiscardHeadwearFixtures();
+        if(betterendfieldnext::AndroidRestoreHeadwearFixture())break;
+    betterendfieldnext::AndroidDiscardHeadwearFixtures();
 #endif
     for (auto& patch:g_fp_mesh_session.patches) patch.restore_failures=0;
     for (unsigned attempt=0;attempt<3&&!g_fp_mesh_session.patches.empty();++attempt) ReleaseNeckCap();
@@ -740,18 +740,18 @@ void EnsureNeckCap() {
         part.head_attached=FpIsHeadAttachment(part);
 #if defined(__ANDROID__)
     bool catalog_processed = false;
-    if(std::getenv("BETTER_ENDFIELD_HEADWEAR_DIRECTORY")) {
+    if(std::getenv("BETTER_ENDFIELD_NEXT_HEADWEAR_DIRECTORY")) {
         std::vector<void*> renderers;
         for(const auto& part:parts) if(part.renderer) renderers.push_back(part.renderer);
-        betterendfield::AndroidPruneHeadwearFixtures(renderers.data(),renderers.size());
+        betterendfieldnext::AndroidPruneHeadwearFixtures(renderers.data(),renderers.size());
         for(const auto& part:parts) if(part.renderer && part.vertex_count>0 &&
             !part.matched && !part.dedicated_head && !part.head_attached &&
             FpIsPrimaryCharacterPart(part,model)) {
             auto* source=FpValue<void*>(nullptr,e.get_mesh,part.renderer);
-            if(source && !betterendfield::AndroidHeadwearFixtureOwns(part.renderer,source) &&
-                betterendfield::AndroidHeadwearFixtureAvailable(part.renderer,source) &&
+            if(source && !betterendfieldnext::AndroidHeadwearFixtureOwns(part.renderer,source) &&
+                betterendfieldnext::AndroidHeadwearFixtureAvailable(part.renderer,source) &&
                 state.attempts.Try(part.renderer,source)) {
-                if (!betterendfield::AndroidProbeHeadwearFixture(part.renderer,source))
+                if (!betterendfieldnext::AndroidProbeHeadwearFixture(part.renderer,source))
                     Log("First person headwear fixture: binding failed; source retained.");
                 catalog_processed = true;
                 state.last_scan = g_first_person_pump_frames - 30;
@@ -775,7 +775,7 @@ void EnsureNeckCap() {
         if(std::any_of(state.patches.begin(),state.patches.end(),[&](const auto& p){return p.renderer.object==part.renderer;}))continue;
         auto source=FpValue<void*>(nullptr,e.get_mesh,part.renderer);if(!source)continue;
 #if defined(__ANDROID__)
-        if(betterendfield::AndroidHeadwearFixtureOwns(part.renderer,source))continue;
+        if(betterendfieldnext::AndroidHeadwearFixtureOwns(part.renderer,source))continue;
 #endif
         if(!state.attempts.Try(part.renderer,source))continue;
         FpPatch patch;
@@ -797,7 +797,7 @@ void EnsureNeckCap() {
     for(const auto& part:parts) {
         if(!part.renderer||!(part.matched||part.dedicated_head||part.head_attached))continue;
 #if defined(__ANDROID__)
-        if(betterendfield::AndroidHeadwearFixtureOwns(part.renderer,
+        if(betterendfieldnext::AndroidHeadwearFixtureOwns(part.renderer,
             FpValue<void*>(nullptr,e.get_mesh,part.renderer)))continue;
 #endif
         if(std::any_of(state.patches.begin(),state.patches.end(),

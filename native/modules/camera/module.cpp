@@ -1,4 +1,4 @@
-#include "BetterEndfield/ModuleApi.h"
+#include "BetterEndfieldNext/ModuleApi.h"
 #include "first_person_math.h"
 #include "camera_follow.h"
 #include "first_person_facing.h"
@@ -18,9 +18,9 @@
 #include "first_person_head_attachment.h"
 // MMD playback and the EIEM DirectVmd body port. These are imported from
 // upstream unchanged; the camera module owns the wiring, not the implementations.
-#include "BetterEndfield/PoseLease.h"
-#include "BetterEndfield/CustomModelGeometry.h"
-#include "BetterEndfield/LocalMusic.h"
+#include "BetterEndfieldNext/PoseLease.h"
+#include "BetterEndfieldNext/CustomModelGeometry.h"
+#include "BetterEndfieldNext/LocalMusic.h"
 #include "../../shared/motion/character_pose.h"
 #include "../../shared/motion/character_mapping.h"
 #include "../../shared/input/hotkey.h"
@@ -33,6 +33,7 @@
 #if defined(__ANDROID__)
 #include "android_frame.h"
 #include "android_camera.h"
+#include "android_panel_commands.h"
 #endif
 
 #include <algorithm>
@@ -61,7 +62,7 @@
 #include <vector>
 
 #if defined(__ANDROID__)
-namespace betterendfield {
+namespace betterendfieldnext {
 bool AndroidProbeHeadwearFixture(void* renderer, void* source_mesh);
 bool AndroidHeadwearFixtureAvailable(void* renderer, void* source_mesh);
 void AndroidWarmHeadwearLayout();
@@ -72,10 +73,10 @@ bool AndroidRestoreHeadwearFixture();
 }
 #endif
 
-namespace BetterEndfield::CameraModule {
+namespace BetterEndfieldNext::CameraModule {
 namespace {
 
-constexpr char kModuleId[] = "betterendfield.camera";
+constexpr char kModuleId[] = "betterendfieldnext.camera";
 
 enum class ModuleState : uint8_t {
     Created,
@@ -264,6 +265,16 @@ std::atomic<float> g_movement_speed{5.0f};
 std::atomic<float> g_field_of_view{60.0f};
 std::atomic_bool g_global_fov_enabled{false};
 std::atomic<float> g_global_fov{60.0f};
+#if defined(__ANDROID__)
+std::atomic_bool g_android_global_fov_ready{false};
+uint64_t g_android_pump_generation = 0;
+bool AndroidCameraReady() {
+    const auto state = g_state.load(std::memory_order_acquire);
+    return betterendfieldnext::OnAndroidFrameThread() &&
+        (state == ModuleState::Ready || state == ModuleState::Active || state == ModuleState::Disabled);
+}
+void AndroidCameraFrame(bool suspend);
+#endif
 std::atomic_bool g_free_camera_follow_character{false};
 #if defined(__ANDROID__)
 // Latest FOV the Android settings page asked for, applied on the Unity thread.
@@ -314,7 +325,7 @@ std::atomic_int g_vmd_play_key{VK_NUMPAD6};
 // director flag are declared by free_camera_runtime.inc, which owns the
 // VMD camera path.
 // ---------------------------------------------------------------------------
-constexpr int kVkNumpadEnter = BetterEndfield::Input::kNumpadEnter | VK_RETURN;
+constexpr int kVkNumpadEnter = BetterEndfieldNext::Input::kNumpadEnter | VK_RETURN;
 enum MmdRequest : uint32_t {
     MmdRequestPlayPause = 1u << 0,
     MmdRequestStop = 1u << 1,
@@ -470,8 +481,8 @@ BE_ResolvedClassV1 g_skinned_mesh_renderer_class{};
 BE_ResolvedClassV1 g_mesh_renderer_class{};
 BE_ResolvedClassV1 g_renderer_class{};
 
-namespace FpMesh = BetterEndfield::FirstPersonMesh;
-namespace FpMath = BetterEndfield::FirstPersonMath;
+namespace FpMesh = BetterEndfieldNext::FirstPersonMesh;
+namespace FpMath = BetterEndfieldNext::FirstPersonMath;
 
 // Renderer pointers inside a probe are only valid during the scan that produced
 // them. Bound mesh patches keep GC handles separately because the game can
@@ -1102,47 +1113,59 @@ bool EnterFreeCamera();
 void ApplyFreeCamera();
 void PumpFreeCameraRequests();
 
+void PollCameraFileResults();
+void ApplyAndroidCameraValues();
+bool MmdDirectorCameraActive();
+
 void PumpFreeCameraControl() {
+#if defined(__ANDROID__)
+    ++g_android_pump_generation;
+#endif
+    PollCameraFileResults();
+    ApplyAndroidCameraValues();
+    const bool pause_allowed = g_pause_enabled.load(std::memory_order_acquire);
+    const bool pause_pressed = g_pause_request.exchange(false, std::memory_order_acq_rel);
+    if (!pause_allowed) RestoreWorldPause("pause feature disabled");
+    else if (pause_pressed) {
+        if (g_changed_time_scale) RestoreWorldPause("toggle hotkey");
+        else if (GetValue(Contract("unity.time.scale.get"), nullptr, g_original_time_scale) &&
+                 SetValue(Contract("unity.time.scale.set"), nullptr, 0.0f)) {
+            g_changed_time_scale = true;
+            Log("World time paused independently of camera mode.");
+        }
+    }
     const bool allowed = g_free_camera_enabled.load(std::memory_order_acquire) &&
         g_free_camera_contract_ready;
 
     if (!allowed) {
+        g_keyframe_save_request.store(false,std::memory_order_release);
+        g_keyframe_load_request.store(false,std::memory_order_release);
+        g_motion_request.store(false,std::memory_order_release);
+        g_keyframe_add_request.store(false,std::memory_order_release);
+        g_keyframe_play_request.store(false,std::memory_order_release);
+        g_keyframe_clear_request.store(false,std::memory_order_release);
+        g_vmd_play_request.store(false,std::memory_order_release);
         g_toggle_request.store(false, std::memory_order_release);
         g_pause_request.store(false, std::memory_order_release);
-        if (g_free_camera_active ||
-            g_force_exit_request.exchange(false, std::memory_order_acq_rel)) {
+        // The MMD director runs its VMD camera on this machinery even while the
+        // free camera feature (hotkeys, controls) is off.
+        const bool forced = g_force_exit_request.exchange(false, std::memory_order_acq_rel);
+        if (!MmdDirectorCameraActive() && (g_free_camera_active || forced)) {
             ExitFreeCamera("feature disabled");
         }
         return;
     }
+
 #if defined(__ANDROID__)
     if (!g_first_person_active.load(std::memory_order_acquire))
-        betterendfield::AndroidWarmHeadwearLayout();
+        betterendfieldnext::AndroidWarmHeadwearLayout();
 #endif
-
     g_force_exit_request.store(false, std::memory_order_release);
     if (g_toggle_request.exchange(false, std::memory_order_acq_rel)) {
         if (g_free_camera_active) {
             ExitFreeCamera("toggle hotkey");
         } else {
             EnterFreeCamera();
-        }
-    }
-    const bool pause_pressed = g_pause_request.exchange(false,
-        std::memory_order_acq_rel);
-    if (pause_pressed && g_free_camera_active) {
-        if (!g_pause_enabled.load(std::memory_order_acquire)) {
-            return;
-        }
-        if (g_changed_time_scale) {
-            RestoreWorldPause("toggle hotkey");
-        } else {
-            if (GetValue(Contract("unity.time.scale.get"), nullptr,
-                g_original_time_scale) &&
-                SetValue(Contract("unity.time.scale.set"), nullptr, 0.0f)) {
-                g_changed_time_scale = true;
-                Log("World time paused.");
-            }
         }
     }
     PumpFreeCameraRequests();
@@ -1938,7 +1961,7 @@ void PumpFirstPerson() {
     if (!g_first_person_active.load(std::memory_order_acquire) &&
         !g_fp_perspective.visual_exit_deadline && !g_fp_perspective.transition.blending) {
 #if defined(__ANDROID__)
-        betterendfield::AndroidRestoreHeadwearFixture();
+        betterendfieldnext::AndroidRestoreHeadwearFixture();
 #endif
         if (g_fp_external_scale.lease.owned) g_fp_external_scale.Release();
         if (std::any_of(g_fp_mesh_session.patches.begin(),g_fp_mesh_session.patches.end(),
@@ -2000,9 +2023,7 @@ thread_local bool t_in_engine_tick = false;
 void FoldPanelLookInput() {
     int dx = 0;
     int dy = 0;
-    if (!betterendfield::DrainVirtualMouseDelta(dx, dy)) {
-        return;
-    }
+    betterendfieldnext::TakeAndroidLook(dx, dy);
     g_mouse_dx.fetch_add(dx, std::memory_order_relaxed);
     g_mouse_dy.fetch_add(dy, std::memory_order_relaxed);
 }
@@ -2136,8 +2157,8 @@ constexpr std::size_t kMmdCommandQueueLimit = 64;
 // "<verb> [argument]". Textual, so the Java side never has to mirror the native
 // enum values; this function is the one place the vocabulary is defined.
 bool ParseMmdPanelCommand(std::string_view text,
-    BetterEndfield::MmdOverlayProtocol::Command& command) {
-    using Type = BetterEndfield::MmdOverlayProtocol::CommandType;
+    BetterEndfieldNext::MmdOverlayProtocol::Command& command) {
+    using Type = BetterEndfieldNext::MmdOverlayProtocol::CommandType;
     while (!text.empty() && (text.back() == '\r' || text.back() == '\n')) text.remove_suffix(1);
     const std::size_t space = text.find(' ');
     const std::string_view verb = text.substr(0, space);
@@ -2145,7 +2166,7 @@ bool ParseMmdPanelCommand(std::string_view text,
         space == std::string_view::npos ? std::string_view() : text.substr(space + 1);
     while (!rest.empty() && rest.front() == ' ') rest.remove_prefix(1);
     if (verb.empty()) return false;
-    command = BetterEndfield::MmdOverlayProtocol::Command{};
+    command = BetterEndfieldNext::MmdOverlayProtocol::Command{};
     if (verb == "play_pause") { command.type = static_cast<uint32_t>(Type::PlayPause); return true; }
     if (verb == "stop") { command.type = static_cast<uint32_t>(Type::Stop); return true; }
     if (verb == "loop") { command.type = static_cast<uint32_t>(Type::ToggleLoop); return true; }
@@ -2182,7 +2203,7 @@ bool ParseMmdPanelCommand(std::string_view text,
 
 // Bounded, so a panel that keeps posting cannot grow the queue without limit
 // while the game thread is stalled.
-bool QueueMmdCommand(const BetterEndfield::MmdOverlayProtocol::Command& command) {
+bool QueueMmdCommand(const BetterEndfieldNext::MmdOverlayProtocol::Command& command) {
     std::lock_guard<std::mutex> lock(Mmd::android_mutex);
     if (Mmd::android_commands.size() >= kMmdCommandQueueLimit) return false;
     Mmd::android_commands.push_back(command);
@@ -2192,16 +2213,16 @@ bool QueueMmdCommand(const BetterEndfield::MmdOverlayProtocol::Command& command)
 // One command per tick, exactly like the configuration reload above.
 void DrainMmdPanelCommand() {
     std::string value;
-    if (!betterendfield::AcquirePanelCommand("mmd", value)) {
+    if (!betterendfieldnext::AcquirePanelCommand("mmd", value)) {
         return;
     }
-    BetterEndfield::MmdOverlayProtocol::Command command{};
+    BetterEndfieldNext::MmdOverlayProtocol::Command command{};
     if (!ParseMmdPanelCommand(value, command)) {
-        betterendfield::AcknowledgePanelCommand("rejected");
+        betterendfieldnext::AcknowledgePanelCommand("rejected");
         Log("MMD panel command rejected: " + value);
         return;
     }
-    betterendfield::AcknowledgePanelCommand(QueueMmdCommand(command) ? "applied" : "rejected");
+    betterendfieldnext::AcknowledgePanelCommand(QueueMmdCommand(command) ? "applied" : "rejected");
 }
 
 #endif
@@ -2234,12 +2255,12 @@ void DrainGlobalFovCommand();
 
 void DrainConfigurationReload() {
     std::string configuration;
-    if (!betterendfield::AcquirePanelCommand("camera_config", configuration)) {
+    if (!betterendfieldnext::AcquirePanelCommand("camera_config", configuration)) {
         return;
     }
     const BE_Result applied = ConfigurationChanged(configuration.c_str());
     const bool ok = applied == BE_Result_Ok;
-    betterendfield::AcknowledgePanelCommand(ok ? "applied" : "rejected");
+    betterendfieldnext::AcknowledgePanelCommand(ok ? "applied" : "rejected");
     char summary[160];
     std::snprintf(summary, sizeof(summary),
         "Camera configuration reloaded from the settings app: %zu bytes, %s "
@@ -2249,6 +2270,9 @@ void DrainConfigurationReload() {
 #endif
 
 void PumpFromEngineTick(const char* source) {
+#if defined(__ANDROID__)
+    if (!AndroidCameraReady()) return;
+#endif
 #if !defined(_WIN32)
     // All three drained ahead of the re-entrancy guard: they carry input and
     // configuration that must not be skipped just because this tick was entered
@@ -2337,6 +2361,12 @@ void __fastcall DetourRenderLoop(void* pipeline, void* loop_pointer,
 }
 
 void __fastcall DetourPushState(void* instance, void* state, void* method) {
+#if defined(__ANDROID__)
+    if (!AndroidCameraReady()) {
+        if (g_original_push_state) g_original_push_state(instance, state, method);
+        return;
+    }
+#endif
     g_push_state_calls.fetch_add(1, std::memory_order_relaxed);
     // A character switch can arrive inside this camera update, before the
     // tail-tick pump runs. Hide the new head before Cinemachine pushes a frame.
@@ -2363,6 +2393,9 @@ void __fastcall DetourTailLateTick(void* instance, float deltaTime, void* method
     if (g_original_tail_late_tick) {
         g_original_tail_late_tick(instance, deltaTime, method);
     }
+#if defined(__ANDROID__)
+    if (!AndroidCameraReady()) return;
+#endif
     // The hook is on CameraManager::TailLateTick, so `instance` is the game's
     // main camera manager - the object that owns the look input the first-person
     // gyroscope must feed. Captured here (with a gchandle to keep it pinned)
@@ -2388,6 +2421,12 @@ void __fastcall DetourTailLateTick(void* instance, float deltaTime, void* method
 }
 
 void __fastcall DetourCameraTick(void* instance, void* method) {
+#if defined(__ANDROID__)
+    if (!AndroidCameraReady()) {
+        if (g_original_camera_tick) g_original_camera_tick(instance, method);
+        return;
+    }
+#endif
     FpFacingRestoreBeforeTick();
     if (g_original_camera_tick) {
         g_original_camera_tick(instance, method);
@@ -2402,6 +2441,45 @@ void __fastcall DetourCameraTick(void* instance, void* method) {
         PumpFirstPerson();
     }
 }
+
+#if defined(__ANDROID__)
+void AndroidCameraFrame(bool suspend) {
+    if (!AndroidCameraReady()) return;
+    static uint64_t previous_generation = 0;
+    if (suspend) {
+        g_toggle_request.store(false);
+        g_pause_request.store(false);
+        g_motion_request.store(false);
+        g_keyframe_add_request.store(false);
+        g_keyframe_play_request.store(false);
+        g_keyframe_clear_request.store(false);
+        g_vmd_play_request.store(false);
+        g_first_person_toggle_request.store(false);
+        ExitFirstPerson("Android Activity lost focus", true);
+        Mmd::Stop("Android Activity paused");
+        RequestCharacterMotion(4u);
+        PumpCharacterMotion();
+        ExitFreeCamera("Android Activity lost focus");
+        RestoreWorldPause("Android Activity lost focus");
+    } else {
+      if (previous_generation == g_android_pump_generation) {
+        // No game-side pump ran since the last rendered frame. This remains on
+        // Unity's thread even when gameplay ticks stop at timeScale == 0.
+        PumpFromEngineTick("Android render frame");
+        PumpFirstPerson();
+      }
+    }
+    previous_generation = g_android_pump_generation;
+    const unsigned capabilities = (g_free_camera_contract_ready && g_free_camera_enabled.load() ? 1u : 0u) |
+        (g_pause_enabled.load() ? 8u : 0u) |
+        (g_first_person_contract_ready && g_first_person_camera_enabled.load() ? 2u : 0u) |
+        (g_dither_contract_ready && g_disable_dither_enabled.load() ? 4u : 0u);
+    const unsigned active = (g_free_camera_active ? 1u : 0u) |
+        (g_changed_time_scale ? 8u : 0u) |
+        (g_first_person_active.load() ? 2u : 0u);
+    betterendfieldnext::PublishAndroidCameraState(capabilities, active);
+}
+#endif
 
 std::string Trim(std::string_view value) {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
@@ -2498,16 +2576,17 @@ bool ParseGlobalFovCommand(std::string_view text, bool& enabled, float& fov) {
 // no camera state, no layout, no hotkey. Switching the feature on or off is
 // deliberately not accepted here; that decides whether the module runs at all,
 // which a reload has to settle.
+#if !defined(_WIN32)
 void DrainGlobalFovCommand() {
     std::string text;
-    if (!betterendfield::AcquirePanelCommand("global_fov", text)) {
+    if (!betterendfieldnext::AcquirePanelCommand("global_fov", text)) {
         return;
     }
     bool enabled = false;
     float fov = g_global_fov.load(std::memory_order_relaxed);
     if (!ParseGlobalFovCommand(text, enabled, fov) ||
         !std::isfinite(fov) || fov < kFreeMinFov || fov > kFreeMaxFov) {
-        betterendfield::AcknowledgePanelCommand("rejected");
+        betterendfieldnext::AcknowledgePanelCommand("rejected");
         Log("Global FOV rejected: expected enabled=<bool> and value=<5..150>.");
         return;
     }
@@ -2516,7 +2595,7 @@ void DrainGlobalFovCommand() {
     // loaded. Accepting the value without them would report success for an
     // override that never runs.
     if (!g_push_state_hook_ready || !g_state_layout.ready) {
-        betterendfield::AcknowledgePanelCommand("rejected");
+        betterendfieldnext::AcknowledgePanelCommand("rejected");
         Log("Global FOV unavailable: the camera state or the push hook was not resolved.");
         return;
     }
@@ -2525,12 +2604,14 @@ void DrainGlobalFovCommand() {
     // is enabling.
     g_global_fov.store(fov, std::memory_order_release);
     g_global_fov_enabled.store(enabled, std::memory_order_release);
-    betterendfield::AcknowledgePanelCommand("applied");
+    betterendfieldnext::AcknowledgePanelCommand("applied");
     char summary[128];
     std::snprintf(summary, sizeof(summary),
         "Global FOV set to %.1f degrees without reloading the configuration.", fov);
     Log(summary);
 }
+
+#endif
 
 int ParseVirtualKey(std::string_view value, int fallback) {
     std::string key = Trim(value);
@@ -2593,7 +2674,7 @@ CameraConfiguration ParseConfiguration(const char* raw_configuration) {
         line_start = text.find_first_not_of("\r\n", line_end);
         if (line.empty() || line.front() == ';' || line.front() == '#') continue;
         if (line.front() == '[' && line.back() == ']') {
-            in_section = line == "[betterendfield.camera]";
+            in_section = line == "[betterendfieldnext.camera]";
             continue;
         }
         if (!in_section) continue;
@@ -2984,7 +3065,7 @@ bool InstallHook() {
 }
 
 BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
-    if (!host || host->abi_version != BETTER_ENDFIELD_MODULE_ABI_V1 ||
+    if (!host || host->abi_version != BETTER_ENDFIELD_NEXT_MODULE_ABI_V1 ||
         !host->resolve_method || !host->create_hook || !host->runtime_invoke ||
         !host->object_unbox || !host->log) {
         return BE_Result_InvalidArgument;
@@ -3012,7 +3093,14 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     g_input_thread_stop.store(false, std::memory_order_release);
     g_input_thread = std::thread(InputThreadMain);
     g_state.store(ModuleState::Ready, std::memory_order_release);
-    Log("BetterEndfield.Camera module initialized successfully.");
+#if defined(__ANDROID__)
+    const auto global_ready = [](const char* key) { const auto* c = Contract(key); return c && c->resolved; };
+    g_android_global_fov_ready.store(g_push_state_hook_ready && g_state_layout.ready &&
+        global_ready("unity.camera.main") && global_ready("unity.camera.orthographic.get") &&
+        global_ready("unity.component.game_object") && global_ready("unity.object.op_equality"), std::memory_order_release);
+    betterendfieldnext::SetAndroidFrameClient(betterendfieldnext::FrameClient::Camera, &AndroidCameraFrame);
+#endif
+    Log("BetterEndfieldNext.Camera module initialized successfully.");
     return BE_Result_Ok;
 }
 
@@ -3123,7 +3211,7 @@ BE_Result BE_CALL ConfigurationChanged(const char* raw_configuration) {
         // The settings app cannot know the game's data path, so an unset camera
         // path falls back to the one the MMD library root implies.
         if (g_keyframe_file.empty()) {
-            const char* root = std::getenv("BETTER_ENDFIELD_MMD_ROOT");
+            const char* root = std::getenv("BETTER_ENDFIELD_NEXT_MMD_ROOT");
             if (root && *root) {
                 g_keyframe_file = MmdLibrary::ToUtf8(
                     MmdLibrary::FromUtf8(root).parent_path() / "camera-path.becam");
@@ -3185,6 +3273,11 @@ BE_Result BE_CALL ConfigurationChanged(const char* raw_configuration) {
 }
 
 void BE_CALL Shutdown() {
+#if defined(__ANDROID__)
+    betterendfieldnext::SetAndroidFrameClient(betterendfieldnext::FrameClient::Camera, nullptr);
+    betterendfieldnext::PublishAndroidCameraState(0, 0);
+    g_android_global_fov_ready.store(false, std::memory_order_release);
+#endif
     g_free_camera_enabled.store(false, std::memory_order_release);
     g_global_fov_enabled.store(false, std::memory_order_release);
     g_disable_dither_enabled.store(false, std::memory_order_release);
@@ -3227,25 +3320,30 @@ void BE_CALL Shutdown() {
 }
 
 const BE_ModuleApiV1 kApi{
-    {kModuleId, "Camera Enhancements", "1.6.0", BETTER_ENDFIELD_MODULE_ABI_V1},
+    {kModuleId, "Camera Enhancements", "1.6.0", BETTER_ENDFIELD_NEXT_MODULE_ABI_V1},
     &Initialize,
     &ConfigurationChanged,
     &Shutdown};
 
 } // namespace
-} // namespace BetterEndfield::CameraModule
+} // namespace BetterEndfieldNext::CameraModule
 
 #if defined(__ANDROID__)
 // ---------------------------------------------------------------------------
 // MMD as the host sees it. android_camera.h declares these in the
-// `betterendfield` namespace, which is not the camera module's namespace, while
+// `betterendfieldnext` namespace, which is not the camera module's namespace, while
 // the module's MMD state lives in the anonymous namespace above. This pair is
 // the forwarding bridge between the two; the definitions have to sit in a named
 // namespace to be reachable from anywhere else.
 // ---------------------------------------------------------------------------
-namespace BetterEndfield::CameraModule {
+namespace BetterEndfieldNext::CameraModule {
 bool QueueMmdCommandForAndroid(unsigned type, int argument, double value,
     const std::string& text) {
+    const bool camera_tool = type >= 8 && type <= 14;
+    if ((!g_mmd_enabled.load() && !(camera_tool && g_free_camera_enabled.load())) ||
+        type == 0 || type > 15 || !std::isfinite(value) ||
+        text.size() >= MmdOverlayProtocol::kTextCapacity ||
+        (type == 6 && !text.empty() && !MmdLibrary::PlainFolderName(text))) return false;
     MmdOverlayProtocol::Command command{};
     command.type = type;
     command.argument = argument;
@@ -3268,28 +3366,46 @@ std::string MmdStatusForAndroid() {
 std::string CameraValuesStatusForAndroid() {
     return "camera.speed=" + std::to_string(g_movement_speed.load()) + "\n" +
         "camera.fov=" + std::to_string(g_field_of_view.load()) + "\n" +
+        "camera.global_fov_ready=" + (g_android_global_fov_ready.load(std::memory_order_acquire) ? "1\n" : "0\n") +
         "camera.global_fov_enabled=" + (g_global_fov_enabled.load() ? "1\n" : "0\n") +
         "camera.global_fov=" + std::to_string(g_global_fov.load()) + "\n";
 }
-}  // namespace BetterEndfield::CameraModule
+}  // namespace BetterEndfieldNext::CameraModule
 
-namespace betterendfield {
+namespace betterendfieldnext {
+bool AndroidGlobalFov(bool enabled, float fov) {
+    using namespace BetterEndfieldNext::CameraModule;
+    if (!g_android_global_fov_ready.load(std::memory_order_acquire) ||
+        !std::isfinite(fov) || fov < 5.0f || fov > 150.0f) return false;
+    g_global_fov.store(fov, std::memory_order_release);
+    g_global_fov_enabled.store(enabled, std::memory_order_release);
+    return true;
+}
+void AndroidCameraValues(float speed, float fov) {
+    using namespace BetterEndfieldNext::CameraModule;
+    if (std::isfinite(speed)) g_movement_speed.store(std::clamp(speed, 0.2f, 60.0f));
+    if (std::isfinite(fov)) {
+        fov = std::clamp(fov, 20.0f, 120.0f);
+        g_field_of_view.store(fov);
+        g_android_fov_request.store(fov);
+    }
+}
 // The JNI layer may queue directly instead of going through the panel pump; both
 // land in the same queue and are executed by Mmd::Pump on the frame thread.
 bool AndroidMmdCommand(unsigned type, int argument, double value, const std::string& text) {
-    return BetterEndfield::CameraModule::QueueMmdCommandForAndroid(type, argument, value, text);
+    return BetterEndfieldNext::CameraModule::QueueMmdCommandForAndroid(type, argument, value, text);
 }
 
 std::string AndroidMmdStatus() {
-    return BetterEndfield::CameraModule::MmdStatusForAndroid();
+    return BetterEndfieldNext::CameraModule::MmdStatusForAndroid();
 }
 
 std::string AndroidCameraValuesStatus() {
-    return BetterEndfield::CameraModule::CameraValuesStatusForAndroid();
+    return BetterEndfieldNext::CameraModule::CameraValuesStatusForAndroid();
 }
-}  // namespace betterendfield
+}  // namespace betterendfieldnext
 #endif
 
-BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfield_GetModuleApiV1() {
-    return &BetterEndfield::CameraModule::kApi;
+BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfieldNext_GetModuleApiV1() {
+    return &BetterEndfieldNext::CameraModule::kApi;
 }

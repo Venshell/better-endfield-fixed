@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 constexpr char kLog[] = "headwear_canary";
 Il2CppRuntime* canary_runtime = nullptr;
@@ -219,9 +219,9 @@ bool Probe(Il2CppRuntime& runtime, void* renderer, void* source, bool bind) {
         throw std::runtime_error("headwear active patch budget exceeded");
     auto name = Method(runtime, "Object", "get_name", "", "System.String", 0);
     const std::string source_name = runtime.CopyString(Call(runtime, name, source));
-    if (!BetterEndfield::FirstPersonHeadwear::SafeMeshName(source_name))
+    if (!BetterEndfieldNext::FirstPersonHeadwear::SafeMeshName(source_name))
         throw std::runtime_error("source mesh name unsafe for catalog lookup");
-    const char* directory = std::getenv("BETTER_ENDFIELD_HEADWEAR_DIRECTORY");
+    const char* directory = std::getenv("BETTER_ENDFIELD_NEXT_HEADWEAR_DIRECTORY");
     if (!directory) throw std::runtime_error("headwear directory unavailable");
     const std::string path = std::string(directory) + "/" + source_name + ".behw";
     const auto bytes = ReadFixture(path.c_str());
@@ -229,9 +229,9 @@ bool Probe(Il2CppRuntime& runtime, void* renderer, void* source, bool bind) {
     for (const auto& patch : patches) active_bytes += patch.fixture_bytes;
     if (bytes.size() > kMaxActiveFixtureBytes - active_bytes)
         throw std::runtime_error("headwear aggregate fixture budget exceeded");
-    BetterEndfield::FirstPersonHeadwear::Fixture fixture;
+    BetterEndfieldNext::FirstPersonHeadwear::Fixture fixture;
     std::string error;
-    if (!BetterEndfield::FirstPersonHeadwear::Parse(bytes, fixture, error))
+    if (!BetterEndfieldNext::FirstPersonHeadwear::Parse(bytes, fixture, error))
         throw std::runtime_error(error);
     if (source_name != fixture.mesh_name)
         throw std::runtime_error("source mesh name differs");
@@ -259,7 +259,7 @@ bool Probe(Il2CppRuntime& runtime, void* renderer, void* source, bool bind) {
         const int format=Value<int>(runtime,index_format,mesh);
         const uint32_t width=format==0 ? 2u : format==1 ? 4u : 0u;
         if (!AndroidReadMeshSubmeshes(mesh,descriptors) ||
-            !BetterEndfield::FirstPersonHeadwear::MatchesDrawMetadata(fixture,descriptors,width))
+            !BetterEndfieldNext::FirstPersonHeadwear::MatchesDrawMetadata(fixture,descriptors,width))
             throw std::runtime_error("mesh submesh metadata or index format differs");
     };
     auto attribute_count = Method(runtime, "Mesh", "get_vertexAttributeCount", "", "System.Int32", 0);
@@ -332,7 +332,7 @@ bool Probe(Il2CppRuntime& runtime, void* renderer, void* source, bool bind) {
         if (!pointer || pointer == NativePointer(runtime, cached, source) ||
             !skin.Write(pointer, influences, true))
             throw std::runtime_error("owned Mesh skin initialization rejected");
-        BetterEndfield::CustomModel::BemComponent component;
+        BetterEndfieldNext::CustomModel::BemComponent component;
         component.info.component_id = 0; // Internal mesh submission, no BEM component identity.
         component.info.original_index_count = fixture.index_count;
         component.info.vertex_count = fixture.vertex_count;
@@ -494,20 +494,20 @@ bool Probe(Il2CppRuntime& runtime, void* renderer, void* source, bool bind) {
 
 void ConfigureHeadwearCanary(Il2CppRuntime& runtime) { canary_runtime = &runtime; }
 void AndroidWarmHeadwearLayout() {
-    if (canary_runtime && std::getenv("BETTER_ENDFIELD_HEADWEAR_DIRECTORY"))
+    if (canary_runtime && std::getenv("BETTER_ENDFIELD_NEXT_HEADWEAR_DIRECTORY"))
         WarmLoadedUnityMeshLayout();
 }
 
 bool AndroidHeadwearFixtureAvailable(void* renderer, void* source_mesh) {
-    const char* directory = std::getenv("BETTER_ENDFIELD_HEADWEAR_DIRECTORY");
+    const char* directory = std::getenv("BETTER_ENDFIELD_NEXT_HEADWEAR_DIRECTORY");
     if (!canary_runtime || !renderer || !source_mesh || !directory) return false;
     try {
         auto name_method = Method(*canary_runtime, "Object", "get_name", "", "System.String", 0);
         const auto name = canary_runtime->CopyString(Call(*canary_runtime, name_method, source_mesh));
-        if (!BetterEndfield::FirstPersonHeadwear::SafeMeshName(name)) return false;
+        if (!BetterEndfieldNext::FirstPersonHeadwear::SafeMeshName(name)) return false;
         // Generated candidates are the primary world Renderer, not an extra
         // shadowProxyMobile component sharing that same source mesh.
-        if (!BetterEndfield::FirstPersonHeadwear::PrimaryRendererName(
+        if (!BetterEndfieldNext::FirstPersonHeadwear::PrimaryRendererName(
             canary_runtime->CopyString(Call(*canary_runtime, name_method, renderer)), name)) return false;
         std::ifstream file(std::string(directory) + "/" + name + ".behw", std::ios::binary | std::ios::ate);
         return file && file.tellg() > 0 && file.tellg() <= 16 * 1024 * 1024;

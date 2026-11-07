@@ -5,7 +5,7 @@
 // Lateral turn interpolation is adapted from RenoDX Endfield Enhancer
 // camera_movement.hpp (MIT); attribution is in THIRD_PARTY_NOTICES.md.
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 enum class FacingMode { Inactive, Entity, Visual };
 struct FacingInput {
     bool active = false;
@@ -114,4 +114,4 @@ inline FacingResult StepFacing(FacingState& state, const FacingInput& input) {
     state.attached = true;
     return {FacingMode::Entity, state.held_yaw};
 }
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

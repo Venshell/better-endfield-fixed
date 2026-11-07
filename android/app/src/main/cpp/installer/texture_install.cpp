@@ -10,8 +10,8 @@
 #include <mutex>
 #include <stdexcept>
 
-namespace betterendfield {
-using J=BetterEndfield::CustomModel::BemJson;
+namespace betterendfieldnext {
+using J=BetterEndfieldNext::CustomModel::BemJson;
 namespace {
 std::mutex activeMutex;
 astcenc_context* activeContext=nullptr;
@@ -74,8 +74,6 @@ std::vector<uint8_t> decode(const uint8_t* source,int format,unsigned w,unsigned
     }
     return pixels;
 }
-// Box-filtered 1/factor decode, processed in row bands so an oversized single-level
-// texture (BEM 1.2 allows 256 MiB) never needs a full-resolution RGBA copy.
 std::vector<uint8_t> decodeScaled(const uint8_t* source,int format,unsigned w,unsigned h,unsigned factor,
     const std::function<void()>& checkpoint) {
     if(factor==1) return decode(source,format,w,h,checkpoint);
@@ -145,10 +143,12 @@ bool DetectNormalCandidate(const J& texture, const uint8_t* source, int format, 
     return false;
 }
 }
+
 void CancelTextureCompression() {
     std::lock_guard<std::mutex> lock(activeMutex);
     if(activeContext) astcenc_compress_cancel(activeContext);
 }
+
 void ConvertInstalledTexture(const J& manifest,J& texture,std::vector<uint8_t>& bytes,const J& rules,bool astc,
     const std::function<void()>& checkpoint,
     const std::function<void(unsigned, unsigned, float)>& progress) {
@@ -164,30 +164,25 @@ void ConvertInstalledTexture(const J& manifest,J& texture,std::vector<uint8_t>& 
     }
     std::string encoding=texture.value("normal_encoding",std::string{});
     std::string semantic=texture.value("semantic",std::string{});
-    bool normal=semantic=="normal" || DetectNormalCandidate(texture,bytes.data(),format,w,h);
-    auto character=manifest.at("target").at("character_id").get<std::string>();
+    bool normal=semantic=="normal" || DetectNormalCandidate(texture, bytes.data(), format, w, h);
+    const auto& target=manifest.at("target");
+    const bool characterTarget=target.value("kind",std::string{"character"})=="character";
+    auto owner=target.at(target.contains("kind")?"id":"character_id").get<std::string>();
     auto name=texture.at("original_name").get<std::string>();
     const J* rule=nullptr;
-    if(rules.contains(character) && rules.at(character).contains(name)) {rule=&rules.at(character).at(name);normal=true;}
-    // Known original material slots establish semantics; the content heuristics
-    // above extend the same inference to unsigned desktop packages.
+    if(characterTarget && rules.contains(owner) && rules.at(owner).contains(name)) {rule=&rules.at(owner).at(name);normal=true;}
     if(encoding.empty() && normal) {
         if(format==27) encoding="xy-unorm";
-        else if(format==4) encoding="xyz-unorm"; // already adapted RGBA source
+        else if(format==4) encoding="xyz-unorm";
         else if(format==25) encoding=rule?rule->value("bc7_encoding","xy-unorm"):"xy-unorm";
         else encoding="xy-unorm";
     }
-    require(!normal || !encoding.empty(),"Normal slot has no verified source encoding; add normal_encoding metadata");
-    require(encoding.empty() || encoding=="xy-unorm" || encoding=="xyz-unorm","Unsupported normal encoding");
     if(!encoding.empty()) {normal=true;srgb=false;}
     if(format==63) {
         require(!normal,"Single-channel normal unsupported");
         require(installable,"R8 texture exceeds the Android 8192/64 MiB install limit");return;
     }
-    // Conservative 4x4 for linear data preserves packed channels; color maps use 6x6.
     unsigned block=srgb?6:4;
-    // BEM 1.2 PC textures may exceed the Android install limits. Drop top mips
-    // (or box-filter a single-level texture) until the converted chain fits.
     auto converted=[&](unsigned tw,unsigned th,unsigned levels) {
         size_t total=0;
         for(unsigned m=0;m<levels;++m) {

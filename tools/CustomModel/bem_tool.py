@@ -11,7 +11,7 @@ from pathlib import Path
 import bem_v1 as bem
 import bem_projects
 
-TOOL_VERSION = "1.6.3"
+TOOL_VERSION = "1.6.7"
 FORMAT_VERSIONS = {0: '1.0', 1: '1.1', 2: '1.2', 3: '1.3', 4: '1.4', 5: '1.5'}
 from convert_efmi_poc import Source
 from efmi_source import sections, analyze_source
@@ -262,6 +262,9 @@ def convert_automatic(source, output, ini=None, package=None, deformations=None)
 
 def main(argv=None):
     raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0] == 'compose':
+        from bem_compose_cli import main as compose_main
+        return compose_main(raw_argv[1:])
     # Keep the established single-command CLI while also accepting the more
     # discoverable `workspace init ROOT --source INPUT` spelling.
     if len(raw_argv) >= 2 and raw_argv[0] == 'workspace' and raw_argv[1] == 'init':

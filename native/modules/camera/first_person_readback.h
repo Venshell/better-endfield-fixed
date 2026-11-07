@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 enum class ReadbackError { None, InvalidSize, OutOfRange, BudgetExceeded };
 struct ReadbackPlan {
     ReadbackError error = ReadbackError::None;
@@ -17,4 +17,4 @@ inline ReadbackPlan PlanReadback(int count, int stride, size_t expected) {
     if (expected > bytes) return {ReadbackError::OutOfRange};
     return {ReadbackError::None, bytes, expected};
 }
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

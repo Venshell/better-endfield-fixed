@@ -4,7 +4,7 @@
 #include "../modules/camera/module.cpp"
 #include <iostream>
 #include <stdexcept>
-using namespace BetterEndfield::CameraModule;
+using namespace BetterEndfieldNext::CameraModule;
 void Check(bool value,const char* message){if(!value)throw std::runtime_error(message);}
 int main(){try{
     FpSnapshot original;

@@ -7,14 +7,21 @@ import shutil
 
 from build_android_headwear_fixture import asset_profiles, bounded_json
 
-MAX_COUNT = 834
+MAX_COUNT = 898
 MAX_TOTAL = 96 * 1024 * 1024
+EXPECTED_COVERAGE_SHA256 = "7e4d833ded5b2d96ef0d2408aa62181dc39ebf7d104f7541bff89edf005ec0c6"
 
 
 def stage(catalog, output):
+    coverage_path = catalog / "coverage.json"
+    if coverage_path.stat().st_size > 64 * 1024 * 1024:
+        raise ValueError("metadata exceeds 64 MiB")
+    coverage_bytes = coverage_path.read_bytes()
+    if hashlib.sha256(coverage_bytes).hexdigest() != EXPECTED_COVERAGE_SHA256:
+        raise ValueError("headwear v61 coverage fingerprint differs")
     coverage = bounded_json(catalog / "coverage.json")
     if coverage.get("schema") != 3 or len(coverage.get("included", [])) != MAX_COUNT:
-        raise ValueError("headwear catalog must contain the complete accepted 834 v3 fixtures")
+        raise ValueError("headwear catalog must contain the complete accepted 898 v3 fixtures")
     # Windows Path ordering folds case; the shared ASCII manifest contract
     # requires ordinal filename ordering, matching Java String.compareTo.
     files = sorted(catalog.glob("*.behw"), key=lambda path: path.name)
@@ -43,7 +50,7 @@ def stage(catalog, output):
             raise ValueError("packaged asset differs from accepted profile")
     payload = "".join(rows).encode("utf-8")
     bundle_id = hashlib.sha256(payload).hexdigest()
-    manifest = f"BEHWASSETS\t1\t50\t{bundle_id}\n".encode("utf-8") + payload
+    manifest = f"BEHWASSETS\t1\t61\t{bundle_id}\n".encode("utf-8") + payload
     if len(manifest) > 256 * 1024:
         raise ValueError("manifest exceeds bound")
     # This path is the sole Gradle-generated output, never a user resource tree.

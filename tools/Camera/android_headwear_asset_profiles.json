@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "scope": "Android game versionCode 50; bounda cloth01 only",
+  "scope": "Android game versionCode 61; bounda cloth01 source and fixture bytes match the accepted versionCode 50 profile",
   "acceptance": "2026-10-01 user accepts remaining small triangle edges; no angle limit",
   "profiles": [
     {

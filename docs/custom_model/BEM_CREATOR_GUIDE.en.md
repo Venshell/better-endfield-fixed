@@ -1,0 +1,510 @@
+# BEM Creator Guide
+
+BEM (`.bem`) is Better Endfield Next's model replacement package. Versions 1.0–1.3 target one character; 1.4 targets a character or weapon ID and can separately replace ordinary forms, ultimate prefabs and weapon resources while retaining options and position sliders. Windows and Android can share a package when it declares the resource and donor contracts for each platform.
+
+| Document | Contents |
+| --- | --- |
+| This guide | Tools, authoring workflows, import testing, distribution, and troubleshooting |
+| [Format specification](BEM_FORMAT_SPEC.en.md) | File structure, fields, and limits for 1.0–1.3 |
+| [BEM 1.4 extension](BEM_V1_4_SPEC.md) | Multiple resources, weapons, static meshes and platform declarations |
+| [Runtime behavior and compatibility](BEM_RUNTIME_COMPATIBILITY.en.md) | Component matching, geometry and texture requirements, memory cost, hot switching, first-person behavior, and log messages |
+| [Converting source Mods](BEM_SOURCE_MOD_CONVERSION.en.md) | Automatic conversion coverage, recipes, identity rules, and conversion errors for EFMI / 3DMigoto Mods |
+
+## Tools
+
+| Tool | Location | Purpose |
+| --- | --- | --- |
+| Standalone creator GUI `BetterEndfieldNext.BemTools.exe` | Root of `BEM-Tools-win-x64.zip`; extract the complete archive and double-click | Projects, workspaces, conversion, packing, unpacking and collections; no main application, Python or .NET installation required |
+| BEM Tools CLI `BetterEndfieldNext.BemConverter.exe` | `tools/BemConverter/` in the application, or the root of the standalone tools | Conversion, packing, validation, unpacking, and collections; the core of every workflow |
+| Main application creator window | Character appearance page → “BEM Creator Tools…”; older versions use “Convert other source Mod…” | Shares the standalone GUI window code and calls the same CLI |
+| Blender exporter | `blender_addon/bem_exporter/` in the portable tool | Export an editable BEM project from Blender objects named `BEM_C<number>` |
+| Desktop model manager | Character appearance page | Importing, enabling, choosing appearances and options, and adjusting sliders |
+| Android model page | Better Endfield Next App | Importing, enabling, choosing, and converting textures on the phone |
+| AI skill `bem-creator` | Standalone `skills/bem-creator` package | Helps prepare recipes and explain reports; it does not replace validation |
+
+BEM Tools 1.6.4 reads and writes BEM 1.0–1.5 and includes the standalone GUI. The older official 1.5.0 distribution does not include BEM 1.4. Tool and format versions are separate. The current `--version` returns `BEM Tools 1.6.4 / BEM 1.0+1.1+1.2+1.3+1.4+1.5`. When running from source, use `python tools/CustomModel/bem_tool.py` instead of the executable. The release archive is named `BEM-Tools-win-x64.zip`; the filename carries no version, so **`--version` is the only authority** — do not infer the version from the archive name.
+
+Extract the entire standalone package and launch `BetterEndfieldNext.BemTools.exe`, keeping the CLI and support files beside it. The GUI follows the system language. Drop one `.bemproj.json` file onto the EXE icon or pass its path as an argument to open an export project. The creator window inside the main application still uses that application's language preference.
+
+The target refresh bundled with this tree covers Snowshine's Windows 1.6.3 contracts and source identities while retaining the Jsspsi/Minghe data added in 1.5.3, in the bundled catalog/ and profiles/ directories. Follow each collection's readiness and missing-evidence fields: runtime capture alone does not establish automatic source conversion or tested replacement rendering. This update does not establish compatibility with a new Android game version.
+
+## Three authoring workflows
+
+1. **Convert an existing Mod.** Standard EFMI ComponentN Mods are usually convertible directly; other formats require a recipe. See [Converting source Mods](BEM_SOURCE_MOD_CONVERSION.en.md).
+2. **Edit an existing BEM.** Run `unpack` to create an editable project, modify it, then run `pack`.
+3. **Create a package directly.** Prepare `project.json` and binary payloads according to the [format specification](BEM_FORMAT_SPEC.en.md), then run `pack`.
+
+For every workflow, keep an **export task** (`.bemproj.json`) so the package can be rebuilt consistently later.
+
+## Creating a BEM project directly
+
+Authors who work in Blender, Maya, 3ds Max, or another modelling tool can skip EFMI conversion and prepare an editable BEM project directly. Their source files commonly look like this:
+
+```text
+outfit.blend                 # or another modelling project
+textures/                    # PNG, TGA, DDS, and other author textures
+project.json                 # BEM project manifest
+payloads/*.bin               # raw mesh, index, and texture bytes
+export.bemproj.json          # repeatable export task
+```
+
+`project.json` is the low-level BEM project format. It is intended to be generated by an exporter or an advanced tool rather than written from scratch by hand. The modelling tool handles geometry, weights, UVs, normals, and author textures; BEM Tools handles format selection, payload deduplication, compression, validation, and final packaging.
+
+The bundled Blender exporter supports the verified 16/12/12 skin layout, fixed appearances and explicit texture identities, producing a legacy character target project. Name objects `BEM_C0`, `BEM_C1`, and so on, or set the `bem_component_id` custom property. It does not directly export 1.4 resource tables or static weapons; use the editable-project workflow below for those targets. Special vertex layouts, option groups and shape sliders should still use an editable project or a reviewed recipe.
+
+Direct authoring still requires the target character's component, bone, material-slot, texture, and world/UI resource identities. The distributed `catalog/` supplies identity and layout data, but it does not include complete character models. Authors provide their own modelling reference or local template.
+
+BEM does not contain shader programs. Each draw still selects a native game material as its donor, and author textures replace explicit texture slots on that material. A model that looks correct in Blender still needs its material identities mapped for the game.
+
+A recommended workspace is:
+
+```text
+my-outfit/
+├─ source/                   # the author's blend, FBX, or other source files
+├─ textures/                # author textures
+├─ project/                 # project.json and payloads from the exporter
+├─ recipe/                  # optional manual mapping data
+├─ dist/                    # final .bem files
+├─ reports/                 # inspect / validate reports
+└─ character.bemproj.json   # stable export task
+```
+
+Distribute the `.bem` file to players. Include the source project, recipe, and `project.json` only when an editable project is intended for other creators.
+
+## Export tasks
+
+The desktop creator window creates or opens an export task. Select a source Mod or editable project, enter the package name, author, version, and output path, then save `*.bemproj.json`. Later, open the same task and choose “save parameters and build BEM”.
+
+```json
+{
+  "schema": 1, "kind": "bem-export-task", "mode": "pack",
+  "source": "editable/project.json",
+  "recipe": "",
+  "deformations": "body-morphs.json",
+  "output": "dist/character.bem",
+  "report": "reports/build.json",
+  "package": {"id": "creator.my-character", "name": "My Character", "author": "Author", "version": "1.0.0"}
+}
+```
+
+- `mode` is `pack` for an editable project and `convert` for a source Mod; `convert` may specify `recipe`.
+- Paths are relative to the task file. Saving the task elsewhere rewrites relative paths.
+- `package.id` is chosen when the task is created and remains stable for later updates. It must match `[A-Za-z0-9][A-Za-z0-9_.-]{0,95}`.
+- If a build fails, the previous output package is preserved.
+
+CLI equivalent:
+
+```text
+BetterEndfieldNext.BemConverter.exe new-project editable/project.json --mode pack -o character.bemproj.json
+BetterEndfieldNext.BemConverter.exe new-project source-mod.zip --recipe conversion.recipe.json -o character.bemproj.json
+BetterEndfieldNext.BemConverter.exe build character.bemproj.json
+```
+
+Optional `new-project` arguments include `--deformations`, `--export-output`, `--package-id`, `--name`, `--author`, and `--package-version`. `build` reads the task file; edit the task to change its output, recipe, or deformation input.
+
+To organize inputs and outputs into a movable self-contained workspace, initialize one with:
+
+```text
+BetterEndfieldNext.BemConverter.exe workspace init my-character-workspace --source original-mod.zip --mode convert
+BetterEndfieldNext.BemConverter.exe build my-character-workspace/export.bemproj.json
+```
+
+Workspace initialization copies the source archive, or `project.json` and its payloads, creates `source`, `project`, `textures`, `dist`, and `reports` directories, and continues to use the same `.bemproj.json` format. The target directory must be new or empty.
+
+## Editable projects
+
+`unpack` turns a BEM package into `project.json` and `payloads/NNNN.bin`:
+
+```json
+{"manifest": {"the full BEM manifest": "..."}, "payload_files": ["payloads/0000.bin", "payloads/0001.bin"]}
+```
+
+- The order of `payload_files` is the Payload ID. Paths must stay inside the project directory; absolute paths and `..` are rejected. There can be at most 16,384 files; each is at most 512 MiB and the total is at most 2 GiB.
+- Payloads are raw native vertex, index, and texture bytes. They are not Blender/FBX files and do not restore source INI files or shaders.
+- The output directory for `unpack` must not already exist. Repacking preserves data semantics, but compressed bytes do not have to be identical.
+- `pack` adds required capability declarations, selects the lowest format version that can represent the content, and shares identical bytes.
+
+## Choosing a format version
+
+Usually the tool chooses the version automatically. Decide which appearance structure you need:
+
+| Need | Use |
+| --- | --- |
+| A small number of complete fixed appearances | 1.0 `appearances`, up to 64 |
+| Independently composable clothes, parts, or textures | 1.1+ `option_groups` + `component_rules` |
+| Recoloring without duplicating draws | 1.2 `texture_slots` |
+| Different bone names in world and UI resources | 1.2 `bone_name_aliases` |
+| Large textures such as 8K (a single texture over 64 MiB) | 1.2 or later |
+| Continuous body adjustment | 1.3 `parameters` + `mesh_deformations` |
+| Separate ordinary and ultimate resources | 1.4 `target.resources` and component `resource`/`renderer_path` |
+| Static weapon MeshRenderer + MeshFilter | 1.4 `renderer_kind: static`, without dummy bones |
+| Platform-specific LODs and donors in one package | 1.4 resource `platforms` and `lod` |
+
+## Weapon and ultimate projects (1.4)
+
+| Entry point | 1.4 coverage |
+| --- | --- |
+| `pack` / `unpack` / `build` / `validate` | Explicit resources, static/skinned meshes, existing options and position sliders |
+| `inspect` / `validate --resource ID --platform PLATFORM` | Selected resource plan; `validate` still validates the whole package |
+| `bundle` | Legacy character and 1.4 packages in the same standard ZIP |
+| `target-profile` | Unverified profile and keep-only project from an exact native graph |
+| Source Mod `convert` | Existing character catalog and reviewed recipes; no general weapon/ultimate auto-converter |
+| Blender exporter | Legacy character projects; no direct 1.4 resource or static-mesh export |
+
+Use `target.kind: character` with the character ID, or `weapon` with the weapon ID. Each `target.resources` entry declares its ID, root name, prefab path, platforms and LOD. Components declare their resource, exact `renderer_path`, `renderer_kind`, original Mesh/index identity, materials and bones. Every mesh donor must belong to its own resource. To share geometry between prefabs, copy the descriptor with resource-local donors and share payloads.
+
+The portable distribution includes a ready-made synthetic project:
+
+```powershell
+BetterEndfieldNext.BemConverter.exe build examples/multi-resource/project/export.bemproj.json
+BetterEndfieldNext.BemConverter.exe inspect examples/multi-resource/project/dist/synthetic.bem --resource ultimate --platform windows-x64 --report ultimate-plan.json
+BetterEndfieldNext.BemConverter.exe validate examples/multi-resource/project/dist/synthetic.bem --resource weapon --platform android-arm64 --report android-plan.json
+```
+
+Its fictional resources test authoring and format behavior; it is not a playable Mod. For real targets, prepare a native graph and target spec for the intended platform:
+
+```powershell
+BetterEndfieldNext.BemConverter.exe target-profile NATIVE_GRAPH.json --spec SPEC.json -o TARGET_PROFILE.json --project project.json
+BetterEndfieldNext.BemConverter.exe pack project.json -o target.bem --report build.json
+```
+
+The generator keeps `conversion_ready` and `runtime_verified` false. Add replacement geometry, draws and texture mappings, run full validation and verify the result in the game. BEM follows the game's weapon equipment and ultimate activation; it does not execute source scripts or implement an ability state machine.
+
+Windows currently executes explicit LOD0 targets. Android accepts its declared LOD1 receivers and their own donors, preserving the mobile LOD design. Use separate resource IDs when platform contracts differ. `target.platform` remains the historical constant `windows-x64`; actual platforms come from `resources[].platforms`, so do not change the top-level constant to Android. Adding `android-arm64` to a Windows resource does not establish compatibility. A package without Android resources cannot be imported on Android; texture conversion does not supply missing resource, bone or LOD contracts.
+
+## Composable appearances (1.1+)
+
+- Every component must have exactly one `keep`, `hide`, or `replace` rule for every legal combination. The tool proves this exactly and reports reachable combinations and worst-case resource usage in `selection_space`.
+- If one source hotkey changes several variables together, merge them into one option group or use `selection_constraints`; do not generate combinations the source Mod cannot reach.
+- `available_when` only controls whether a group is shown. A hidden group's saved value is retained and restored when the group becomes available again.
+- To replace textures while retaining the original mesh, use a keep rule with `material_overrides` and confirm that the original texture name is unique in that material.
+- Each draw has its own index payload and may have a `when` condition. Identical geometry may share a payload, but do not merge an index payload that exists only for one option into another draw.
+- Do not turn advertisements or comments in a source INI into option groups.
+
+A composable package keeps all candidate resources. Switching options does not require reinstalling the package, and the runtime reads only the payloads used by the current selection.
+
+## Body sliders (1.3)
+
+Create the shape in a modelling tool while keeping the exported vertex count and order unchanged, including duplicated vertices at UV and normal seams. Provide target positions or sparse deltas. A slider changes positions only; the original skinning, material, normals, and tangents remain. Large deformations can produce lighting, intersection, or silhouette artifacts. Body deformation normally needs matching deformation on clothes and accessories.
+
+Example deformation file referenced by `deformations`:
+
+```json
+{
+  "schema": 1, "kind": "bem-position-morphs",
+  "parameters": [{"id": "body", "name": "Body", "min": 0, "max": 1000, "neutral": 0, "default": 0, "step": 1}],
+  "mesh_deformations": [{"mesh": 0, "parameter": "body", "frames": [
+    {"value": 0, "neutral": true},
+    {"value": 1000, "target_positions": "body-target.json"}
+  ]}]
+}
+```
+
+- `mesh` is the mesh index in the exported BEM.
+- Each non-neutral frame has exactly one input: `target_positions`, a position for every vertex in JSON or Float32 binary form; `deltas`, a list of `[vertex index, dx, dy, dz]`; or `efmi`, a binding to a source Mod ShapeKey. The tool subtracts the original position and stores only non-zero deltas.
+- Coordinates and units must match the exported mesh. Equal vertex counts do not prove equal topology; the author must preserve order.
+- If neutral is in the middle of the range, write three frames such as `0`, `500 neutral`, and `1000`. Interpolation is piecewise linear, and each frame is an absolute offset from the original mesh, not from the previous frame.
+- Body, clothes, and accessories move together when they use the same parameter ID. A parameter may use `available_when` to appear only with a particular outfit.
+
+Runnable example:
+
+```text
+python examples/body-slider/create_project.py --output demo-body-slider
+BetterEndfieldNext.BemConverter.exe build demo-body-slider/export.bemproj.json
+BetterEndfieldNext.BemConverter.exe validate demo-body-slider/dist/synthetic.bem
+```
+
+This is a triangular format test, not a usable character package.
+
+## Validation and reports
+
+```text
+BetterEndfieldNext.BemConverter.exe validate character.bem --report validation.json
+BetterEndfieldNext.BemConverter.exe inspect source-mod.zip --report inspection.json
+```
+
+- Exit code 0 means the operation completed; failures return 2 and explain the cause in `issues`. A completed `inspect` is not proof that conversion is ready.
+- Reports contain `tool_version`, `format_version`, `conversion_ready`, `render_verified`, and `issues`. `render_verified` is always `false` for a newly exported package.
+- `--report` must not overwrite any input or output file.
+
+## Import and test
+
+| | Windows | Android |
+| --- | --- | --- |
+| Import | Model manager → “Import BEM / ZIP”, or drag files into the page. A ZIP collection can be filtered during import. **Close the game first.** | Import one `.bem` on the app model page, or use “Open with” / “Share” from a file manager |
+| New package | Disabled by default | Enabled by default; packages with conflicting resources are disabled |
+| Storage | `models/` beside the application, named `<name> v<version> [last 8 of package_id].bem` so it can be shared as-is; if unwritable, `%LOCALAPPDATA%\\BetterEndfieldNext\\catalog\\custom-model\\packages` | App-private storage, then published to the game |
+| Update | Same `package_id` updates in place and keeps enabled state and valid selections | Each import creates a new version and keeps the selection |
+| Activation | Next game start; when hot switching is enabled, selection changes are applied to loaded instances by the game-frame scheduler | Same; 1.4 discovers explicit Android resources and still requires device validation |
+
+- Only one legacy package per character can be enabled. Version 1.4 checks resource-root conflicts on the current platform; ordinary-form and ultimate packages can coexist only when their resources do not overlap. Updates with the same package ID must preserve target kind/id.
+- A package that fails validation cannot be imported. The experimental “disable model validation” option is for development only and may render incorrectly or crash.
+- Test the scene, character details and team screen. For 1.4, also test the actual weapon, ultimate and other declared prefabs, including enable, disable and re-enable. Android legacy packages build the scene model from its detail donor; 1.4 explicit resources use their own donors. See [LOD behavior](BEM_RUNTIME_COMPATIBILITY.en.md#3-lod).
+- If the game does not change, confirm that the package is enabled and the intended appearance is selected, then check the log and compare it with the [runtime rejection table](BEM_RUNTIME_COMPATIBILITY.en.md#11-log-rejection-reference).
+
+## Mobile notes
+
+- Most phones do not support BC textures. Use the package's “Convert textures” action in the app to convert them to ASTC or RGBA32.
+- After conversion, a texture is limited to 8192 pixels and 64 MiB. The installer drops the highest mip or downsizes a single-level texture when necessary. Packages intended for phones should prefer 4K or 2K textures.
+- **Normal maps must declare their encoding.** Add `"semantic": "normal"` and `"normal_encoding": "xy-unorm"` (BC5-style XY only) or `"xyz-unorm"` to the texture entry. The tool does not infer this from the filename.
+- Larger textures increase transient CPU and GPU memory during loading regardless of package compression. See [loading cost and memory](BEM_RUNTIME_COMPATIBILITY.en.md#7-loading-cost-and-memory).
+
+## First-person compatibility
+
+Bind hair, head accessories, and ears only to the Head subtree or tail bones so first-person hiding can identify them. Do not bind body or clothing vertices to Head bones. See [First-person compatibility](BEM_RUNTIME_COMPATIBILITY.en.md#9-first-person-compatibility).
+
+## Distribution
+
+- Distribute the `.bem` file and the applicable license notice. Do not include raw dumps, game textures, or logs unless you have a reason and the rights to redistribute them.
+- Several packages can be stored in a ZIP collection:
+
+```text
+BetterEndfieldNext.BemConverter.exe bundle first.bem second.bem -o collection.zip --report bundle.json
+```
+
+  `bundle` validates each package and creates a standard stored ZIP. Do not merely rename a `.bem` to `.zip`.
+- A collection may contain at most 256 packages; each package is at most 2 GiB and the total extracted size is at most 4 GiB. Encrypted ZIPs are unsupported. Documentation, scripts, and nested ZIPs are ignored. Packages with duplicate IDs, including case-only duplicates, are skipped; other members are imported.
+- Android currently imports one `.bem` at a time; extract a collection first.
+- For updates, keep `package_id`, option-group IDs, option IDs, and parameter IDs unchanged so player settings remain valid. Changing a display name does not matter.
+
+## Command quick reference
+
+```text
+BetterEndfieldNext.BemConverter.exe inspect  <directory|zip|rar|7z|bem> [--ini path] [--report r.json]
+BetterEndfieldNext.BemConverter.exe convert  <source> -o out.bem [--recipe recipe.json] [--ini path] [--deformations m.json] [--report r.json]
+BetterEndfieldNext.BemConverter.exe pack     project.json -o out.bem [--deformations m.json] [--report r.json]
+BetterEndfieldNext.BemConverter.exe validate pkg.bem [--report r.json]
+BetterEndfieldNext.BemConverter.exe unpack   pkg.bem|collection.zip -o new-directory [--report r.json]
+BetterEndfieldNext.BemConverter.exe bundle   a.bem b.bem ... -o collection.zip [--report r.json]
+BetterEndfieldNext.BemConverter.exe new-project <source|project.json> -o task.bemproj.json [--mode convert|pack] [--recipe r.json] [...]
+BetterEndfieldNext.BemConverter.exe workspace init <directory> --source <source|project.json> [--mode convert|pack] [--recipe r.json]
+BetterEndfieldNext.BemConverter.exe build    task.bemproj.json [--report r.json]
+BetterEndfieldNext.BemConverter.exe --version
+```
+
+Running `convert` without `--recipe` creates a new random package ID each time. Use an export task when a stable ID is required.
+
+## Frequently asked questions
+
+- **Conversion succeeds but the game does not change:** Confirm that the package is enabled, the correct appearance is selected, and the game was restarted or hot switching took effect. Check for `Package refused` and `Generic model donor is missing`.
+- **A package stopped working after a game update:** A changed mesh name or index count causes rejection (`Generic model donor is missing/ambiguous`). Re-export against the updated character catalog.
+- **Textures are missing or unsupported on a phone:** Run “Convert textures” in the app. If the normal encoding is missing, declare `normal_encoding` as described above.
+- **The body is clipped or hair remains in first person:** Check the bone weights of the affected vertices.
+- **A team screen occasionally misses a part:** This is a known issue whose cause has not been confirmed. Leave and re-enter the team screen.
+
+
+## Material & Keyword Overrides (BEM 1.5)
+
+> **Acknowledgment**: Special thanks to **@Saberverse** for key technical support and review materials contributed to the BEM 1.5 specification, material/keyword override design, and NPC receiver path integration.
+
+
+Starting in BEM 1.5 (`material-overrides-v1`), you can tune transparency, ink-like matte tones, depth writing, and specular behavior on native NPR/PBR shaders by configuring `material_overrides` on draw entries, without needing custom shaders.
+
+### Common Recipes
+
+#### 1. Semi-transparent Gauze / Lace Depth Writing
+Fixes sorting artifacts and dark halos for translucent garments:
+```json
+{
+  "material_overrides": {
+    "floats": {
+      "_TransparentDepthWrite": 1.0,
+      "_ZWrite": 1.0,
+      "_Cutoff": 0.5,
+      "_Smoothness": 0.15
+    },
+    "colors": {
+      "_BaseColor": [0.08, 0.08, 0.08, 0.75]
+    }
+  }
+}
+```
+
+#### 2. Matte Shading & Anisotropy Suppression
+Removes harsh circular hair highlights or glossy clearcoat to achieve a matte ink finish:
+```json
+{
+  "material_overrides": {
+    "disable_keywords": [
+      "_ANISOTROPY_SPECULAR_ON",
+      "_CLEARCOAT",
+      "_EMISSION"
+    ]
+  }
+}
+```
+
+#### 3. Enabling Transparency Variants
+```json
+{
+  "material_overrides": {
+    "enable_keywords": [
+      "_ALPHAPREMULTIPLY_ON"
+    ]
+  }
+}
+```
+
+> **Note**:
+> - Property names must start with `_` (e.g. `_BaseColor`), and keywords must be uppercase (e.g. `_CLEARCOAT`).
+> - When "Skip Validation" is active, naming restrictions are relaxed and out-of-range numbers are clamped automatically.
+
+### Root Bone Elevation (Fixing High-Heel Ground Clipping)
+
+When a mod includes high heels, thick platform soles, or floating stances that clip into the terrain, add `root_offset` in the manifest without altering vertex bindings:
+
+```json
+{
+  "root_offset": {
+    "path": "Bip001",
+    "translation": [0.0, 0.04, 0.0]
+  }
+}
+```
+- The second element of `translation` controls vertical elevation (e.g. `0.04` lifts the model by 4cm).
+- The runtime automatically latches the pristine baseline and handles rollbacks, ensuring switching options never causes accumulated height drift.
+
+## Continuous motion and clock drivers (BEM 1.5)
+
+`dynamic-drivers-v1` lets a package declare time-based motion in the manifest with no sidecar file at all. Motion can **loop forever** or **play once and hold the last frame**.
+
+### Capability declaration and placement
+
+Add `dynamic-drivers-v1` to `required_capabilities`, then write a root-level `drivers` array:
+
+```json
+{
+  "required_capabilities": ["native-materials", "material-overrides-v1", "dynamic-drivers-v1"],
+  "drivers": [
+    {
+      "id": "glow_pulse",
+      "name": "Glow pattern breathing",
+      "waveform": "sine",
+      "playback": "loop",
+      "default_playing": false,
+      "base_frequency": 0.8,
+      "speed_multiplier": 1.0,
+      "bindings": [
+        {"type": "material_float", "component": 2, "material_slot": 0,
+         "property": "_EmissionWeight", "range": [0.0, 1.5]}
+      ]
+    },
+    {
+      "id": "insert_once",
+      "name": "Single push",
+      "waveform": "sawtooth",
+      "playback": "once",
+      "default_playing": false,
+      "base_frequency": 0.5,
+      "bindings": [
+        {"type": "morph_parameter", "target": "anal_plug_depth", "range": [0.0, 1.0]}
+      ]
+    }
+  ]
+}
+```
+
+### Loop or one-shot: `playback`
+
+| Value | Effect |
+| --- | --- |
+| `loop` (default) | Repeats forever. Good for breathing lights, thrust, flow. |
+| `once` | Plays from 0 to 1, stops and holds the last frame. Good for a one-time "push in and stay" motion. |
+
+Two things matter for `once`:
+
+- **Duration comes from `base_frequency`**: `duration = 1 / (base_frequency × speed_multiplier)` seconds. For a 2-second play, write `0.5`;
+- **The waveform decides the end frame**: `sawtooth` / `step` rest at the far end (weight 1), while `pingpong` / `sine` return to the start (weight 0). Use `sawtooth` for "push out and hold", not `pingpong`.
+
+### Choosing a waveform
+
+| waveform | Shape | Good for | `once` end |
+| --- | --- | --- | --- |
+| `sine` | Smooth cosine reciprocation | Breathing lights, heartbeats, pulses | Back at start |
+| `pingpong` | Linear triangle reciprocation | Mechanical pistons, back-and-forth prop travel | Back at start |
+| `sawtooth` | One-direction ramp | Flow, one-way displacement, single push | Rests at far end |
+| `jitter` | High-frequency noise | Small tremors, glitch shake | Hash value; avoid when the endpoint matters |
+| `step` | On/off step | Lamps, gear changes | Rests at far end |
+
+`base_frequency` is the base rate in Hz and `speed_multiplier` the initial speed factor. The normalised value lands in 0..1 and is then mapped linearly onto `range`.
+
+### Binding types
+
+- `material_float`: writes a material float property every frame. Near-zero cost and the most reliable option.
+- `material_color`: writes colour properties such as `_EmissionColor`.
+- `material_keyword`: toggles shader keywords.
+- `morph_parameter`: drives an existing shape parameter of the package using the per-frame deltas in `mesh_deformations`: it interpolates per-vertex position offsets over the parameter's tick domain and writes them back into the position component every frame. Only positions change; normals/tangents/UVs and skinning are untouched, so shading and skinning are unaffected.
+  **Important limit:** do not drive a parameter with an animation and a manual slider over the same vertex set. The slider rebuilds the mesh and uploads the whole stream at load, while the driver rewrites those positions every frame; the two overwrite each other and produce residue at the previous position, flicker during playback and a hazy surface. To get "slider sets the base, animation oscillates", split it into two parameters bound to disjoint vertex ranges. Different parameters over different vertex ranges remain independent.
+
+### Sound (optional)
+
+A controller can carry one embedded sound that starts and stops with playback, and it **never overrides or pauses existing game audio**:
+
+```json
+"sound": { "payload": 12, "format": "ogg", "gain": 0.8, "loop": true, "offset_seconds": 0.0 }
+```
+
+The audio is stored as an ordinary payload inside the package. A finished `once` driver stops its voice; under `loop` the `loop` flag decides. Sound and waveform are independent clocks, so long loops drift slowly; match the sound length to one waveform period when alignment matters.
+
+### What works today
+
+- `default_playing` must be `false`. The specification requires the model to start at rest so nothing moves the moment it loads.
+- **Both Windows and Android run drivers** with identical behaviour; both write only the position component for morphs. Windows exposes two equivalent upload paths in the overlay for A/B diagnosis; Android has one.
+- **The overlay has full controls**: Start / Pause / Stop buttons plus a 0.25x..4.00x speed slider per controller, on both Windows and Android. Edits are session-scoped and never written back into the package.
+- **Desktop hotkeys are configured in the manager GUI**: one start/stop toggle per controller, **unbound by default**, using the same grammar as the GUI's other hotkeys. Hotkeys are a binary toggle with no pause; pause is overlay-only.
+- The legacy sidecar `.anim.json` is a development-only form; the runtime honours only `drivers` internalised in the manifest. Do not ship sidecars.
+
+## Publishing with a ZIP container (no packaging tool required)
+
+BEM accepts standard ZIP containers. Both clients identify the format by the leading magic bytes rather than the extension, so a creator can publish with the operating system's own compressor and the runtime will still load it.
+
+### The manual route
+
+1. Start from an ordinary `.bem` binary package.
+2. Unpack it into an editable payload folder:
+
+```bash
+python tools/CustomModel/bem_tool.py unpack model.bem -o project/
+```
+
+This produces `project/project.json` plus `project/payloads/0000.bin`, `0001.bin`, and so on.
+
+3. Rename `project.json` to `manifest.json`, keep `payloads/` next to it, and zip the folder:
+
+```text
+model.zip
+├── manifest.json
+└── payloads/
+    ├── 0000.bin
+    └── 0001.bin
+```
+
+4. Optionally add `preview.png` as a thumbnail.
+
+### The one-command route
+
+```bash
+python tools/CustomModel/bem_tool.py pack-zip model.bem -o model.zip
+```
+
+`pack-zip` fully validates the source package, writes the layout above, and then reads its own output back to confirm it is loadable. Timestamps are fixed, so the same input produces a byte-identical archive that is easy to diff and commit.
+
+The reverse direction works too:
+
+```bash
+python tools/CustomModel/bem_tool.py unpack model.zip -o project/        # ZIP to editable project
+python tools/CustomModel/bem_tool.py pack project/ -o model.bem          # project directory to binary package
+python tools/CustomModel/bem_tool.py pack project/project.json -o model.bem  # same thing, spelled out
+```
+
+`pack` takes either the project directory or the `project.json` inside it, and both produce an identical package.
+
+That round trip is **byte-for-byte equivalent**: `.bem → ZIP → project → .bem` reproduces the original binary package exactly.
+
+### Rules and limits
+
+- The number under `payloads/` is the manifest's `payload` integer and must run contiguously from 0. A gap reports `ZIP package is missing payload N`.
+- Entries may be stored or deflated and are decompressed on read; encrypted entries are rejected.
+- One wrapper folder (for example zipping the whole `MyModel/` directory) is unfolded automatically, but only **one** level; deeper nesting fails detection.
+- When `manifest.json` and a `.bem` sit in the same archive, the manifest wins and the archive is treated as a single model package.
+- To state the version explicitly, add `"format_version": "1.5"`. A ZIP has no binary header, so without it the reader infers the version from the fields present. The key is dropped when writing a binary package.

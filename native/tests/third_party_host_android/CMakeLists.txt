@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(BetterEndfieldThirdPartyHostTest LANGUAGES CXX)
+project(BetterEndfieldNextThirdPartyHostTest LANGUAGES CXX)
 
 add_executable(third_party_host_test
     main.cpp

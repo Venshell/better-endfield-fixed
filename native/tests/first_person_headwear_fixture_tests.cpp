@@ -2,7 +2,7 @@
 #include <cassert>
 #include <fstream>
 #include <iterator>
-using namespace BetterEndfield::FirstPersonHeadwear;
+using namespace BetterEndfieldNext::FirstPersonHeadwear;
 namespace {
 void Write(std::vector<uint8_t>& bytes, size_t offset, uint32_t value) {
     for (size_t i=0;i<4;++i) bytes[offset+i]=static_cast<uint8_t>(value>>(i*8));

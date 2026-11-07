@@ -3,7 +3,7 @@ struct FpExternalHeadScale {
     MethodContract get{"head_scale.get",{"UnityEngine.CoreModule.dll","UnityEngine","Transform","get_localScale",nullptr,"UnityEngine.Vector3",0}};
     MethodContract set{"head_scale.set",{"UnityEngine.CoreModule.dll","UnityEngine","Transform","set_localScale","UnityEngine.Vector3","System.Void",1}};
     FpRoot head;
-    BetterEndfield::FirstPerson::HeadScaleLease lease;
+    BetterEndfieldNext::FirstPerson::HeadScaleLease lease;
     bool attempted=false, ready=false, applied=false;
     unsigned reports=0;
     void Report(const char* reason) {
@@ -82,7 +82,7 @@ struct FpExternalHeadScale {
         if (head.object==target && applied) {
             bool alive=false; FpMath::Vec3 current{};
             if (!Alive(alive) || !alive || !Value(current)) return false;
-            if (lease.owned && !BetterEndfield::FirstPerson::SameHeadScale(current,lease.written)) {
+            if (lease.owned && !BetterEndfieldNext::FirstPerson::SameHeadScale(current,lease.written)) {
                 lease={}; Report("external owner changed scale; leaving its value untouched");
             }
             return lease.owned;
@@ -93,7 +93,7 @@ struct FpExternalHeadScale {
         applied=true;
         if (!Write(lease.written)) { Release(); Report("scale write rejected"); return false; }
         FpMath::Vec3 written{};
-        if (!Value(written) || !BetterEndfield::FirstPerson::SameHeadScale(written,lease.written)) {
+        if (!Value(written) || !BetterEndfieldNext::FirstPerson::SameHeadScale(written,lease.written)) {
             Release(); Report("scale verification failed"); return false;
         }
         return true;

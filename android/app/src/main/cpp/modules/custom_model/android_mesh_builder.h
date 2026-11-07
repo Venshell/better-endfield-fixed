@@ -5,7 +5,7 @@
 #include <array>
 #include <cstdint>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 // Private, same-binary platform boundary; does not extend BE_HostApiV1.
 void ConfigureAndroidMeshBuilder(Il2CppRuntime& runtime, bool rollback_test = false, bool pipeline_lod = false, bool npc_parameters = false, bool inspect = false);
 void ConfigureHeadwearCanary(Il2CppRuntime& runtime);
@@ -14,7 +14,9 @@ bool AndroidMeshRollbackTest();
 bool AndroidPipelineLodEnabled();
 bool AndroidNpcParametersEnabled();
 bool AndroidInspectionEnabled();
+// Explicit, read-only one-shot mip sampling request in the game's private cache.
 std::string AndroidTextureMipRequestToken();
+// Named native icall for optional read-only observation; never invoked here.
 void* AndroidLodStreamingOffsetEntry();
 void* AndroidTextureBudgetSetterEntry();
 void* AndroidTextureBudgetGetterEntry();
@@ -30,7 +32,7 @@ bool AndroidReadMeshStrides(void* mesh, std::vector<int32_t>& strides);
 // never reads discarded source CPU vertex or index buffer contents.
 bool AndroidReadMeshSubmeshes(void* mesh, std::vector<std::array<int64_t,4>>& submeshes);
 // Caller owns and roots the unpublished Mesh and initializes its skin field.
-bool AndroidSubmitMesh(void* mesh, const BetterEndfield::CustomModel::BemComponent& component);
+bool AndroidSubmitMesh(void* mesh, const BetterEndfieldNext::CustomModel::BemComponent& component);
 // Bounded game-version catalog; applies owned visible meshes and restores
 // only references held by this session. No source Mesh cloning or writes.
 bool AndroidHeadwearFixtureAvailable(void* renderer, void* source_mesh);

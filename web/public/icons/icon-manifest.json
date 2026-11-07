@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-09-02T13:15:49.044589+00:00",
-  "source": "tools/CombatDataExporter/.icon-cache",
+  "generatedAt": "2026-10-16T10:58:58.833901+00:00",
+  "source": "G:\\Better Endfield\\cache\\combat-icons",
   "copied": {
-    "skills": 98,
-    "items": 331,
+    "skills": 104,
+    "items": 353,
     "suits": 19,
-    "characters": 30
+    "characters": 34
   },
   "missing": {
     "skills": [],

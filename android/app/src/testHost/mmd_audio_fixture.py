@@ -33,7 +33,7 @@ def main():
 
     android = Path(__file__).resolve().parents[3]
     fixture = Path(__file__).resolve().parent / "mmd_audio"
-    production = android / "app/src/main/java/dev/betterendfield/android/MmdAudio.java"
+    production = android / "app/src/main/java/dev/betterendfield/next/MmdAudio.java"
     # Compiled from a copy so the digest below names the exact bytes that were
     # compiled, not whatever the working tree holds a moment later.
     snapshot.write_bytes(production.read_bytes())
@@ -46,7 +46,7 @@ def main():
          str(snapshot)] + [str(path) for path in sources],
         check=True)
 
-    tests = "dev.betterendfield.android.MmdAudioHostTest"
+    tests = "dev.betterendfield.next.MmdAudioHostTest"
     if args.cases.strip():
         cases = [name.strip() for name in args.cases.split(",") if name.strip()]
     else:

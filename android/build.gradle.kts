@@ -18,3 +18,5 @@ plugins {
     // applying it again is an error. Only the Compose compiler plugin is added.
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.20" apply false
 }
+
+apply(from = "workspace.gradle.kts")

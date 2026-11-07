@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 
 // A renderer can be hidden whole only when every bone belongs to the head.
 // Mixed head/body palettes remain visible for the existing mesh-patch path.
@@ -25,4 +25,4 @@ bool AllBonesUnderHead(const std::vector<void*>& bones, void* head, Parent&& par
     return true;
 }
 
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

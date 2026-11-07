@@ -2,7 +2,7 @@
 #include "modules/module.h"
 #include "core/runtime.h"
 
-namespace betterendfield {
+namespace betterendfieldnext {
 
 // Read-only research probe that answers where the game's own first-person look
 // input lives, so a gyroscope source can feed that instead of writing the pushed
@@ -15,4 +15,4 @@ public:
     ModuleResult Start(Il2CppRuntime& runtime) override;
 };
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext

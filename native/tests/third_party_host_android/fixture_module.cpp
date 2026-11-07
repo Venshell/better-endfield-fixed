@@ -1,4 +1,4 @@
-#include <BetterEndfield/ThirdPartyModule.h>
+#include <BetterEndfieldNext/ThirdPartyModule.h>
 
 namespace {
 BE_Result BE_CALL Initialize(const BE_ThirdPartyHostV1*, const char*) { return BE_Result_Ok; }

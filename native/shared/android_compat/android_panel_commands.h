@@ -16,7 +16,7 @@
 
 #include <string>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 
 // Takes the pending command when, and only when, it names `command`, returning
 // the text after the command line in `value`. The pump holds one slot shared by
@@ -29,6 +29,6 @@ bool AcquirePanelCommand(const char* command, std::string& value);
 // settings screen's diagnostics page.
 void AcknowledgePanelCommand(const char* status);
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext
 
 #endif

@@ -20,6 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from workspace_config import load_workspace, write_if_changed
+from RefreshEndfieldResourceInputs import configured_path
+
 
 GENERATOR_VERSION = 2
 MUL_CONST = 81861667
@@ -36,14 +39,6 @@ LANGUAGE_NAMES = {
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ACTIONS = REPO_ROOT / "research/current-inputs/character-presets.json"
-DEFAULT_AUDIO_DIALOG = REPO_ROOT / "research/current-inputs/Table/AudioDialog.json"
-DEFAULT_BNK_DIR = REPO_ROOT / "research/bank-pck/bnk"
-DEFAULT_VOICE_ALIASES = REPO_ROOT / "resources/voice/voice-event-aliases.json"
-DEFAULT_INPUT_SNAPSHOT = REPO_ROOT / "research/current-inputs/input-snapshot.json"
-DEFAULT_OUTPUT = REPO_ROOT / "manifests"
-
-
 @dataclass(frozen=True)
 class PckEntry:
     file_id: int
@@ -63,15 +58,17 @@ class PckIndex:
     languages: dict[int, str]
     banks: list[PckEntry]
     media: list[PckEntry]
+    bank_payloads: dict[int, bytes] | None = None
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--actions", type=Path, default=DEFAULT_ACTIONS)
-    parser.add_argument("--audio-dialog", type=Path, default=DEFAULT_AUDIO_DIALOG)
-    parser.add_argument("--voice-aliases", type=Path, default=DEFAULT_VOICE_ALIASES)
-    parser.add_argument("--input-snapshot", type=Path, default=DEFAULT_INPUT_SNAPSHOT)
-    parser.add_argument("--bnk-dir", type=Path, default=DEFAULT_BNK_DIR)
+    parser.add_argument("--workspace-config", type=Path)
+    parser.add_argument("--actions", type=Path)
+    parser.add_argument("--audio-dialog", type=Path)
+    parser.add_argument("--voice-aliases", type=Path)
+    parser.add_argument("--input-snapshot", type=Path)
+    parser.add_argument("--bnk-dir", type=Path)
     parser.add_argument("--game-path", type=Path)
     parser.add_argument(
         "--pck", type=Path, action="append", default=[],
@@ -81,8 +78,23 @@ def parse_args() -> argparse.Namespace:
         "--no-pck-discovery", action="store_true",
         help="Do not scan the game VFS for PCK headers.",
     )
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    return parser.parse_args()
+    parser.add_argument(
+        "--pck-snapshot", type=Path,
+        help="Android device PCK snapshot with verified file hashes, source paths and full sizes.",
+    )
+    parser.add_argument("--output-dir", type=Path)
+    args = parser.parse_args()
+    ws = load_workspace(args.workspace_config)
+    args.actions = args.actions or ws.path("resource_update.outputs.character_presets")
+    args.audio_dialog = args.audio_dialog or ws.path("resource_update.input_root", "Table", "AudioDialog.json")
+    args.voice_aliases = args.voice_aliases or configured_path(ws, "resource_update.voice_aliases", ws.root / "resources/voice/voice-event-aliases.json")
+    args.input_snapshot = args.input_snapshot or ws.path("resource_update.input_root", "input-snapshot.json")
+    args.bnk_dir = args.bnk_dir or ws.path("resource_update.bank_root")
+    args.game_path = args.game_path or ws.path("game.install_dir", required=False)
+    args.output_dir = args.output_dir or ws.path("resource_update.outputs.manifests")
+    if args.pck_snapshot is None and ws.get("game.platform") == "Android":
+        args.pck_snapshot = ws.path("resource_update.pck_snapshot", required=False)
+    return args
 
 
 def load_json(path: Path) -> Any:
@@ -92,9 +104,7 @@ def load_json(path: Path) -> Any:
 
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as stream:
-        json.dump(value, stream, ensure_ascii=True, indent=2)
-        stream.write("\n")
+    write_if_changed(path, json.dumps(value, ensure_ascii=True, indent=2) + "\n")
 
 
 def sha256_file(path: Path) -> str:
@@ -176,11 +186,20 @@ def parse_languages(
         language_id = read_u32(data, position + 4)
         position += 8
         string_start = start + name_offset
-        string_end = data.find(b"\0", string_start, start + size)
+        if not start + 4 + count * 8 <= string_start < start + size:
+            raise ValueError("invalid PCK language name offset")
+        # Bank PCKs use UTF-8 names; current Windows media PCKs use UTF-16LE.
+        # Their ASCII language names make the two encodings unambiguous.
+        wide = string_start + 1 < start + size and data[string_start + 1] == 0
+        if wide:
+            string_end = next((offset for offset in range(string_start, start + size - 1, 2)
+                               if data[offset:offset + 2] == b"\0\0"), -1)
+        else:
+            string_end = data.find(b"\0", string_start, start + size)
         if string_end < 0:
             raise ValueError("unterminated PCK language name")
         result[language_id] = bytes(data[string_start:string_end]).decode(
-            "utf-8", errors="replace"
+            "utf-16-le" if wide else "utf-8"
         )
     return result
 
@@ -297,6 +316,74 @@ def parse_pck(path: Path, game_path: Path | None) -> PckIndex:
     )
 
 
+def load_android_pck_snapshot(snapshot_path: Path) -> list[PckIndex]:
+    snapshot = load_json(snapshot_path)
+    if snapshot.get("schemaVersion") != 1 or snapshot.get("platform") != "Android":
+        raise ValueError("PCK snapshot must identify Android platform and schema 1")
+    root = snapshot_path.resolve().parent
+    result: list[PckIndex] = []
+    sources: set[str] = set()
+    for package in snapshot.get("packages", []):
+        path = (root / package["path"]).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("PCK snapshot file is outside its source directory")
+        source = package["source"]
+        if not re.fullmatch(r"/[^\r\n]*/VFS/[0-9A-Fa-f]{8}/[0-9A-Fa-f]{32}\.chk", source):
+            raise ValueError("invalid Android device PCK source path")
+        if source in sources:
+            raise ValueError("duplicate Android device PCK source")
+        sources.add(source)
+        read_size = int(package["readSize"])
+        full_size = int(package["size"])
+        if path.stat().st_size != read_size or not 0 < read_size <= full_size:
+            raise ValueError(f"Android PCK size mismatch: {source}")
+        if sha256_file(path) != str(package["sha256"]).upper():
+            raise ValueError(f"Android PCK SHA-256 mismatch: {source}")
+        index = parse_pck(path, None)
+        selection = package.get("bankPayloads")
+        if selection is not None:
+            payload_path = (root / selection["path"]).resolve()
+            if not payload_path.is_relative_to(root):
+                raise ValueError("selected Android bank payload is outside its source directory")
+            payload = payload_path.read_bytes()
+            if len(payload) != int(selection["size"]) or \
+                    sha256_bytes(payload) != str(selection["sha256"]).upper():
+                raise ValueError("selected Android bank payload SHA-256/size mismatch")
+            entries = {entry.file_id: entry for entry in index.banks}
+            index.bank_payloads = {}
+            expected_offset = 0
+            for record in selection["entries"]:
+                file_id = int(record["fileId"])
+                entry = entries.get(file_id)
+                offset = int(record["payloadOffset"])
+                size = int(record["size"])
+                if entry is None or file_id in index.bank_payloads or \
+                        entry.offset != int(record["deviceOffset"]) or entry.size != size or \
+                        offset != expected_offset or offset + size > len(payload):
+                    raise ValueError("selected Android bank range does not match its PCK header")
+                raw = payload[offset:offset + size]
+                if sha256_bytes(raw) != str(record["sha256"]).upper():
+                    raise ValueError("selected Android bank range SHA-256 mismatch")
+                index.bank_payloads[file_id] = raw
+                expected_offset += size
+            if not index.bank_payloads or expected_offset != len(payload):
+                raise ValueError("selected Android bank ranges do not cover their payload file")
+            requested_ids = {int(value) for value in selection["requestedEventIds"]}
+            if entries.keys() & requested_ids != index.bank_payloads.keys():
+                raise ValueError("selected Android bank ranges omit or add requested events")
+        elif index.banks and read_size != full_size:
+            raise ValueError("Android bank packages require complete or verified selected payloads")
+        if any(entry.offset < 0 or entry.size <= 0 or entry.offset + entry.size > full_size
+               for entry in [*index.banks, *index.media]):
+            raise ValueError(f"Android PCK entry exceeds device file size: {source}")
+        index.source = source
+        index.size = full_size
+        result.append(index)
+    if not result:
+        raise ValueError("Android PCK snapshot contains no packages")
+    return result
+
+
 def discover_pck_paths(game_path: Path) -> list[Path]:
     roots = [
         game_path / "Endfield_Data/Persistent/VFS",
@@ -320,9 +407,12 @@ def discover_pck_paths(game_path: Path) -> list[Path]:
 
 
 def read_pck_payload(index: PckIndex, entry: PckEntry) -> bytes:
-    with index.path.open("rb") as stream:
-        stream.seek(entry.offset)
-        payload = bytearray(stream.read(entry.size))
+    if index.bank_payloads is not None:
+        payload = bytearray(index.bank_payloads[entry.file_id])
+    else:
+        with index.path.open("rb") as stream:
+            stream.seek(entry.offset)
+            payload = bytearray(stream.read(entry.size))
     if len(payload) != entry.size:
         raise ValueError(f"truncated PCK entry {entry.file_id}")
     decrypt_vfs(payload, 0, len(payload), entry.file_id & 0xFFFFFFFF)
@@ -491,7 +581,11 @@ def build_native_media_routes(
 
 
 def localized_language(index: PckIndex, entries: list[PckEntry]) -> str | None:
-    codes = {entry.language for entry in entries if entry.language in LANGUAGE_NAMES}
+    aliases = {name.casefold(): code for code, name in LANGUAGE_NAMES.items()}
+    codes = {
+        aliases.get((entry.language or "").casefold(), (entry.language or "").casefold())
+        for entry in entries
+    }.intersection(LANGUAGE_NAMES)
     if len(codes) != 1:
         return None
     return LANGUAGE_NAMES[next(iter(codes))]
@@ -539,6 +633,8 @@ def load_banks(
         origins: dict[int, str] = {}
         for entry in pck.banks:
             event_id = entry.file_id & 0xFFFFFFFF
+            if pck.bank_payloads is not None and entry.file_id not in pck.bank_payloads:
+                continue
             banks[event_id] = read_pck_payload(pck, entry)
             origins[event_id] = pck.source
         banks_by_language[language] = banks
@@ -616,8 +712,11 @@ def load_version_inputs(snapshot_path: Path | None) -> dict[str, Any] | None:
     if snapshot_path is None or not snapshot_path.exists():
         return None
     snapshot = load_json(snapshot_path)
+    platform = snapshot.get("platform", "Windows")
+    if platform not in ("Windows", "Android"):
+        raise ValueError(f"unsupported input snapshot platform: {platform}")
     wanted = {
-        "Bundles/Windows/manifest.hgmmap",
+        f"Bundles/{platform}/manifest.hgmmap",
         "TableCfg/AudioDialog.bytes",
     }
     files = [
@@ -629,7 +728,7 @@ def load_version_inputs(snapshot_path: Path | None) -> dict[str, Any] | None:
             "input snapshot does not contain the current manifest and AudioDialog"
         )
     files.sort(key=lambda item: item["path"].casefold())
-    return {
+    result = {
         "snapshot": {
             "path": source_ref(snapshot_path, None),
             "sha256": sha256_file(snapshot_path),
@@ -637,6 +736,9 @@ def load_version_inputs(snapshot_path: Path | None) -> dict[str, Any] | None:
         "overlayOrder": snapshot.get("overlayOrder"),
         "files": files,
     }
+    if platform == "Android":
+        result["platform"] = platform
+    return result
 
 
 def pck_descriptor(index: PckIndex, package_id: str) -> dict[str, Any]:
@@ -644,7 +746,7 @@ def pck_descriptor(index: PckIndex, package_id: str) -> dict[str, Any]:
     media_languages = sorted(
         {entry.language for entry in index.media if entry.language}, key=str.casefold
     )
-    return {
+    result = {
         "packageId": package_id,
         "source": index.source,
         "size": index.size,
@@ -654,6 +756,13 @@ def pck_descriptor(index: PckIndex, package_id: str) -> dict[str, Any]:
         "bankCount": len(index.banks),
         "mediaCount": len(index.media),
     }
+    if index.bank_payloads is not None:
+        result["bankPayloadSelection"] = {
+            "mode": "selected-Android-event-ranges",
+            "declaredBankCount": len(index.banks),
+            "readBankCount": len(index.bank_payloads),
+        }
+    return result
 
 
 def build_voice_manifest(
@@ -1012,7 +1121,7 @@ def build_summary(actions: dict[str, Any], voices: dict[str, Any]) -> str:
     if version_inputs:
         for item in version_inputs["files"]:
             lines.append(
-                f"- `{item['path']}`：`{item['sha256']}`（{item['size']} bytes）"
+                f"- `{item['path']}`：`{item.get('sha256', 'not calculated')}`（{item['size']} bytes）"
             )
     else:
         lines.append("- 未提供 VFS Overlay 输入快照。")
@@ -1101,6 +1210,8 @@ def main() -> int:
             pck_errors.append(f"{source_ref(path, game_path)}: {exception}")
     if pck_errors:
         raise ValueError("PCK indexing failed:\n" + "\n".join(pck_errors))
+    if args.pck_snapshot:
+        pcks.extend(load_android_pck_snapshot(args.pck_snapshot.resolve()))
 
     banks_by_language, origins_by_language, selected_banks = load_banks(
         bnk_dir, pcks
@@ -1115,6 +1226,15 @@ def main() -> int:
         pcks,
     )
     version_inputs = load_version_inputs(input_snapshot_path)
+    if args.pck_snapshot:
+        if not version_inputs or version_inputs.get("platform") != "Android":
+            raise ValueError("Android PCK sources require a matching Android input snapshot")
+        voice_manifest["pckSnapshot"] = {
+            "path": source_ref(args.pck_snapshot, None),
+            "sha256": sha256_file(args.pck_snapshot),
+            "platform": "Android",
+            "missingLanguages": load_json(args.pck_snapshot).get("missingLanguages", []),
+        }
     if version_inputs:
         action_manifest["versionInputs"] = version_inputs
         voice_manifest["versionInputs"] = version_inputs
@@ -1126,9 +1246,7 @@ def main() -> int:
     summary = build_summary(action_manifest, voice_manifest)
     report_path = output_dir / "shared" / "resource-manifest-report.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(
-        summary, encoding="utf-8", newline="\n"
-    )
+    write_if_changed(report_path, summary)
     print(
         "Generated "
         f"{action_manifest['stats']['characterCount']} characters / "

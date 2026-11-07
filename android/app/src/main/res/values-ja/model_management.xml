@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bem_filter_character">キャラクター・武器で絞り込み</string>
+    <string name="bem_all_characters">すべてのモデル</string>
+    <string name="bem_disable_all">すべてのモデルを無効化</string>
+    <string name="bem_all_disabled">すべてのモデルを無効化しました</string>
+    <string name="bem_fast_loading">読み込み速度を優先</string>
+    <string name="bem_storage">ストレージ</string>
+    <string name="bem_keep_local_copies">ローカルコピーを保持</string>
+    <string name="bem_clean_unused">未使用データを削除</string>
+    <string name="bem_clone_support">実験：複製モデル対応</string>
+    <string name="bem_release_retired_resources">実験：旧モデルリソースの解放</string>
+    <string name="bem_filter_target">キャラクター・武器で絞り込み</string>
+    <string name="bem_all_targets">すべてのモデル</string>
+</resources>

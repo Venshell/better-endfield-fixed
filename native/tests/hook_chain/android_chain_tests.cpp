@@ -4,8 +4,8 @@
 #include <string>
 #include <unordered_map>
 
-using BetterEndfield::Hooks::Backend;
-using BetterEndfield::Hooks::Chain;
+using BetterEndfieldNext::Hooks::Backend;
+using BetterEndfieldNext::Hooks::Chain;
 
 namespace {
 

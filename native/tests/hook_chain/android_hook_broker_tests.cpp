@@ -37,14 +37,14 @@ extern "C" int DobbyCommit(void* target) {
 
 extern "C" int DobbyDestroy(void*) { return 0; }
 
-namespace betterendfield {
+namespace betterendfieldnext {
 void LogInfo(const char*, const char*) {}
 void LogError(const char*, const char*) { assert(false); }
-} // namespace betterendfield
+} // namespace betterendfieldnext
 
 int main() {
-    betterendfield::HookBroker first;
-    betterendfield::HookBroker second;
+    betterendfieldnext::HookBroker first;
+    betterendfieldnext::HookBroker second;
     std::string error;
     assert(first.Initialize(error));
     assert(second.Initialize(error));

@@ -2,6 +2,10 @@
 
 本仓库派生自 [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield)，独立维护，不是该项目的官方版本。3.3.20 是本仓库维护的第一条，记录相对上游的独立修改；3.3.0 及更早的条目来自上游。上游改动仍可能在需要时被有选择地并入。来源说明与许可见 [README.md](README.md) 的「来源与许可」。
 
+## 2026-11-07 上游合并（开发分支）
+
+接入上游 `ee441da9`（4.1.8 发布后的修复），处理 Next 命名、BEM/Android/原生模块与文档迁移冲突。保留本分支 Android 产品边界及内置第一人称、陀螺仪等本地功能。此条不是发布或游戏设备验收声明；处理原则和实际检查结果见 [合并记录](docs/ANDROID_UPSTREAM_MERGE_20261107.md)。上游发行变化另见 [上游历史更新日志](docs/archive/UPSTREAM_CHANGELOG_20261107.md)。
+
 ## 3.4.2（未发布）
 
 接入上游第三方模块的 Android ZIP 导入、私有代际部署、原生 Host/Hook 合同、网页桥与 Compose 管理入口。管理界面、包路径校验和部署已在 Android 10 设备测试；独立 ARM64 Host 已验证认证、消息、配置变更与停用。真实游戏进程中的第三方库、网页交互和长期资源清理仍待验收，本条不代表已发布。

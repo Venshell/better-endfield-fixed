@@ -1,6 +1,9 @@
-#include "BetterEndfield/ModuleApi.h"
+#include "BetterEndfieldNext/ModuleApi.h"
 
 #include "touch_input.h"
+#if !defined(__ANDROID__)
+#include "touch_pointer_policy.h"
+#endif
 #include "../../shared/input/hotkey.h"
 
 #include <Windows.h>
@@ -23,10 +26,10 @@
 #include <string_view>
 #include <vector>
 
-namespace BetterEndfield::UiModule {
+namespace BetterEndfieldNext::UiModule {
 namespace {
 
-constexpr char kModuleId[] = "betterendfield.ui";
+constexpr char kModuleId[] = "betterendfieldnext.ui";
 
 enum class ModuleState : uint8_t {
     Created,
@@ -42,6 +45,7 @@ enum class ModuleState : uint8_t {
 struct UiConfiguration {
     bool enabled = false;
     bool mobile_ui_enabled = false;
+    bool mouse_to_touch_enabled = true;
     bool pc_ui_enabled = false;
     bool hide_uid_enabled = false;
     bool hide_hud_enabled = false;
@@ -67,6 +71,9 @@ UiConfiguration g_configuration;
 std::mutex g_configuration_mutex;
 std::atomic_bool g_mobile_ui_enabled{false};
 std::atomic_bool g_pc_ui_enabled{false};
+#if defined(__ANDROID__)
+std::atomic_bool g_android_pc_absolute_hook_ready{false};
+#endif
 int32_t g_keyboard_input_type = -1;
 std::atomic_bool g_hide_uid_enabled{false};
 std::atomic_bool g_hide_hud_enabled{false};
@@ -163,7 +170,7 @@ std::vector<HiddenHudCanvas> g_hidden_hud_canvases;
 bool g_hud_hidden = false;
 bool g_hud_hotkey_was_down = false;
 
-constexpr char kHudCameraMaskOwner[] = "BetterEndfield.HideHUD";
+constexpr char kHudCameraMaskOwner[] = "BetterEndfieldNext.HideHUD";
 
 struct HiddenUidObject {
     void* object = nullptr;
@@ -208,6 +215,15 @@ MethodContract g_contracts[]{
     {"android_pc_mouse.get_axis",
         {"Input.Beyond.dll", "Beyond.Input", "InputManager", "GetAxis",
             "System.String", "System.Single", 1}, false},
+    {"android_pc_mouse.screen_width",
+        {"UnityEngine.CoreModule.dll", "UnityEngine", "Screen", "get_width",
+            nullptr, "System.Int32", 0}, false},
+    {"android_pc_mouse.screen_height",
+        {"UnityEngine.CoreModule.dll", "UnityEngine", "Screen", "get_height",
+            nullptr, "System.Int32", 0}, false},
+    {"android_pc_mouse.binding_enabled",
+        {"Input.Beyond.dll", "Beyond.Input", "InputBindingInfo", "get_enabled",
+            nullptr, "System.Boolean", 0}, false},
 #endif
     {"device.is_mobile",
         {"Common.Beyond.dll", "Beyond", "DeviceInfo", "get_isMobile",
@@ -745,7 +761,7 @@ std::string HudVisibilityStatus(const HudVisibilityResult& result) {
 
 void PumpHudVisibility() {
     const bool allowed = g_hide_hud_enabled.load(std::memory_order_acquire);
-    const bool hotkey_down = allowed && BetterEndfield::Input::IsDown(
+    const bool hotkey_down = allowed && BetterEndfieldNext::Input::IsDown(
         g_hide_hud_hotkey.load(std::memory_order_relaxed));
     const bool hotkey_pressed = hotkey_down && !g_hud_hotkey_was_down;
     g_hud_hotkey_was_down = hotkey_down;
@@ -1171,7 +1187,7 @@ bool ParseBoolean(std::string_view value, bool default_value = false) {
 }
 
 int ParseVirtualKey(std::string_view value, int fallback) {
-    return BetterEndfield::Input::ParseKey(value, fallback);
+    return BetterEndfieldNext::Input::ParseKey(value, fallback);
 }
 
 UiConfiguration ParseConfigurationText(const char* raw_configuration) {
@@ -1200,7 +1216,7 @@ UiConfiguration ParseConfigurationText(const char* raw_configuration) {
         }
 
         if (line.front() == '[' && line.back() == ']') {
-            in_section = (line == "[betterendfield.ui]");
+            in_section = (line == "[betterendfieldnext.ui]");
             continue;
         }
 
@@ -1220,6 +1236,9 @@ UiConfiguration ParseConfigurationText(const char* raw_configuration) {
             config.enabled = ParseBoolean(value, config.enabled);
         } else if (key == "mobile_ui_enabled") {
             config.mobile_ui_enabled = ParseBoolean(value, config.mobile_ui_enabled);
+        } else if (key == "mouse_to_touch_enabled") {
+            config.mouse_to_touch_enabled =
+                ParseBoolean(value, config.mouse_to_touch_enabled);
         } else if (key == "pc_ui_enabled") {
             config.pc_ui_enabled = ParseBoolean(value, config.pc_ui_enabled);
         } else if (key == "hide_uid_enabled") {
@@ -1247,13 +1266,15 @@ bool ResolveContracts() {
 #if defined(__ANDROID__)
     g_android_pc_cursor_calc_state_method = nullptr;
     g_android_pc_real_cursor_field = nullptr;
+    g_android_pc_binding_action_field = nullptr;
+    g_android_pc_screen_width = g_android_pc_screen_height = nullptr;
+    g_android_pc_screen_width_method = g_android_pc_screen_height_method = nullptr;
+    g_android_pc_absolute_hook_ready = false;
     ResolveAndroidPcMouseDiagnostics();
 #endif
 
     int resolved_count = 0;
-    int contract_total = 0;
     for (auto& contract : g_contracts) {
-        ++contract_total;
         BE_ResolvedMethodV1 resolved{};
         const BE_Result result = g_host->resolve_method(
             g_host->context, &contract.descriptor, &resolved);
@@ -1267,6 +1288,12 @@ bool ResolveContracts() {
 #if defined(__ANDROID__)
             } else if (std::string_view(contract.key) == "android_pc_mouse.cursor_calc_state") {
                 g_android_pc_cursor_calc_state_method = resolved.method_info;
+            } else if (std::string_view(contract.key) == "android_pc_mouse.screen_width") {
+                g_android_pc_screen_width = reinterpret_cast<GetInt32Fn>(resolved.method_pointer);
+                g_android_pc_screen_width_method = resolved.method_info;
+            } else if (std::string_view(contract.key) == "android_pc_mouse.screen_height") {
+                g_android_pc_screen_height = reinterpret_cast<GetInt32Fn>(resolved.method_pointer);
+                g_android_pc_screen_height_method = resolved.method_info;
 #endif
             } else if (std::string_view(contract.key) ==
                 "camera_utils.manager") {
@@ -1295,9 +1322,7 @@ bool ResolveContracts() {
             } else if (std::string_view(contract.key) == "behaviour.set_enabled") {
                 g_behaviour_set_enabled_method = resolved.method_info;
             }
-            ++resolved_count; // Per-contract lines flood the journal ring and
-                              // crowd out the actions diagnostics; a summary
-                              // keeps the startup footprint small.
+            Log(std::string("Resolved method contract: ") + contract.key);
         } else {
             contract.resolved = false;
             Log(std::string("Optional method not found: ") + contract.key);
@@ -1311,6 +1336,13 @@ bool ResolveContracts() {
         BE_ResolvedFieldV1 cursor_resolved{};
         if (g_host->resolve_field(g_host->context, &cursor_field, &cursor_resolved) == BE_Result_Ok)
             g_android_pc_real_cursor_field = cursor_resolved.field_info;
+        const BE_FieldDescriptorV1 action_field{"Input.Beyond.dll", "Beyond.Input", "InputBindingInfo",
+            "playerActionId", "System.String"};
+        BE_ResolvedFieldV1 action_resolved{};
+        if (g_host->resolve_field(g_host->context, &action_field, &action_resolved) == BE_Result_Ok) {
+            g_android_pc_binding_action_field = action_resolved.field_info;
+            Log("Resolved field contract: android_pc_mouse.binding_action");
+        }
         const BE_FieldDescriptorV1 keyboard{"Common.Beyond.dll", "Beyond", "DeviceInfo/InputType", "Keyboard", nullptr};
         BE_ResolvedFieldV1 enum_field{};
         if (g_host->resolve_field(g_host->context, &keyboard, &enum_field) == BE_Result_Ok &&
@@ -1356,8 +1388,6 @@ bool ResolveContracts() {
         Log("Optional class not found: unity.ui.graphic");
     }
 
-    Log((std::string("UI contracts: ") + std::to_string(resolved_count) + " of " +
-         std::to_string(contract_total) + " methods resolved.").c_str());
     return resolved_count > 0;
 }
 
@@ -1366,8 +1396,6 @@ bool InstallHooks() {
         return false;
     }
 
-    int hooked_count = 0;
-    int hookable_count = 0;
     for (auto& contract : g_contracts) {
         if (!contract.resolved || !contract.pointer) {
             continue;
@@ -1476,11 +1504,14 @@ bool InstallHooks() {
         } else if (key == "android_pc_mouse.get_axis") {
             detour = reinterpret_cast<void*>(&DetourAndroidPcGetAxis);
             original = reinterpret_cast<void**>(&g_original_android_pc_get_axis);
+        } else if (key == "android_pc_mouse.binding_enabled") {
+            if (!g_android_pc_binding_action_field) continue;
+            detour = reinterpret_cast<void*>(&DetourAndroidPcBindingEnabled);
+            original = reinterpret_cast<void**>(&g_original_android_pc_binding_enabled);
 #endif
         }
 
         if (detour && original) {
-            ++hookable_count;
             const BE_Result res = g_host->create_hook(
                 g_host->context, kModuleId, contract.pointer, detour, original);
             if (res != BE_Result_Ok) {
@@ -1493,13 +1524,13 @@ bool InstallHooks() {
                     g_android_pc_axis_hook_ready = g_original_android_pc_get_axis != nullptr;
 #endif
                 Log(std::string("Successfully hooked: ") + contract.key);
-                ++hooked_count;
             }
         }
     }
 
-    Log((std::string("UI hooks: ") + std::to_string(hooked_count) + " of " +
-         std::to_string(hookable_count) + " installed.").c_str());
+#if defined(__ANDROID__)
+    InstallAndroidPcMousePositionHook();
+#endif
     return true;
 }
 
@@ -1511,7 +1542,7 @@ void StopHooks() {
 
 #if defined(__ANDROID__)
 void AndroidUiFrame(bool suspend) {
-    if (!betterendfield::OnAndroidFrameThread()) return;
+    if (!betterendfieldnext::OnAndroidFrameThread()) return;
     const auto state = g_state.load(std::memory_order_acquire);
     if (state != ModuleState::Ready && state != ModuleState::Active && state != ModuleState::Disabled) return;
     if (!suspend) {
@@ -1520,11 +1551,11 @@ void AndroidUiFrame(bool suspend) {
         PumpUidVisibility();
         PumpHudVisibility();
     }
-    betterendfield::PublishAndroidHudState(g_hud_hidden);
+    betterendfieldnext::PublishAndroidHudState(g_hud_hidden);
 }
 #endif
 BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
-    if (!host || host->abi_version != BETTER_ENDFIELD_MODULE_ABI_V1) {
+    if (!host || host->abi_version != BETTER_ENDFIELD_NEXT_MODULE_ABI_V1) {
         return BE_Result_InvalidArgument;
     }
     g_host = host;
@@ -1545,12 +1576,15 @@ BE_Result BE_CALL Initialize(const BE_HostApiV1* host) {
     // The touch layout is unusable without a finger to drive it, so the input
     // half starts with the module and stays gated on the same configuration.
     TouchInput::Start([](const char* message) { Log(message); });
+#if !defined(__ANDROID__)
+    TouchPointerPolicy::Start(host, [](const char* message) { Log(message); });
+#endif
 
     g_state.store(ModuleState::Ready);
 #if defined(__ANDROID__)
-    betterendfield::SetAndroidFrameClient(betterendfield::FrameClient::Ui, &AndroidUiFrame);
+    betterendfieldnext::SetAndroidFrameClient(betterendfieldnext::FrameClient::Ui, &AndroidUiFrame);
 #endif
-    Log("BetterEndfield.UI module initialized successfully.");
+    Log("BetterEndfieldNext.UI module initialized successfully.");
     return BE_Result_Ok;
 }
 
@@ -1572,7 +1606,7 @@ BE_Result BE_CALL ConfigurationChanged(const char* raw_configuration) {
     const bool active = mobile_active || pc_active || uid_active || hud_active;
     g_pc_ui_enabled.store(pc_active, std::memory_order_release);
 #if defined(__ANDROID__)
-    betterendfield::PublishAndroidPcMouse(pc_active,
+    betterendfieldnext::PublishAndroidPcMouse(pc_active,
         g_android_pc_cursor_hook_ready && g_android_pc_axis_hook_ready);
     g_next_android_pc_cursor_refresh_tick.store(0, std::memory_order_release);
 #endif
@@ -1586,10 +1620,14 @@ BE_Result BE_CALL ConfigurationChanged(const char* raw_configuration) {
 #if defined(__ANDROID__)
     g_android_pc_mouse_diagnostics_reset.store(true, std::memory_order_release);
 #endif
-    TouchInput::SetEnabled(mobile_active);
+    TouchInput::SetEnabled(mobile_active && config.mouse_to_touch_enabled);
+#if !defined(__ANDROID__)
+    TouchPointerPolicy::SetEnabled(mobile_active);
+#endif
 
     Log(std::string("UI Configuration applied: enabled=") + (config.enabled ? "true" : "false") +
         ", mobile_ui_enabled=" + (config.mobile_ui_enabled ? "true" : "false") +
+        ", mouse_to_touch_enabled=" + (config.mouse_to_touch_enabled ? "true" : "false") +
         ", pc_ui_enabled=" + (config.pc_ui_enabled ? "true" : "false") +
         ", pc_ui_effective=" + (pc_active ? "true" : "false") +
         ", keyboard_input_type=" + std::to_string(g_keyboard_input_type) +
@@ -1614,19 +1652,30 @@ BE_Result BE_CALL ConfigurationChanged(const char* raw_configuration) {
 
 void BE_CALL Shutdown() {
 #if defined(__ANDROID__)
-    betterendfield::ResetAndroidPcMouse();
+    betterendfieldnext::ResetAndroidPcMouse();
     g_android_pc_cursor_intent_known.store(false, std::memory_order_release);
     g_android_pc_cursor_hook_ready = g_android_pc_axis_hook_ready = false;
-    betterendfield::SetAndroidFrameClient(betterendfield::FrameClient::Ui, nullptr);
-    betterendfield::PublishAndroidHudState(false);
+    g_android_pc_binding_action_field = nullptr;
+    g_android_pc_screen_width = g_android_pc_screen_height = nullptr;
+    g_android_pc_screen_width_method = g_android_pc_screen_height_method = nullptr;
+    g_android_pc_absolute_hook_ready = false;
+    betterendfieldnext::SetAndroidFrameClient(betterendfieldnext::FrameClient::Ui, nullptr);
+    betterendfieldnext::PublishAndroidHudState(false);
 #endif
     TouchInput::SetEnabled(false);
     TouchInput::Stop();
+#if !defined(__ANDROID__)
+    TouchPointerPolicy::Stop();
+#endif
     g_hide_uid_enabled.store(false, std::memory_order_release);
     g_hide_hud_enabled.store(false, std::memory_order_release);
     ReleaseHiddenUidRoots();
     ReleaseHudCanvasRoots();
     StopHooks();
+#if defined(__ANDROID__)
+    g_original_android_pc_mouse_position = nullptr;
+    g_original_android_pc_binding_enabled = nullptr;
+#endif
     g_state.store(ModuleState::Stopped);
     g_mobile_ui_enabled.store(false, std::memory_order_release);
     g_pc_ui_enabled.store(false, std::memory_order_release);
@@ -1634,14 +1683,14 @@ void BE_CALL Shutdown() {
 }
 
 const BE_ModuleApiV1 kApi{
-    {kModuleId, "UI Enhancements", "3.2.0", BETTER_ENDFIELD_MODULE_ABI_V1},
+    {kModuleId, "UI Enhancements", "3.2.0", BETTER_ENDFIELD_NEXT_MODULE_ABI_V1},
     &Initialize,
     &ConfigurationChanged,
     &Shutdown};
 
 } // namespace
-} // namespace BetterEndfield::UiModule
+} // namespace BetterEndfieldNext::UiModule
 
-BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfield_GetModuleApiV1() {
-    return &BetterEndfield::UiModule::kApi;
+BE_EXPORT const BE_ModuleApiV1* BE_CALL BetterEndfieldNext_GetModuleApiV1() {
+    return &BetterEndfieldNext::UiModule::kApi;
 }

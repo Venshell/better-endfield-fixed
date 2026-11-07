@@ -3,7 +3,7 @@
 
 // Rotation decomposition follows camera_motion.hpp from RenoDX Endfield
 // Enhancer (MIT). Platform sampling and session ownership remain local.
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 enum class AnimationMode { Off, Body, Head, Realistic };
 
 inline bool AnimationTarget(AnimationMode mode, FirstPersonMath::Quat facing,
@@ -23,4 +23,4 @@ inline bool AnimationTarget(AnimationMode mode, FirstPersonMath::Quat facing,
     result = BlendRotation(result, facing, strength);
     return Unit(result);
 }
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

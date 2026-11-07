@@ -9,7 +9,7 @@
 #include <fstream>
 #include <stdexcept>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 constexpr const char* kAssembly = "UnityEngine.CoreModule.dll";
 constexpr const char* kLog = "android_mesh_builder";
@@ -110,7 +110,7 @@ bool AndroidPipelineLodEnabled() { return pipeline_lod_enabled; }
 bool AndroidNpcParametersEnabled() { return npc_parameters_enabled; }
 bool AndroidInspectionEnabled() { return inspection_enabled; }
 std::string AndroidTextureMipRequestToken() {
-    const char* diagnostics = std::getenv("BETTER_ENDFIELD_DIAGNOSTICS_PATH");
+    const char* diagnostics = std::getenv("BETTER_ENDFIELD_NEXT_DIAGNOSTICS_PATH");
     if (!diagnostics) return {};
     const size_t path_size = strnlen(diagnostics, 4097);
     if (path_size == 0 || path_size > 4096) return {};
@@ -378,7 +378,7 @@ bool AndroidReadMeshSubmeshes(void* mesh, std::vector<std::array<int64_t,4>>& su
     }
 }
 
-bool AndroidSubmitMesh(void* mesh, const BetterEndfield::CustomModel::BemComponent& component) {
+bool AndroidSubmitMesh(void* mesh, const BetterEndfieldNext::CustomModel::BemComponent& component) {
     if (!mesh || !AndroidMeshBuilderReady()) return false;
     try {
         using Clock = std::chrono::steady_clock;
@@ -401,7 +401,12 @@ bool AndroidSubmitMesh(void* mesh, const BetterEndfield::CustomModel::BemCompone
         }
         void* vertex_args[]{&writable.data, &vertices, descriptors};
         calls.Call(api.set_vertex, nullptr, vertex_args);
-        for (int stream = 0; stream < 3; ++stream) Transfer(calls,writable.data,stream,component.streams[stream],true);
+        int stream_count=0;
+        for (const auto& attr:component.attributes) {
+            if (attr[3]<0 || attr[3]>=3) throw std::runtime_error("invalid vertex stream");
+            stream_count=std::max(stream_count,attr[3]+1);
+        }
+        for (int stream = 0; stream < stream_count; ++stream) Transfer(calls,writable.data,stream,component.streams[stream],true);
         int32_t format = component.info.index_element_size == 4 ? 1 : 0;
         void* index_args[]{&writable.data,&indices,&format}; calls.Call(api.set_index,nullptr,index_args);
         Transfer(calls,writable.data,-1,component.indices,true);
@@ -432,7 +437,9 @@ bool AndroidSubmitMesh(void* mesh, const BetterEndfield::CustomModel::BemCompone
         if (calls.Value<int32_t>(api.vertex_count,nullptr,get_args) != vertices ||
             calls.Value<int32_t>(api.sub_count,nullptr,get_args) != subs)
             throw std::runtime_error("submitted counts differ");
-        for (int stream = 0; stream < 3; ++stream) Transfer(calls,readback.data,stream,component.streams[stream],false);
+        if (calls.Value<int32_t>(api.buffer_count,nullptr,get_args)!=stream_count)
+            throw std::runtime_error("submitted stream count differs");
+        for (int stream = 0; stream < stream_count; ++stream) Transfer(calls,readback.data,stream,component.streams[stream],false);
         Transfer(calls,readback.data,-1,component.indices,false);
         for (int32_t i = 0; i < subs; ++i) {
             SubMesh sub;

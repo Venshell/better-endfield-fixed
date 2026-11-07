@@ -8,27 +8,80 @@ std::atomic_bool g_android_pc_cursor_hook_ready{false};
 std::atomic_bool g_android_pc_axis_hook_ready{false};
 std::atomic_bool g_android_pc_cursor_intent_known{false};
 std::atomic_uint64_t g_next_android_pc_cursor_refresh_tick{0};
+using AndroidPcPositionFn = void(*)(AndroidPcMousePosition*);
+using AndroidPcBindingEnabledFn = bool(__fastcall*)(void*, void*);
+AndroidPcPositionFn g_original_android_pc_mouse_position = nullptr;
+AndroidPcBindingEnabledFn g_original_android_pc_binding_enabled = nullptr;
+GetInt32Fn g_android_pc_screen_width = nullptr, g_android_pc_screen_height = nullptr;
+const void* g_android_pc_screen_width_method = nullptr;
+const void* g_android_pc_screen_height_method = nullptr;
+const void* g_android_pc_binding_action_field = nullptr;
+
+void DetourAndroidPcMousePosition(AndroidPcMousePosition* position) {
+    if (g_original_android_pc_mouse_position) g_original_android_pc_mouse_position(position);
+    if (!position || !g_pc_ui_enabled.load(std::memory_order_acquire) ||
+        !g_android_pc_screen_width || !g_android_pc_screen_height) return;
+    float x = 0.0f, y = 0.0f;
+    if (!betterendfieldnext::ReadAndroidPcMouseAbsolute(x, y)) return;
+    const int32_t width = g_android_pc_screen_width(const_cast<void*>(g_android_pc_screen_width_method));
+    const int32_t height = g_android_pc_screen_height(const_cast<void*>(g_android_pc_screen_height_method));
+    if (width <= 0 || height <= 0) return;
+    // Java observes coordinates local to Unity's root view dispatch, normalizes
+    // against the live view, and excludes our synthetic capture-center input.
+    // Unity screen pixels point up, Android view coordinates point down.
+    *position = {x * width, (1.0f - y) * height, 0.0f};
+}
+
+void InstallAndroidPcMousePositionHook() {
+    if (!g_host || !g_host->create_hook || !g_android_pc_screen_width || !g_android_pc_screen_height) return;
+    using ResolveIcallFn = void*(*)(const char*);
+    const auto resolve = reinterpret_cast<ResolveIcallFn>(GetProcAddress(
+        GetModuleHandleW(L"GameAssembly.dll"), "il2cpp_resolve_icall"));
+    void* target = resolve ? resolve("UnityEngine.Input::get_mousePosition_Injected(UnityEngine.Vector3&)") : nullptr;
+    // GetMousePos in the Android sample resolves and calls this icall directly,
+    // bypassing the managed Input wrapper. Hook the shared native boundary so
+    // Rewired and the game's mouse-position readers observe the same sample.
+    if (target && g_host->create_hook(g_host->context, kModuleId, target,
+            reinterpret_cast<void*>(&DetourAndroidPcMousePosition),
+            reinterpret_cast<void**>(&g_original_android_pc_mouse_position)) == BE_Result_Ok &&
+            g_original_android_pc_mouse_position) {
+        g_android_pc_absolute_hook_ready = true;
+        Log("Successfully hooked: android_pc_mouse.position_icall");
+    } else Log("Optional mouse-position icall hook unavailable; retaining Unity absolute input");
+}
+
+bool __fastcall DetourAndroidPcBindingEnabled(void* instance, void* method) {
+    if (instance && g_pc_ui_enabled.load(std::memory_order_acquire) &&
+        g_android_pc_binding_action_field && g_host && g_host->field_get_value_object &&
+        g_host->copy_managed_string) {
+        void* action = g_host->field_get_value_object(g_host->context, g_android_pc_binding_action_field, instance);
+        char name[32]{};
+        if (action && g_host->copy_managed_string(g_host->context, action, name, sizeof(name)) > 0 &&
+            std::string_view(name) == "common_quit_game") {
+            // The Android MainHud adds this binding in addition to the normal
+            // UI back/terminal binding. Disable it at eligibility checking,
+            // before the checker chooses/blocks lower-priority actions.
+            return false;
+        }
+    }
+    return g_original_android_pc_binding_enabled ? g_original_android_pc_binding_enabled(instance, method) : false;
+}
 
 void __fastcall DetourAndroidPcCursorToggle(
     void* instance, bool show_cursor, bool force_update, void* method) {
     if (g_original_android_pc_cursor_toggle)
         g_original_android_pc_cursor_toggle(instance, show_cursor, force_update, method);
     g_android_pc_cursor_intent_known.store(true, std::memory_order_release);
-    betterendfield::SetAndroidPcCursorRequest(show_cursor);
+    betterendfieldnext::SetAndroidPcCursorRequest(show_cursor);
     if (g_pc_ui_enabled.load(std::memory_order_acquire) &&
         g_diagnostics_enabled.load(std::memory_order_relaxed)) {
-        // Report on a change of either argument. This state is the only gate on
-        // pointer capture, and the two arguments arrive together on the calls
-        // that matter, so keying on the pair keeps the transition visible
-        // without repeating a settled value the game keeps re-asserting.
         static thread_local int32_t last_request = -1;
-        const int32_t request = (show_cursor ? 1 : 0) | (force_update ? 2 : 0);
+        const int32_t request = show_cursor ? 1 : 0;
         if (request != last_request) {
             last_request = request;
             Log(std::string("Android PC mouse cursor request: show=") +
-                (show_cursor ? "true" : "false") + ", force=" +
-                (force_update ? "true" : "false") + ", relative_capture=" +
-                (betterendfield::AndroidPcMouseCaptureRequested() ? "requested" : "off"));
+                (show_cursor ? "true" : "false") + ", relative_capture=" +
+                (betterendfieldnext::AndroidPcMouseCaptureRequested() ? "requested" : "off"));
         }
     }
 }
@@ -63,17 +116,9 @@ float __fastcall DetourAndroidPcGetAxis(void* instance, void* axis_name, void* m
         if (g_host->copy_managed_string(g_host->context, axis_name, name, sizeof(name)) > 0) {
             const std::string_view axis(name);
             if (axis == "Mouse X" || axis == "Mouse Y") {
-                static std::atomic<uint64_t> s_axis_hits{0};
-                const uint64_t hits = s_axis_hits.fetch_add(1, std::memory_order_relaxed);
-                if (g_diagnostics_enabled.load(std::memory_order_relaxed) &&
-                    (hits < 5 || hits % 600 == 0)) {
-                    Log(std::string("Android PC mouse: game read ") + std::string(axis) +
-                        ", hit " + std::to_string(hits) + ", relative_capture=" +
-                        (betterendfield::AndroidPcMouseCaptureRequested() ? "requested" : "off"));
-                }
                 PrimeAndroidPcCursorIntent(instance);
                 float x = 0.0f, y = 0.0f;
-                if (betterendfield::ReadAndroidPcMouseMotion(x, y)) {
+                if (betterendfieldnext::ReadAndroidPcMouseMotion(x, y)) {
                     // Captured Android coordinates point down; Rewired's Mouse
                     // Y and the game's normalized-screen camera path point up.
                     // The game retains its downstream Lua/camera gains. This

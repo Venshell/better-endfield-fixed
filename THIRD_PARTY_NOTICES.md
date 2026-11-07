@@ -24,34 +24,44 @@
   180 degree basis, 0.07 scale and 5 degree FOV defaults) and `vmd_parser.h`
   (camera record layout).
 
-## RenoDX Endfield Enhancer
+- Additional use (2026-09-27): `native/shared/motion/vmd.h` follows the
+  section layouts and timeline conventions in EIEM `src/vmd_parser.h` and
+  `src/camera_player.h`, reviewed at commit
+  `447600b9de959d8b709ad84b19e605eeb8a2a0a9`.
+  The bounded portable parser, transactional file handling and camera path format
+  are adapted/implemented for Better Endfield. No EIEM binaries or assets are included.
 
-- Source: https://github.com/ItsTheSewerRat/renodx, branch `endfield-enhancer`
-  (path `src/games/endfield-enhancer/`). That branch extends the RenoDX HDR addon
-  at https://github.com/clshortfuse/renodx.
-- Author: `ItsTheSewerRat` ("ItsaRat"). RenoDX itself is by Carlos Lopez Jr. and
-  contributors.
-- License: MIT
-- Used in: the first-person camera implementation under
-  `native/modules/camera/`. Ported with names, namespaces and the surrounding
-  platform layer adapted; the expressions, constants and evaluation order are
-  kept as published.
-  - `first_person_math.h` — ported from the upstream `camera_math.hpp`:
-    `Vec3`/`Quat` and their operators, `Rotate`, `AxisAngle`, `ExpandLookPitch`,
-    `LateralFacingYaw`, `Unit`, `BlendRotation`, `FacingRotation` and the
-    constants they carry (0.382683432, 45, 89, 57.295779513).
-  - `first_person_facing.h` and `first_person_facing_runtime.inc` — lateral
-    interpolation and movement eligibility adapted from `camera_movement.hpp`.
-  - `first_person_motion.h` and `first_person_motion_runtime.inc` — animation
-    rotation decomposition and bind-pose axes adapted from `camera_motion.hpp`.
-  - `first_person_mesh.h` — the part-role predicates `IsDedicatedHeadMesh` and
-    `IsBodyMesh`, and the body-skin triangle test inside `Build`, are ported from
-    the upstream `camera_mesh.hpp` (`s_actor_` / `_lod` / `shadowproxy` role
-    rules, the `_face_`/`_hair_`/`_brow_`/`_eyebrow_`/`_iris_`/`_eyeshadow_`/
-    `_hairshadow_` token list, and the half-weight body-skin rule).
-  - `module.cpp` — the eye-anchor formula (a horizontal `planar` forward offset
-    plus a world-vertical height offset, so looking down does not drag the eye
-    downwards), the `first_person_eye_height` (0.05), `first_person_eye_forward`
-    (0.03) and `first_person_near_clip` (0.03) defaults, and the
-    `first_person_extend_look_range` multipliers (1.10 up / 1.50 down) come from
-    the upstream `camera.hpp`.
+### Character semantic mapping reference
+
+`native/shared/motion/character_mapping.h` contains semantic bone/morph-name mappings
+reviewed against Sasye/EIEM `src/bone_map.h` and `src/smc_face.h` at
+`8b46b76b33e3f61825b6b8c55d983bcf2c1bc94c` (AGPL-3.0).
+No upstream executable, private SMC memory layout, hash constant, or game asset is included.
+
+### DirectVmd body playback (2026-09-29)
+
+`native/modules/camera/eiem/upstream/` is a source snapshot of Sasye/EIEM at
+commit `1bc9baa` (AGPL-3.0, copy in `native/modules/camera/eiem/LICENSE.EIEM`):
+VMD parser, DirectVmd sampling/source rig/PMX reference, ghost rig with FinalIK
+leg and knee handling, terrain follow and SkeletalMorphCore face code. It is
+compiled into `BetterEndfieldNext.Camera.dll` through `eiem/eiem_body.cpp`, which
+replaces EIEM's loader, GUI, audio and hook installation. Local modifications
+are listed in `native/modules/camera/eiem/UPSTREAM.md`.
+
+## Endfield-Poser
+
+- Source: https://github.com/honxi1/Endfield-Poser (reviewed read-only)
+- Used as a design reference only for squad playback in the Camera module:
+  reading the current squad through `GameInstance.get_player` →
+  `GamePlayer.squadManager` → `SquadManager.GetMemberBySlot`, and sharing one
+  stage origin between dancers. No Endfield-Poser source code is included.
+
+## miniz
+
+- Source: https://github.com/richgel999/miniz, release 3.1.2 amalgamated pair
+  (`miniz.c` + `miniz.h`), vendored verbatim under
+  `native/shared/third_party/miniz` with its upstream `LICENSE`.
+- License: MIT, per the upstream LICENSE file.
+- Used by the shared package decoder (`bem.cpp`) to read the BEM ZIP container
+  described in format specification section 14. Only the ZIP reader APIs are
+  used; no miniz source is modified.

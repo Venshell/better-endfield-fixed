@@ -1,6 +1,6 @@
 #pragma once
 #include "first_person_mesh.h"
-namespace BetterEndfield::FirstPersonMesh {
+namespace BetterEndfieldNext::FirstPersonMesh {
 enum class CapVertexStatus { Ok, SourceFailure, InvalidVertexCount, InvalidPartCount,
     InvalidIndexCount, InvalidIndex, InvalidVertex, CapCountMismatch,
     VertexBudgetExceeded, IndexBudgetExceeded, DegenerateCap };
@@ -83,4 +83,4 @@ inline CapVertexResult BuildCapVertices(const std::vector<Vertex>& vertices,
     }
     return result;
 }
-} // namespace BetterEndfield::FirstPersonMesh
+} // namespace BetterEndfieldNext::FirstPersonMesh

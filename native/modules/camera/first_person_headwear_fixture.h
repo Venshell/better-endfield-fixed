@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace BetterEndfield::FirstPersonHeadwear {
+namespace BetterEndfieldNext::FirstPersonHeadwear {
 
 inline bool SafeMeshName(const std::string& name) {
     return !name.empty() && name.size() <= 160 &&

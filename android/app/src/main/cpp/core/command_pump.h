@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <string>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 bool SubmitRuntimeCommand(const char* payload, size_t size);
 // Takes the pending command only when it names the caller's own command, and
 // returns everything after the command line in `value`. The slot is shared by

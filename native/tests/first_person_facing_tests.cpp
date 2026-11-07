@@ -4,7 +4,7 @@
 #include <limits>
 #include <stdexcept>
 
-using namespace BetterEndfield::FirstPerson;
+using namespace BetterEndfieldNext::FirstPerson;
 void Check(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
@@ -111,8 +111,8 @@ int main() {
             Check(held.yaw < walking && held.yaw > 30,
                 "the first standing frame must hold the strafe pose without snapping");
         }
-        const BetterEndfield::FirstPersonMath::Quat identity{0, 0, 0, 1};
-        const auto external_change = BetterEndfield::FirstPersonMath::AxisAngle({0, 1, 0}, .2f);
+        const BetterEndfieldNext::FirstPersonMath::Quat identity{0, 0, 0, 1};
+        const auto external_change = BetterEndfieldNext::FirstPersonMath::AxisAngle({0, 1, 0}, .2f);
         Check(SameOwnedRotation(identity, {-identity.x, -identity.y, -identity.z, -identity.w}),
             "equivalent quaternion signs must preserve ownership");
         Check(!SameOwnedRotation(identity, external_change),

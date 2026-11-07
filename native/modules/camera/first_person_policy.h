@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 enum class Suppression { None, NotRequested, DialogueUnavailable, Dialogue,
     CombatUnavailable, Combat, CombatCooldown, GameCamera, Ultimate, Cinematic };
 struct PolicyInput {
@@ -54,4 +54,4 @@ inline const char* SuppressionName(Suppression reason) {
     }
     return "unknown";
 }
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

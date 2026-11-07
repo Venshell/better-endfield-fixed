@@ -1,10 +1,11 @@
 # BEMv1 创作工具与源模型校验
 
-当前能力边界和兼容性矩阵见[CustomModel 能力与兼容性声明](../../docs/CUSTOM_MODEL_CAPABILITY_COMPATIBILITY_20260918.md)。
+当前能力边界和兼容性矩阵见[CustomModel 能力与兼容性声明](../../docs/custom_model/research/1.5.3/capability-v25/CUSTOM_MODEL_CAPABILITY_COMPATIBILITY.md)。
 
-正式入口：`bem_tool.py inspect/convert/unpack/pack/validate/bundle`。单包输出 `.bem`，分发合集为标准 `.zip`。
+正式入口：`bem_tool.py inspect/convert/unpack/pack/validate/bundle`，以及 `workspace init` 创建可移动的标准创作者工程。`blender_addon/bem_exporter/` 可从 Blender 导出可编辑 BEM 工程。单包输出 `.bem`，分发合集为标准 `.zip`。
 独立工具链由 `scripts/BuildBemTools.ps1` 打包，无需玩家安装 Python；GUI 复用同一核心。
-[格式规范](../../docs/BEM_V1_SPEC.md) · [创作者指南](../../docs/BEM_CREATOR_GUIDE.md)。
+[格式规范](../../docs/custom_model/BEM_FORMAT_SPEC.md) · [创作者指南](../../docs/custom_model/BEM_CREATOR_GUIDE.md) · [其他来源 Mod 转换](../../docs/custom_model/BEM_SOURCE_MOD_CONVERSION.md)。
+BEM Tools 当前源码版本为 1.6.7，支持 BEM 1.0–1.5；以 `bem_tool.py --version` 输出为准。`pack/unpack/build/validate/bundle` 支持 1.4 的显式资源表和静态网格，以及 1.5 的材质覆盖、ZIP 容器和时钟驱动。实际目标仍需要各平台验证过的 profile 与游戏内验收，格式与宿主测试不能代替 Android 实机兼容证据。
 下文旧工具是转换后端/研究命令，它们的 v24/v25 中间产物不被正式运行时接受。
 旧运行时 PoC 已移至 [research/custom-model](../../research/custom-model/README.md)；
 本目录保留仍被当前转换流程使用的代码，包括名称带 `poc` 的转换器。
@@ -23,21 +24,22 @@ python tools/CustomModel/build_bem14_target.py D:/CodexData/native-metadata.json
 python tools/CustomModel/bem_upload_report.py D:/CodexData/model.bem --output D:/CodexData/model-upload-report.json
 ```
 
-## Android LOD 关系候选表
+## Android LOD 关系生成表
 
-`generate_android_lod_relations.py` 可将**独立采集**的 Android UI LOD0 组件资料与 Android LOD1 目录交叉匹配，输出待运行时核实的 JSON 候选表。调用时须显式提供 `--native-catalog`、`--android-catalog`、`--snapshot` 和 `--output`。源目录中的每份角色资料必须声明 `platform: "android-arm64"` 且版本相同；目标目录须声明 `platform: "Android"`、同一 `manifestVersion` 及 `characters[].modelAssets[].path`。本地 `tools/CustomModel/catalog` 的历史 Windows 资料会被拒绝，不能冒充 Android 证据。输出标记 `candidate-requires-runtime-validation`，不代表模型在 Android 已可加载或显示。目前未接入原生生成头及运行时，需待 Android 目录和匹配合同核实后再接线。
+`generate_android_lod_relations.py` 读取 `config/compatibility/custom_model/<版本>/android-lod-relations.json`，生成运行时消费的 `native/modules/custom_model/android_lod_relations.generated.h`。目标身份优先采用各角色自己的 Android prefab 索引；没有 prefab 证据时，按策略使用历史目录中的 LOD1 观测，缺少证据时不生成关系。UI 源身份可来自历史 Windows 角色资料，不将该来源冒充 Android prefab 实测。生成头为只读产物，变更应修改目录、策略或生成器后重新生成。
 
 ```powershell
-python tools/CustomModel/generate_android_lod_relations.py --native-catalog D:/CodexData/android-ui-lod0-catalog --android-catalog D:/CodexData/android-character-catalog.json --snapshot MANIFEST_VERSION --output D:/CodexData/android-lod-relations.candidates.json
+python tools/CustomModel/generate_android_lod_relations.py --workspace-config D:/CodexData/workspace.local.json
 ```
+
+`--lod1-index` 可显式指定 prefab 索引。默认不输出索引计数；只有传入 `--emit-index-counts` 才启用解析计数，因为已知计数会打开运行时匹配门禁。表中身份匹配证据不能代表游戏内渲染验收。旧的 JSON 候选输出入口由当前生成合同取代；宿主门禁使用 `test_android_lod_relations` 验证 prefab 优先、缺失不猜测、变体名和运行时字段顺序。
 
 ## ComponentN 自动转换
 
 `bem_tool.py convert SOURCE -o OUTPUT.bem` 在角色资料和标准声明完整时不再需要配方。
 女管理员已跑通无配方转换；佩丽卡只依据游戏资源接入资料，不引入样包专用规则。
-1.1.3 已接入 32 角色、370 个可复用 LOD0 部件，补齐 360 个单子网格入口与 1,181 项纹理身份。原生资料与 EFMI 原资源对应分开记录，不能把入库数量当作任意源包兼容数量。范围及官方来源见[角色资料说明](../../docs/BEM_CHARACTER_CATALOG_20260919.md)和[EFMI 身份补全](../../docs/archive/BEM_EFMI_IDENTITIES_20260920.md)。
-规则、证据及限制见 `docs/archive/BEM_COMPONENTN_AUTOMATION_20260919.md`。资料放在 `catalog/`，由工具自动匹配。
-逐绘制段和 RabbitFX 的样本分层、自动化边界见 `docs/archive/BEM_PER_DRAW_COMPATIBILITY_20260920.md` 与 `docs/archive/BEM_RABBITFX_COMPATIBILITY_20260920.md`。当前只做识别和报告，尚未放行 RabbitFX Stable Textures 的通用转换。
+1.1.3 已接入 32 角色、370 个可复用 LOD0 部件，补齐 360 个单子网格入口与 1,181 项纹理身份。原生资料与 EFMI 原资源对应分开记录，不能把入库数量当作任意源包兼容数量。范围及官方来源见[角色资料说明](../../docs/custom_model/research/1.5.3/bem-character-catalog/BEM_CHARACTER_CATALOG.md)和[EFMI 身份补全](../../docs/custom_model/research/1.5.3/bem-character-catalog/BEM_EFMI_IDENTITIES.md)。
+当前支持范围与规则见[其他来源 Mod 转换](../../docs/custom_model/BEM_SOURCE_MOD_CONVERSION.md)。资料放在 `catalog/`，由工具自动匹配。RabbitFX 目前只做识别和报告，不自动转换。
 
 ## 通用原生角色资料解析器
 
@@ -48,14 +50,14 @@ python tools/CustomModel/generate_android_lod_relations.py --native-catalog D:/C
 新增 `extract_native_bundles.py` → `NativeAssetReader` → `parse_native_models.py`：
 按角色从当前 VFS 提取世界/详情资源及依赖，保留文件＋PathID 身份，解析原生 Mesh、顶点存储声明、
 bones/bindposes、材质与贴图绑定。已读取佩丽卡和庄方宜，缺失引用明确保留，未自动标记可转换。
-构建、命令、数据格式与已知缺口见 [解析器文档](../../docs/CUSTOM_MODEL_NATIVE_PARSER_20260917.md)。
+构建、命令、数据格式与已知缺口见 [解析器文档](../../docs/custom_model/CUSTOM_MODEL_NATIVE_PARSER.md)。
 `prepare_native_backend.py` 在独立源码副本修复公共高光包的解压检查；庄方宜 64 个 renderer 引用现已完整。
 `prepare_native_profile.py` 对照 Mod 入口与原生资料，核对骨骼映射并生成未放行的 profile 草稿。
 庄方宜八组合并骨架及世界/UI 八个运行时声明已核对。
 `finalize_native_profile.py` 结合真实观测、原生纹理字节和显式材质配方生成最终 profile，
 区分资料核实的 `verified` 与实机渲染的 `render_verified`。准备阶段草稿仍不自动放行。
 `runtime_native_probe.py arm/collect` 配合一次性资源交付探针采集 world/UI 原生声明与材质绑定，
-用户操作及开发命令见 [运行时探测](../../docs/archive/CUSTOM_MODEL_RUNTIME_PROBE_20260917.md)。
+用户操作及开发命令见 [运行时探测](../../docs/custom_model/research/1.5.3/runtime-probes/CUSTOM_MODEL_RUNTIME_PROBE_ZHUANGFANGYI.md)。
 
 ## Hash/LOD 格式的新入口（2026-09-17）
 
@@ -63,13 +65,13 @@ bones/bindposes、材质与贴图绑定。已读取佩丽卡和庄方宜，缺�
 `convert_hash_lod.py`，不套用下文的 ComponentN 转换器。现支持在已核实的 schema=2
 profile 下输出 BEMPC25：默认绘制段、独立材质来源、合并骨架及 16 位输入骨骼索引重映射。
 庄方宜首个默认状态测试包已生成并部署，四组件、七项纹理，用户已确认整体显示正常。
-生成命令、材质取舍和验证范围见[庄方宜验证记录](../../docs/archive/CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION_20260917.md)。
+生成命令、材质取舍和验证范围见[庄方宜验证记录](../../docs/custom_model/research/1.5.3/zhuangfangyi/CUSTOM_MODEL_ZHUANGFANGYI_VALIDATION.md)。
 洁尔佩塔默认外观已通过 `convert_reviewed_draws.py` 和明确审阅的源程序配方生成测试包，
 跨入口绘制归并到现有运行时。此入口严格核对主 INI 和五份骨骼 Shader 的有效文本，
 不解释任意 GPU 程序。2026-09-18 用户指定 P 键另一套服装并放宽索引限制，
 新增 `gilberta-12.outfit-b.reviewed.json`，大组件用 UInt32 索引，已部署；
-不支持运行时面板切换。当前状态见[Outfit B 修正记录](../../docs/CUSTOM_MODEL_GILBERTA_OUTFIT_B_20260918.md)。
-详见 [独立转换器与样本检查](../../docs/archive/CUSTOM_MODEL_HASH_LOD_CONVERTER_20260917.md)。
+不支持运行时面板切换。当前状态见[Outfit B 修正记录](../../docs/custom_model/research/1.5.3/gilberta-outfits/CUSTOM_MODEL_GILBERTA_OUTFIT_B.md)。
+详见 [独立转换器与样本检查](../../docs/custom_model/research/1.5.3/hash-lod-conversion/CUSTOM_MODEL_HASH_LOD_CONVERTER.md)。
 
 ```powershell
 python tools/CustomModel/convert_hash_lod.py path/to/extracted-mod --report artifacts/hash-lod-report.json
@@ -78,7 +80,7 @@ python tools/CustomModel/convert_hash_lod.py path/to/extracted-mod --profile pat
 
 RAR 先解压；可直接读取目录或 ZIP。入口配置名无需为 `mod.ini`，有多个主配置时用 `--ini` 指定。
 退出码 2 和报告中的 `conversion_ready=false` 表示缺少适配资料或超出转换范围。
-完整 schema、包格式及当前验证边界见 [四项能力实现](../../docs/CUSTOM_MODEL_V25_BINDING_IMPLEMENTATION_20260917.md)。
+完整 schema、包格式及当前验证边界见 [四项能力实现](../../docs/custom_model/research/1.5.3/capability-v25/CUSTOM_MODEL_V25_BINDING_IMPLEMENTATION.md)。
 
 `convert_efmi_poc.py` 生成现有 BEM PoC-2.4 文件。支持 ALPHA-12 的
 `TextureOverride_EntryPoint_ComponentN` 和 ALPHA-4 的
@@ -148,7 +150,7 @@ python -m unittest discover -s tools/CustomModel -p "test_*.py" -v
 
 ## 佩丽卡游戏管线测试入口
 
-**程序目录与 catalog 目录不同。** 当前启动器使用 `%LOCALAPPDATA%\BetterEndfield\catalog` 作为 catalog 根目录。DLL/模块 INI 放在程序目录的 `modules`，模型包与角色配置必须放到 catalog，不能只复制到程序目录。
+**程序目录与 catalog 目录不同。** 当前启动器使用 `%LOCALAPPDATA%\BetterEndfieldNext\catalog` 作为 catalog 根目录。DLL/模块 INI 放在程序目录的 `modules`，模型包与角色配置必须放到 catalog，不能只复制到程序目录。
 
 在 Host 的 catalog 根目录下放置：
 
@@ -173,23 +175,23 @@ target=pelica
 
 本轮验证：DLL 编译通过；11 项假 Host 生命周期场景通过（含角色隔离、组件身份、刷新和回滚），并通过生产 BEM 加载器读取实际佩丽卡几何包。这些检查不执行 Unity 顶点上传或游戏渲染，实机显示、骨骼语义及展示界面仍待验收。当前 C0/C1/C9 已恢复 12 字节原始流，材质近似包尚待实机验收。
 
-分支测试装配目录：`artifacts/pelica-research/runtime-stage/`，含 `modules/BetterEndfield.CustomModel.dll` 及上述 `custom-model/` 文件。部署时 `modules` 复制到程序目录，`custom-model` 复制到实际 catalog 根目录。
+分支测试装配目录：`artifacts/pelica-research/runtime-stage/`，含 `modules/BetterEndfieldNext.CustomModel.dll` 及上述 `custom-model/` 文件。部署时 `modules` 复制到程序目录，`custom-model` 复制到实际 catalog 根目录。
 
-2026-09-15 部署修正：已更新指定程序目录 `artifacts/BetterEndfield-win-x64/modules`，并将佩丽卡包和 `runtime.ini` 安装到 `%LOCALAPPDATA%\BetterEndfield\catalog\custom-model`。此前只复制到程序目录导致配置未读取，日志确认加载了旧管理员包（11 部件、24 贴图）。修正后用运行时同款 Windows INI API 读回 `target=pelica`。角色配置仅在初始化时读取，需重启游戏才能生效，实机效果仍待验证。
+2026-09-15 部署修正：已更新指定程序目录 `artifacts/BetterEndfieldNext-win-x64/modules`，并将佩丽卡包和 `runtime.ini` 安装到 `%LOCALAPPDATA%\BetterEndfieldNext\catalog\custom-model`。此前只复制到程序目录导致配置未读取，日志确认加载了旧管理员包（11 部件、24 贴图）。修正后用运行时同款 Windows INI API 读回 `target=pelica`。角色配置仅在初始化时读取，需重启游戏才能生效，实机效果仍待验证。
 
 
 ### 本轮验证与部署
 
 15 项 Python 测试、11 项假 Host 生命周期场景（新增私有材质隔离和恢复）、Release DLL 构建、实际材质包生产解析通过。测试不等于 Unity GPU 渲染验收。新默认文件名是 `pelica-lod0-native-materials.bempoc`，需要同时更新 DLL 和 catalog 包，并重启游戏。F12 应用后应检查成功部件数和 `Textures: installed=...`（具体日志以运行时为准），F11 检查恢复。
 
-第二版已同步至指定程序目录的 DLL 与 `%LOCALAPPDATA%\BetterEndfield\catalog\custom-model` 的新包，覆盖前备份于分支研究目录 deployment-backups。管理员样本输出与原基线逐字节一致（56,182,760 字节）。
+第二版已同步至指定程序目录的 DLL 与 `%LOCALAPPDATA%\BetterEndfieldNext\catalog\custom-model` 的新包，覆盖前备份于分支研究目录 deployment-backups。管理员样本输出与原基线逐字节一致（56,182,760 字节）。
 
 
 ## 双角色双路径实验
 
 已增加管理员＋佩丽卡双角色状态隔离与独立材质。当前部署配置 `target=both`、`path=instance`，启动即启用两个角色；F11 同时停用并回滚，F12 同时重建。需重启游戏加载新版 DLL。两套 BEM 都放在实际 catalog/custom-model 下。
 
-第二轮配置 `path=resource`，必须另起一次游戏加载验证。资源模式只在主线程 `_FinishWithAsset` 通知消费者前修改模板，没有实例扫描或 AI 附着兜底。尚未完成双角色任一路径的实机验收。步骤和证据标准见 `docs/CUSTOM_MODEL_MULTI_MOD_REPLACEMENT_WINDOW_20260915.md` 文末。
+第二轮配置 `path=resource`，必须另起一次游戏加载验证。资源模式只在主线程 `_FinishWithAsset` 通知消费者前修改模板，没有实例扫描或 AI 附着兜底。尚未完成双角色任一路径的实机验收。步骤和证据标准见 `docs/custom_model/research/1.5.3/replacement-window/CUSTOM_MODEL_MULTI_MOD_REPLACEMENT_WINDOW.md` 文末。
 
 双角色刷新修复：材质创建统一使用 Array.Clone + Material 复制构造器，避免 Renderer.materials 返回已有实例导致 F12 重建被拒绝。15 项生命周期测试通过；游戏内重复刷新待确认。
 

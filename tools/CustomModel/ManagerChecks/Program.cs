@@ -1,4 +1,4 @@
-using BetterEndfield.UI.Services;
+using BetterEndfieldNext.UI.Services;
 
 static void Check(bool ok, string why) { if (!ok) throw new InvalidOperationException(why); }
 var inspect = BemInspectionSummary.Read("""{"format":"component-n","analysis":{"components":[{},{}],"textures":24,"errors":[]}}""");
@@ -19,6 +19,46 @@ Check(manual.Title.Contains("不能自动转换") && !manual.AlreadyPackaged, "c
 var mapping = BemInspectionSummary.Read("""{"format":"hash-lod","automation":{"status":"requires_mapping","reasons":["Material mapping required"]},"analysis":{"components":[],"textures":0,"errors":[]}}""");
 Check(mapping.Title.Contains("暂不能承诺"), "hash/LOD support must not imply full automatic conversion");
 if (args is ["--presentation"]) { Console.WriteLine("PASS: source readiness, direct import, ambiguity and readable failure guidance"); return; }
+if (args is ["--v14"])
+{
+    try { await TargetChecks.Run(); }
+    finally
+    {
+        string temporary = Path.GetFullPath(ConfigurationService.SettingsDirectory);
+        if (temporary.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase) &&
+            Path.GetFileName(temporary).StartsWith("BemManagerChecks-")) Directory.Delete(temporary, true);
+    }
+    return;
+}
+if (args is ["--import-real", var settingsRoot, var toolRoot, var sourcePackage])
+{
+    // Explicitly isolated evidence setup: never select the user's model library.
+    string root = Path.GetFullPath(settingsRoot);
+    string auditRoot = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "build", "bem-chain-audit-4.0.3")) + Path.DirectorySeparatorChar;
+    if (!root.StartsWith(auditRoot, StringComparison.OrdinalIgnoreCase))
+        throw new InvalidOperationException("Real-package validation must stay inside build/bem-chain-audit-4.0.3.");
+    ConfigurationService.SettingsDirectory = root;
+    var service = new BemPackageService();
+    service.Load();
+    if (service.Packages.Count != 0) throw new InvalidOperationException("Use an empty isolated model library.");
+    service.SkipValidation = false;
+    await service.ImportAsync(sourcePackage, toolRoot);
+    var package = service.Packages.Single();
+    Check(!package.Enabled, "real import must initially remain disabled");
+    service.HotSwitch = true;
+    await service.SetEnabledAsync(package, true);
+    service.Load();
+    package = service.Packages.Single();
+    Check(package.Enabled && service.HotSwitch && !service.SkipValidation,
+        "isolated activation did not preserve strict validation and hot switching");
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+    {
+        result = "PASS", package.Id, package.Name, package.TargetKind, package.TargetId,
+        package.SupportsCurrentPlatform, package.Enabled, service.HotSwitch, service.SkipValidation,
+        root = service.Root, packageFile = package.File, runtimeConfig = Path.Combine(service.Root, "runtime.ini")
+    }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    return;
+}
 if (args is ["--v11", var packagePath])
 {
     var package = BemPackageService.ReadMetadata(packagePath);
@@ -32,6 +72,21 @@ if (args is ["--v11", var packagePath])
     string ini = File.ReadAllText(Path.Combine(service.Root, "runtime.ini"));
     Check(ini.Contains("options=" + group.Id + ":" + alternate) && !ini.Contains("appearance="),
         "BEM 1.1 runtime configuration not written");
+    Check(!service.SkipValidation, "developer option must default off");
+    Check(!service.HotSwitch && !service.FastLoading, "experiments must default off");
+    service.HotSwitch = true; await service.SaveAsync(); service.Load();
+    Check(service.HotSwitch && !service.FastLoading, "hot-switch option not persisted independently");
+    service.FastLoading = true; await service.SaveAsync(); service.Load();
+    Check(service.HotSwitch && service.FastLoading, "fast loading option not persisted");
+    ini = File.ReadAllText(Path.Combine(service.Root, "runtime.ini"));
+    Check(ini.Contains("fast_loading=true") && !ini.Contains("loading_optimization"), "fast loading key not written or legacy key kept");
+    service.HotSwitch = false; service.FastLoading = false; await service.SaveAsync(); service.Load();
+    Check(!service.HotSwitch && !service.FastLoading, "experiment options not disabled");
+    service.SkipValidation = true; await service.SaveAsync(); service.Load();
+    Check(service.SkipValidation && File.ReadAllText(Path.Combine(service.Root, "runtime.ini")).Contains("skip_validation=true"),
+        "developer option not restored from runtime configuration");
+    service.SkipValidation = false; await service.SaveAsync(); service.Load();
+    Check(!service.SkipValidation, "normal validation not restored");
     string temporary = Path.GetFullPath(ConfigurationService.SettingsDirectory);
     if (temporary.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase) &&
         Path.GetFileName(temporary).StartsWith("BemManagerChecks-")) Directory.Delete(temporary, true);
@@ -81,6 +136,26 @@ try
         Check(service.Packages.Count == 2 && !service.Packages.Single(p => p.Id == selected.Id).Enabled, "selected ZIP import state");
     }
     Check(!File.Exists(stagedFile), "ZIP staging cleanup");
+    service.SkipValidation = true; await service.SaveAsync();
+    using (var bundle = await service.PrepareBundleAsync(zip, args[0]))
+        Check(bundle.Packages.Count == 2 && bundle.Issues.Count == 1, "developer ZIP import lost structural checks");
+    try { await service.ImportAsync(corrupt, args[0]); throw new InvalidOperationException("developer mode accepted a truncated header"); }
+    catch (InvalidDataException) { }
+    var uncheckedFile = Path.Combine(ConfigurationService.SettingsDirectory, "unchecked.bem");
+    byte[] uncheckedBytes = File.ReadAllBytes(args[1]);
+    byte[] capability = System.Text.Encoding.UTF8.GetBytes("\"native-materials\"");
+    byte[] unknownCapability = System.Text.Encoding.UTF8.GetBytes("\"unknown-featurex\"");
+    int capabilityOffset = uncheckedBytes.AsSpan(40, checked((int)BitConverter.ToUInt64(uncheckedBytes, 24))).IndexOf(capability);
+    Check(capabilityOffset >= 0 && capability.Length == unknownCapability.Length, "capability fixture mismatch");
+    Array.Copy(unknownCapability, 0, uncheckedBytes, 40 + capabilityOffset, unknownCapability.Length);
+    File.WriteAllBytes(uncheckedFile, uncheckedBytes);
+    service.SkipValidation = false; await service.SaveAsync();
+    try { await service.ImportAsync(uncheckedFile, args[0]); throw new InvalidOperationException("normal import skipped capability validation"); }
+    catch (InvalidDataException) { }
+    service.SkipValidation = true; await service.SaveAsync();
+    await service.ImportAsync(uncheckedFile, args[0]); service.Load();
+    Check(service.SkipValidation && service.Packages.Count == 2, "developer import was revalidated or flag lost");
+    service.SkipValidation = false; await service.SaveAsync();
     Console.WriteLine("PASS: staged validation, import/update/remove, appearance fallback, same-role selection and LOD persistence");
 }
 finally
@@ -90,10 +165,10 @@ finally
         Directory.Delete(root, true);
 }
 
-namespace BetterEndfield.UI.Services
+namespace BetterEndfieldNext.UI.Services
 {
     internal static class ConfigurationService
     {
-        public static string SettingsDirectory { get; } = Path.Combine(Path.GetTempPath(), "BemManagerChecks-" + Guid.NewGuid());
+        public static string SettingsDirectory { get; set; } = Path.Combine(Path.GetTempPath(), "BemManagerChecks-" + Guid.NewGuid());
     }
 }

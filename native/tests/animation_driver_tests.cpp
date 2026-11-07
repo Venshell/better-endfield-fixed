@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-using namespace BetterEndfield::CustomModel;
+using namespace BetterEndfieldNext::CustomModel;
 using J = nlohmann::json;
 namespace {
 size_t checks = 0;

@@ -3,23 +3,31 @@
 #include <jni.h>
 #include <atomic>
 #include <stdexcept>
+#include <algorithm>
 namespace { std::atomic_bool cancelled{false},busy{false};
 struct Utf {JNIEnv* env;jstring value;const char* data;Utf(JNIEnv* e,jstring v):env(e),value(v),data(e->GetStringUTFChars(v,nullptr)) {if(!data) throw std::runtime_error("Cannot read JNI string");}~Utf(){env->ReleaseStringUTFChars(value,data);}};
-void RequireAndroidResource(const BetterEndfield::CustomModel::BemPackageInfo& info) {
-    if(info.minor>=4 && BetterEndfield::CustomModel::SelectResourceBindings(info,"android-arm64").empty())
-        throw std::runtime_error("BEM 1.4 package has no Android ARM64 resource");
+void RequireAndroidResource(const BetterEndfieldNext::CustomModel::BemPackageInfo& info) {
+    if (info.minor < 4) return;
+    for (const auto& resource : info.resources) {
+        const auto supports = [&](const char* platform) {
+            return std::find(resource.platforms.begin(),resource.platforms.end(),platform)!=resource.platforms.end();
+        };
+        if (supports("android-arm64")) return;
+        if (info.target_kind=="weapon" && supports("windows-x64") && resource.name!="android_unavailable") return;
+    }
+    throw std::runtime_error("BEM package has no Android-compatible resource");
 }
 }
-extern "C" JNIEXPORT void JNICALL Java_dev_betterendfield_android_BemInstaller_cancelNative(JNIEnv*,jclass) {
-    cancelled=true;betterendfield::CancelTextureCompression();
+extern "C" JNIEXPORT void JNICALL Java_dev_betterendfield_next_BemInstaller_cancelNative(JNIEnv*,jclass) {
+    cancelled=true;betterendfieldnext::CancelTextureCompression();
 }
 // Import validates every appearance but leaves the selected package byte-for-byte intact.
-extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstaller_inspectNative(JNIEnv* env,jclass,jstring src) {
+extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_next_BemInstaller_inspectNativeWithOptions(JNIEnv* env,jclass,jstring src,jboolean skip_validation) {
     try {
         Utf input(env,src);
-        using namespace BetterEndfield::CustomModel;
+        using namespace BetterEndfieldNext::CustomModel;
         BemPackageInfo info; std::string error;
-        if(!ReadBemPackageInfo(input.data,info,error)) throw std::runtime_error(error);
+        if(!ReadBemPackageInfo(input.data,info,error,skip_validation)) throw std::runtime_error(error);
         RequireAndroidResource(info);
         auto selections=info.appearances;
         if(info.minor) selections.push_back(info.default_options);
@@ -27,12 +35,12 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
             if(info.minor>=4) {
                 for(const auto& resource:info.resources) {
                     BemPocData parsed;
-                    if(!LoadBem(input.data,parsed,error,appearance,nullptr,false,false,{},UINT64_MAX,false,resource.id))
+                    if(!LoadBem(input.data,parsed,error,appearance,nullptr,skip_validation,false,{},UINT64_MAX,false,resource.id))
                         throw std::runtime_error(error);
                 }
             } else {
                 BemPocData parsed;
-                if(!LoadBem(input.data,parsed,error,appearance)) throw std::runtime_error(error);
+                if(!LoadBem(input.data,parsed,error,appearance,nullptr,skip_validation)) throw std::runtime_error(error);
             }
         }
         BemJson report={{"package_id",info.package_id},{"character_id",info.character_id},{"name",info.name},
@@ -43,6 +51,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
             report["selection_constraints"]=BemJson::parse(info.selection_constraints_json);}
         else {report["default_appearance"]=info.default_appearance;report["appearances"]=info.appearances;}
         report["parameters"]=BemJson::parse(info.parameter_groups_json);
+        report["parameter_groups_json"]=info.parameter_groups_json;
         report["default_parameters"]=info.default_parameters;
         if (!info.manifest_json.empty()) {
             try {
@@ -56,22 +65,22 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
         return env->NewStringUTF(encoded.c_str());
     } catch(const std::exception& error) {env->ThrowNew(env->FindClass("java/io/IOException"),error.what());return nullptr;}
 }
-extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstaller_convertNative(JNIEnv* env,jclass owner,jstring src,jstring dst,jstring rules,jboolean astc) {
+extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_next_BemInstaller_convertNative(JNIEnv* env,jclass owner,jstring src,jstring dst,jstring rules,jboolean astc) {
     if(busy.exchange(true)) {env->ThrowNew(env->FindClass("java/io/IOException"),"Another conversion is running");return nullptr;}
     struct Guard {~Guard(){busy=false;}} guard; cancelled=false;
     try {
         Utf input(env,src),output(env,dst),mapping(env,rules);
-        BetterEndfield::CustomModel::BemPackageInfo info; std::string metadata_error;
-        if(!BetterEndfield::CustomModel::ReadBemPackageInfo(input.data,info,metadata_error))
+        BetterEndfieldNext::CustomModel::BemPackageInfo info; std::string metadata_error;
+        if(!BetterEndfieldNext::CustomModel::ReadBemPackageInfo(input.data,info,metadata_error))
             throw std::runtime_error(metadata_error);
         RequireAndroidResource(info);
-        auto table=BetterEndfield::CustomModel::BemJson::parse(mapping.data);
+        auto table=BetterEndfieldNext::CustomModel::BemJson::parse(mapping.data);
         auto checkpoint=[] {if(cancelled.load()) throw std::runtime_error("Installation cancelled");};
         auto progressMethod=env->GetStaticMethodID(owner,"conversionProgress","(Ljava/lang/String;IIIIF)V");
         if(!progressMethod) return nullptr;
         unsigned textureIndex=0;
         std::string report,error;
-        bool ok=BetterEndfield::CustomModel::RewriteBemTextures(input.data,output.data,
+        bool ok=BetterEndfieldNext::CustomModel::RewriteBemTextures(input.data,output.data,
             [&](const auto& manifest,auto& texture,auto& bytes) {
                 ++textureIndex;
                 auto name=texture.at("original_name").template get<std::string>();
@@ -81,19 +90,19 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
                     env->CallStaticVoidMethod(owner,progressMethod,label,jint(textureIndex),jint(manifest.at("textures").size()),jint(mip),jint(mips),jfloat(percent));
                     env->DeleteLocalRef(label);
                 };
-                betterendfield::ConvertInstalledTexture(manifest,texture,bytes,table,astc,checkpoint,progress);
+                betterendfieldnext::ConvertInstalledTexture(manifest,texture,bytes,table,astc,checkpoint,progress);
             },checkpoint,report,error);
         if(!ok) throw std::runtime_error(error);
         return env->NewStringUTF(report.c_str());
     } catch(const std::exception& error) {env->ThrowNew(env->FindClass("java/io/IOException"),error.what());return nullptr;}
 }
-extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstaller_repairNormalsNative(JNIEnv* env,jclass owner,jstring src,jstring dst,jboolean astc) {
+extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_next_BemInstaller_repairNormalsNative(JNIEnv* env,jclass owner,jstring src,jstring dst,jboolean astc) {
     if(busy.exchange(true)) {env->ThrowNew(env->FindClass("java/io/IOException"),"Another operation is running");return nullptr;}
     struct Guard {~Guard(){busy=false;}} guard; cancelled=false;
     try {
         Utf input(env,src),output(env,dst);
-        BetterEndfield::CustomModel::BemPackageInfo info; std::string metadata_error;
-        if(!BetterEndfield::CustomModel::ReadBemPackageInfo(input.data,info,metadata_error))
+        BetterEndfieldNext::CustomModel::BemPackageInfo info; std::string metadata_error;
+        if(!BetterEndfieldNext::CustomModel::ReadBemPackageInfo(input.data,info,metadata_error))
             throw std::runtime_error(metadata_error);
         RequireAndroidResource(info);
         auto checkpoint=[] {if(cancelled.load()) throw std::runtime_error("Operation cancelled");};
@@ -101,7 +110,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
         if(!progressMethod) return nullptr;
         unsigned textureIndex=0,repairedCount=0;
         std::string report,error;
-        bool ok=BetterEndfield::CustomModel::RewriteBemTextures(input.data,output.data,
+        bool ok=BetterEndfieldNext::CustomModel::RewriteBemTextures(input.data,output.data,
             [&](const auto& manifest,auto& texture,auto& bytes) {
                 ++textureIndex;
                 auto name=texture.at("original_name").template get<std::string>();
@@ -111,7 +120,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_android_BemInstalle
                     env->CallStaticVoidMethod(owner,progressMethod,label,jint(textureIndex),jint(manifest.at("textures").size()),jint(mip),jint(mips),jfloat(percent));
                     env->DeleteLocalRef(label);
                 };
-                if(betterendfield::RepairNormalTexture(manifest,texture,bytes,astc,checkpoint,progress)) {
+                if(betterendfieldnext::RepairNormalTexture(manifest,texture,bytes,astc,checkpoint,progress)) {
                     ++repairedCount;
                 }
             },checkpoint,report,error);

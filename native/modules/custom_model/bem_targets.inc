@@ -32,9 +32,6 @@ void ReadResourceTargets(const J& target,BemPackageInfo& info) {
     for(const auto& row:resources) {
         Check(row.is_object() && row.size()==5,"Invalid resource fields");
         BemResourceInfo resource; resource.id=Id(row.at("id")); resource.name=Id(row.at("name"));
-        Check(std::none_of(resource.name.begin(),resource.name.end(),[](unsigned char c) {
-            return c>='A' && c<='Z';
-        }),"Resource root must be normalized lowercase");
         Check(ids.insert(resource.id).second,"Duplicate resource ID");
         resource.asset_path=CheckedRelativeReceiver(row.at("asset_path"));
         Check(resource.asset_path.starts_with("assets/") && resource.asset_path.ends_with(".prefab") &&

@@ -1,12 +1,13 @@
 #include "core/hook_broker.h"
 #include "core/log.h"
+#include "core/code_patch_posix.h"
 #include <dobby.h>
 #include <cstdio>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include "../../../../../../native/shared/hooks/hook_chain.h"
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 struct Record { HookBroker* owner; void* target; uint64_t handle; };
 struct Registry {
@@ -15,15 +16,21 @@ struct Registry {
     std::vector<std::unique_ptr<Record>> live;
     // Removed stubs are never reused: a stale caller must not remove a new hook.
     std::vector<std::unique_ptr<Record>> retired;
-    std::unique_ptr<BetterEndfield::Hooks::Chain> chains;
+    std::unique_ptr<BetterEndfieldNext::Hooks::Chain> chains;
 };
 // Hooks are process-lifetime resources. Avoid global destructor order races.
 Registry& Hooks() { static auto* registry = new Registry; return *registry; }
 // Registry mutex held.
-BetterEndfield::Hooks::Chain& Chains(Registry& registry) {
-    if (!registry.chains) registry.chains = std::make_unique<BetterEndfield::Hooks::Chain>(BetterEndfield::Hooks::Backend{
-        [](void* target, void* entry, void** original) { return DobbyPrepare(target, entry, original) == 0; },
-        [](void* target) { return DobbyCommit(target) == 0; },
+BetterEndfieldNext::Hooks::Chain& Chains(Registry& registry) {
+    if (!registry.chains) registry.chains = std::make_unique<BetterEndfieldNext::Hooks::Chain>(BetterEndfieldNext::Hooks::Backend{
+        [](void* target, void* entry, void** original) {
+            ResetCodePatchFailure();const bool prepared=DobbyPrepare(target, entry, original)==0;
+            if(prepared&&CodePatchFailed()){DobbyDestroy(target);return false;}
+            return prepared;
+        },
+        [](void* target) {
+            ResetCodePatchFailure();return DobbyCommit(target)==0&&!CodePatchFailed();
+        },
         [](void* target) { DobbyDestroy(target); },
         [](void*) { /* Process-pinned Dobby trampoline: relay forwards to original. */ }});
     return *registry.chains;
@@ -65,8 +72,9 @@ bool HookBroker::Install(const char* module, void* target, void* replacement, vo
     // installed hook unowned.
     auto record = std::make_unique<Record>(Record{this, target, 0});
     registry.live.reserve(registry.live.size() + 1);
+    const bool first = !chains.Contains(target);
     const BE_Result result = chains.Create(module, target, replacement, original, &record->handle,
-        BetterEndfield::Hooks::Chain::Duplicate::Reject);
+        BetterEndfieldNext::Hooks::Chain::Duplicate::Reject);
     if (result == BE_Result_Conflict) {
         error = std::string("native hook target already hooked by ") + module +
             "; a module may hook an entry once";
@@ -78,7 +86,7 @@ bool HookBroker::Install(const char* module, void* target, void* replacement, vo
     }
     stub = record.get();
     registry.live.push_back(std::move(record)); // Capacity reserved above.
-    LogOwners(registry, target, std::string("adding ") + module);
+    if (!first) LogOwners(registry, target, std::string("adding ") + module);
     error.clear();
     return true;
 }
@@ -102,7 +110,7 @@ bool HookBroker::Remove(void*& stub) {
         registry.retired.push_back(std::move(*position));
         registry.live.erase(position);
         stub = nullptr;
-        LogOwners(registry, target, "removal");
+        if (!Chains(registry).Modules(target).empty()) LogOwners(registry, target, "removal");
         return true;
     }
     return false;
@@ -110,7 +118,7 @@ bool HookBroker::Remove(void*& stub) {
 const BE_HookChainApiV1* HookBroker::ChainApi() {
     auto& registry=Hooks();std::lock_guard lock(registry.mutex);
     Chains(registry);
-    chain_api_={sizeof(BE_HookChainApiV1),BETTER_ENDFIELD_HOOK_CHAIN_ABI_V1,this,
+    chain_api_={sizeof(BE_HookChainApiV1),BETTER_ENDFIELD_NEXT_HOOK_CHAIN_ABI_V1,this,
         &CreateChain,&DisableChain,&DisableModuleChain};
     return &chain_api_;
 }
@@ -119,8 +127,9 @@ BE_Result BE_CALL HookBroker::CreateChain(void* context,const char* module,void*
     if(!context)return BE_Result_InvalidArgument;
     auto& registry=Hooks();std::lock_guard lock(registry.mutex);
     auto& chains=Chains(registry);
+    const bool first=target&&!chains.Contains(target);
     const BE_Result result=chains.Create(module,target,detour,next,handle);
-    if(result==BE_Result_Ok)LogOwners(registry,target,std::string("adding ")+module);
+    if(result==BE_Result_Ok&&!first)LogOwners(registry,target,std::string("adding ")+module);
     return result;
 }
 BE_Result BE_CALL HookBroker::DisableChain(void* context,uint64_t handle) {

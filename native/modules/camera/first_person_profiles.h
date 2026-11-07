@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace BetterEndfield::FirstPersonProfiles {
+namespace BetterEndfieldNext::FirstPersonProfiles {
 
 enum class BoneSemantic : uint8_t { Preserve = 0, Hide = 1, Neck = 2 };
 enum class Region : uint8_t { Body, Head, Neck, Tail, HeadAccessory };
@@ -161,4 +161,4 @@ inline bool ShouldHideLocalTriangle(const LocalRule* rule, const std::array<Loca
     return true;
 }
 
-} // namespace BetterEndfield::FirstPersonProfiles
+} // namespace BetterEndfieldNext::FirstPersonProfiles

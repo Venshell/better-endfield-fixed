@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "betterendfield-android-resource-source",
+  "platform": "Android",
+  "updatedAtUtc": "2026-10-28T03:50:27.793430+00:00",
+  "provenance": {
+    "gameVersion": "1.6.4",
+    "source": "rooted adb; current VFS"
+  },
+  "device": {
+    "package": "com.hypergryph.endfield",
+    "versionName": "1.6.4"
+  },
+  "counts": {
+    "manifestAssets": 368313,
+    "manifestBundles": 271511,
+    "audioDialogRows": 33273,
+    "prefabInfoCount": 37
+  },
+  "inputSnapshot": "inputs/current-distribution/Android/input-snapshot.json",
+  "pckSnapshot": "inputs/current-distribution/Android/pck-snapshot.json",
+  "coverage": "37 playable models; current four-language voice indexes; no streamed audio payloads distributed"
+}

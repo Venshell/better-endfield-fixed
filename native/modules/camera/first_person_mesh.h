@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace BetterEndfield::FirstPersonMesh {
+namespace BetterEndfieldNext::FirstPersonMesh {
 // Part roles and their classification, ported from RenoDX Endfield Enhancer
 // (camera_mesh.hpp). `role` is the lowercased name of the renderer's
 // GameObject, which is the same string the upstream runtime feeds these
@@ -239,4 +239,4 @@ inline Result Build(const std::vector<Vertex>& vertices,const std::vector<Part>&
     }
     return result;
 }
-} // namespace BetterEndfield::FirstPersonMesh
+} // namespace BetterEndfieldNext::FirstPersonMesh

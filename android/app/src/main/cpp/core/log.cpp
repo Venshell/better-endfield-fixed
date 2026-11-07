@@ -6,11 +6,12 @@
 #include <cstdlib>
 #include <mutex>
 #include <string>
+#include <unistd.h>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 
-constexpr char kLogTag[] = "BetterEndfield";
+constexpr char kLogTag[] = "BetterEndfieldNext";
 // The on-device journal tails these entries; keep it bounded so a chatty
 // module cannot grow memory without limit. 512 because module init bursts
 // (the UI module logs one line per resolved contract) must not evict a
@@ -43,10 +44,17 @@ void Remember(const char* component, const char* message) {
 void Write(int priority, const char* component, const char* message) {
     __android_log_print(priority, kLogTag, "[%s] %s", component, message);
     Remember(component, message);
-    const char* diagnostics = std::getenv("BETTER_ENDFIELD_DIAGNOSTICS_PATH");
+    const char* diagnostics = std::getenv("BETTER_ENDFIELD_NEXT_DIAGNOSTICS_PATH");
     if (diagnostics != nullptr && *diagnostics != '\0') {
+        static std::mutex mutex;
+        std::lock_guard lock(mutex);
         if (FILE* file = std::fopen(diagnostics, "a")) {
-            std::fprintf(file, "[%s] %s\n", component, message);
+            if (std::fseek(file, 0, SEEK_END) == 0 && std::ftell(file) > 1024 * 1024) {
+                std::fclose(file);
+                file = std::fopen(diagnostics, "w");
+                if (!file) return;
+            }
+            std::fprintf(file, "[tid=%d][%s] %s\n", static_cast<int>(gettid()), component, message);
             std::fclose(file);
         }
     }
@@ -87,4 +95,4 @@ std::string CopyNativeLogSince(std::size_t& cursor) {
     return out;
 }
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext

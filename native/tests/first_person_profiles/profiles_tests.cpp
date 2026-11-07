@@ -5,7 +5,7 @@
 #include <limits>
 #include <string>
 
-namespace Fp = BetterEndfield::FirstPersonProfiles;
+namespace Fp = BetterEndfieldNext::FirstPersonProfiles;
 namespace {
 int checks = 0;
 void Check(bool value, const char* message) {

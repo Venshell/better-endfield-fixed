@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BetterEndfield/ModuleApi.h"
+#include "BetterEndfieldNext/ModuleApi.h"
 
 #include <Windows.h>
 
@@ -8,7 +8,7 @@
 #include <atomic>
 #include <string>
 
-namespace BetterEndfield::Host {
+namespace BetterEndfieldNext::Host {
 
 class DynamicResolver;
 class HookBroker;
@@ -69,4 +69,4 @@ private:
     std::atomic_bool stop_requested_{false};
 };
 
-} // namespace BetterEndfield::Host
+} // namespace BetterEndfieldNext::Host

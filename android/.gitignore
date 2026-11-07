@@ -16,3 +16,4 @@ model-test.png
 keystore/release.properties
 keystore/bem-release.keystore
 
+.kotlin/

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace BetterEndfield::FirstPerson {
+namespace BetterEndfieldNext::FirstPerson {
 struct ShadowModeLease {
     enum class Refresh { Keep, Reassert, Relinquish, Unavailable };
     enum class Restore { Done, Write, Retry };
@@ -33,4 +33,4 @@ struct ShadowModeLease {
         else if (++failures >= 3) blocked = true;
     }
 };
-} // namespace BetterEndfield::FirstPerson
+} // namespace BetterEndfieldNext::FirstPerson

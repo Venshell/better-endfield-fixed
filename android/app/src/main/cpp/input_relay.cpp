@@ -1,3 +1,4 @@
+#include "android_frame.h"
 // File-based input relay between the panel's Java code and the native key
 // latch. JNI cannot serve this role: Runtime.nativeLoad registers the library
 // under the game's classloader, while the panel's bridge classes belong to the
@@ -37,7 +38,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
@@ -100,7 +101,7 @@ void HandleLine(const std::string& line) {
         if (end == nullptr || end == second) return;
         // A screen cannot produce a 1000-pixel jump between two report events;
         // clamping keeps a garbled line from throwing the camera far away.
-        AddVirtualMouseDelta(static_cast<int>(
+        AddAndroidLook(static_cast<int>(
             std::clamp(dx, -1000L, 1000L)), static_cast<int>(
             std::clamp(dy, -1000L, 1000L)));
         return;
@@ -175,9 +176,9 @@ void RelayLoop(const std::string& input, const std::string& status,
 }  // namespace
 
 void StartInputRelay() {
-    const char* input = std::getenv("BETTER_ENDFIELD_INPUT_FILE");
-    const char* status = std::getenv("BETTER_ENDFIELD_STATUS_FILE");
-    const char* nativeLog = std::getenv("BETTER_ENDFIELD_NATIVE_LOG");
+    const char* input = std::getenv("BETTER_ENDFIELD_NEXT_INPUT_FILE");
+    const char* status = std::getenv("BETTER_ENDFIELD_NEXT_STATUS_FILE");
+    const char* nativeLog = std::getenv("BETTER_ENDFIELD_NEXT_NATIVE_LOG");
     if (input == nullptr || input[0] == '\0' || status == nullptr || status[0] == '\0') {
         LogInfo("relay", "input file relay unavailable: paths not configured");
         return;
@@ -186,4 +187,4 @@ void StartInputRelay() {
             nativeLog != nullptr ? std::string(nativeLog) : std::string()).detach();
 }
 
-}  // namespace betterendfield
+}  // namespace betterendfieldnext

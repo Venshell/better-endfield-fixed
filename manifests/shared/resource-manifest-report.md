@@ -3,42 +3,43 @@
 ## 动作
 
 - 游戏 VFS manifest 版本：`2954fa80-23c1-1579-2b22-4ecfd6d70418`
-- 角色：32
-- 动作：4210
-- 未纳入角色：1
+- 角色：35
+- 动作：4590
+- 未纳入角色：0
 
 ## 版本输入
 
-- `Bundles/Windows/manifest.hgmmap`：`23D975D590799BFF4C53A4EE39733B52FA2D67F4E1107ABA9187BA3913F32A3C`（50037905 bytes）
-- `TableCfg/AudioDialog.bytes`：`1417104925FFD91FA3A239AC8014DDFF3F952023693949D9A25E3AF4F7465885`（4843212 bytes）
+- `Bundles/Windows/manifest.hgmmap`：`74FD9BCE577715E255DCFEF0317A6B9FE9976812F38C755DF7D7CAA7DB75F7B1`（55309942 bytes）
+- `TableCfg/AudioDialog.bytes`：`66CC1C2C5229C47B8E3EDD9051E8A6D56176352CF34B29DD1329FA400A3C0ACB`（5534684 bytes）
 
 ## 角色短语音
 
-- `AudioDialog` 具名角色短语音 Event：970
-- 覆盖角色：33
-- 至少一种语言通过 BNK/HIRC 映射：618
-- 四语均通过映射：618
-- 原生 Wwise 容器事件：618
-- v9 显式降级事件：352
-- 无可读名称的 Bank：645
-- Media 引用：7040（唯一 6659）
+- `AudioDialog` 具名角色短语音 Event：1056
+- 覆盖角色：35
+- 至少一种语言通过 BNK/HIRC 映射：684
+- 四语均通过映射：684
+- 原生 Wwise 容器事件：684
+- v9 显式降级事件：372
+- 无可读名称的 Bank：675
+- Media 引用：7744（唯一 7327）
 
 ### 各语言
 
-- Chinese：映射 618，缺 Bank 352，无效 0，Media 存在 1665 / 1665
-- English：映射 618，缺 Bank 352，无效 0，Media 存在 1664 / 1664
-- Japanese：映射 618，缺 Bank 352，无效 0，Media 存在 1665 / 1665
-- Korean：映射 618，缺 Bank 352，无效 0，Media 存在 1665 / 1665
+- Chinese：映射 684，缺 Bank 372，无效 0，Media 存在 1832 / 1832
+- English：映射 684，缺 Bank 372，无效 0，Media 存在 1831 / 1831
+- Japanese：映射 684，缺 Bank 372，无效 0，Media 存在 1832 / 1832
+- Korean：映射 684，缺 Bank 372，无效 0，Media 存在 1832 / 1832
 
 ## PCK 覆盖
 
-- `chinese-pck-1` c, s：存在 1665，缺少 0（`Endfield_Data/Persistent/VFS/E1E7D7CE/1844D9322FD68F41FB781DF1BC1CD905.chk`）
-- `english-pck-1` e, s：存在 10，缺少 1654（`Endfield_Data/Persistent/VFS/A31457D0/E88476EE278BA4CDCAE36B0C0EBA4DFE.chk`）
-- `english-pck-2` e, s：存在 1654，缺少 10（`Endfield_Data/Persistent/VFS/A31457D0/EF6B93FC939DCCAC408F2225A00FCE56.chk`）
-- `japanese-pck-1` j, s：存在 1606，缺少 59（`Endfield_Data/Persistent/VFS/F668D4EE/6791DE59747DC8A1A00357BDB480A6E3.chk`）
-- `japanese-pck-2` j, s：存在 59，缺少 1606（`Endfield_Data/Persistent/VFS/F668D4EE/CED27EEC11B08B003FBA09DF5957D5B8.chk`）
-- `korean-pck-1` k, s：存在 59，缺少 1606（`Endfield_Data/Persistent/VFS/E9D31017/8AF084B294FBBC895335F68653E1A61B.chk`）
-- `korean-pck-2` k, s：存在 1606，缺少 59（`Endfield_Data/Persistent/VFS/E9D31017/CE9159205153937A164BBCBC8CF770E2.chk`）
+- `chinese-pck-1` chinese, sfx：存在 14，缺少 1818（`Endfield_Data/Persistent/VFS/E1E7D7CE/00388C6B3EAAB63D886FFFAEC6094C7E.chk`）
+- `chinese-pck-2` chinese, sfx：存在 1818，缺少 14（`Endfield_Data/Persistent/VFS/E1E7D7CE/E1CFD45D3E8072857C3D7B15871D72EB.chk`）
+- `english-pck-1` english, sfx：存在 1656，缺少 175（`Endfield_Data/Persistent/VFS/A31457D0/DA3FA56FA899EF08C207D716B13F8D8A.chk`）
+- `english-pck-2` english, sfx：存在 175，缺少 1656（`Endfield_Data/Persistent/VFS/A31457D0/E590002D7FF16F66C4FD491D70D2700C.chk`）
+- `japanese-pck-1` japanese, sfx：存在 226，缺少 1606（`Endfield_Data/Persistent/VFS/F668D4EE/10EF89B45E3C188379CEF587A1BFB808.chk`）
+- `japanese-pck-2` japanese, sfx：存在 1606，缺少 226（`Endfield_Data/Persistent/VFS/F668D4EE/8B4288CB4A47E92B8A8AB30A011ACADD.chk`）
+- `korean-pck-1` korean, sfx：存在 226，缺少 1606（`Endfield_Data/Persistent/VFS/E9D31017/CF9273716D741D96B5682DE1E7FCA1BF.chk`）
+- `korean-pck-2` korean, sfx：存在 1606，缺少 226（`Endfield_Data/Persistent/VFS/E9D31017/F64E64F99DE10C2D44CD5D1C024B4455.chk`）
 
 ## 解释
 

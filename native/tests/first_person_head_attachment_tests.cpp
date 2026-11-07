@@ -4,8 +4,8 @@
 #include <unordered_map>
 #include <vector>
 
-using BetterEndfield::FirstPerson::AllBonesUnderHead;
-using BetterEndfield::FirstPerson::IsUnderHead;
+using BetterEndfieldNext::FirstPerson::AllBonesUnderHead;
+using BetterEndfieldNext::FirstPerson::IsUnderHead;
 
 int main() {
     int root, torso, neck, head, hat, ribbon, body_mesh, cycle;

@@ -1,4 +1,7 @@
 #include "runtime.h"
+#include "loaded_il2cpp.h"
+#include "log.h"
+#include "type_name_contract.h"
 
 #include <dlfcn.h>
 #include <link.h>
@@ -10,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace betterendfield {
+namespace betterendfieldnext {
 namespace {
 
 struct Il2CppMethodInfoPrefix {
@@ -114,7 +117,7 @@ bool Il2CppRuntime::Connect() {
         return true;
     }
 
-    void* library = dlopen("libil2cpp.so", RTLD_NOW | RTLD_NOLOAD);
+    void* library = OpenLoadedIl2Cpp();
     if (library == nullptr) {
         return false;
     }
@@ -200,6 +203,20 @@ bool Il2CppRuntime::Connect() {
         return false;
     }
 
+    domain_get_assemblies_ = ResolveExport<decltype(domain_get_assemblies_)>(library, "il2cpp_domain_get_assemblies");
+    image_get_name_ = ResolveExport<decltype(image_get_name_)>(library, "il2cpp_image_get_name");
+    thread_current_ = ResolveExport<decltype(thread_current_)>(library, "il2cpp_thread_current");
+    field_get_flags_ = ResolveExport<decltype(field_get_flags_)>(library, "il2cpp_field_get_flags");
+    field_get_parent_ = ResolveExport<decltype(field_get_parent_)>(library, "il2cpp_field_get_parent");
+    field_get_name_ = ResolveExport<decltype(field_get_name_)>(library, "il2cpp_field_get_name");
+    class_is_enum_ = ResolveExport<decltype(class_is_enum_)>(library, "il2cpp_class_is_enum");
+    if (!thread_current_ || !field_get_flags_) {
+        dlclose(library);
+        return false;
+    }
+    if (!domain_get_assemblies_ || !image_get_name_) {
+        LogInfo("runtime.il2cpp", "IL2CPP assembly enumeration unavailable; using named domain_assembly_open fallback");
+    }
     library_ = library;
     domain_get_ = domain_get;
     thread_attach_ = thread_attach;
@@ -329,6 +346,41 @@ void* Il2CppRuntime::Invoke(
         : runtime_invoke_(method, instance, parameters, exception);
 }
 
+const Il2CppImage* Il2CppRuntime::FindLoadedImage(const char* name) const {
+    if (!library_ || !name || !*name || !domain_get_ || !assembly_get_image_) return nullptr;
+    auto* domain = domain_get_();
+    if (!domain) return nullptr;
+    if (!domain_get_assemblies_ || !image_get_name_) {
+        // Some builds omit enumeration exports. Resolve only the requested
+        // assembly by its public name; no ELF scanning, offsets or symbol guesses.
+        if (!domain_assembly_open_) return nullptr;
+        const auto open = [&](const std::string& candidate) -> const Il2CppImage* {
+            const auto* assembly = domain_assembly_open_(domain, candidate.c_str());
+            return assembly ? assembly_get_image_(assembly) : nullptr;
+        };
+        if (const auto* image = open(name)) return image;
+        std::string alternate(name);
+        if (alternate.ends_with(".dll")) alternate.resize(alternate.size() - 4);
+        else alternate += ".dll";
+        return open(alternate);
+    }
+    size_t count = 0;
+    const auto** assemblies = domain_get_assemblies_(domain, &count);
+    if (!assemblies) return nullptr;
+    auto normalized = [](std::string_view value) {
+        if (value.ends_with(".dll")) value.remove_suffix(4);
+        return value;
+    };
+    for (size_t i = 0; i < count; ++i) {
+        const auto* image = assembly_get_image_(assemblies[i]);
+        const char* candidate = image ? image_get_name_(image) : nullptr;
+        if (candidate && normalized(candidate) == normalized(name)) return image;
+    }
+    return nullptr;
+}
+bool Il2CppRuntime::HasAssembly(const char* name) const { return FindLoadedImage(name) != nullptr; }
+void* Il2CppRuntime::CurrentThread() const { return thread_current_ ? thread_current_() : nullptr; }
+
 void* Il2CppRuntime::AttachCurrentThread() const {
     Il2CppDomain* domain = domain_get_ == nullptr ? nullptr : domain_get_();
     return domain == nullptr ? nullptr : thread_attach_(domain);
@@ -394,7 +446,7 @@ ResolvedMethod Il2CppRuntime::ResolveMethodExact(
         bool matches = true;
         for (uint32_t index = 0; index < expected_parameters.size(); ++index) {
             char* actual = type_get_name_(method_get_parameter_(candidate, index));
-            const bool equal = actual != nullptr && expected_parameters[index] == actual;
+            const bool equal = BetterEndfieldNext::Host::SameTypeText(actual, expected_parameters[index]);
             if (actual && free_) free_(actual);
             if (!equal) {
                 matches = false;
@@ -403,7 +455,7 @@ ResolvedMethod Il2CppRuntime::ResolveMethodExact(
         }
         if (matches && return_type != nullptr && *return_type != '\0') {
             char* actual = type_get_name_(method_get_return_type_(candidate));
-            matches = actual != nullptr && std::string_view(actual) == return_type;
+            matches = BetterEndfieldNext::Host::SameTypeText(actual, return_type);
             if (actual && free_) free_(actual);
         }
         if (!matches) {
@@ -523,11 +575,9 @@ ResolvedClass Il2CppRuntime::ResolveClass(
     if (library_ == nullptr) {
         return {};
     }
-    Il2CppDomain* domain = domain_get_();
-    const Il2CppAssembly* target_assembly = domain == nullptr
-        ? nullptr : domain_assembly_open_(domain, assembly);
-    const Il2CppImage* image = target_assembly == nullptr
-        ? nullptr : assembly_get_image_(target_assembly);
+    // Only query already published metadata. Do not initiate assembly loading
+    // from a module worker while Unity is installing hot-update images.
+    const Il2CppImage* image = FindLoadedImage(assembly);
     Il2CppClass* target_class = image == nullptr
         ? nullptr : class_from_name_(image, namespaze, klass);
     // class_from_name only guarantees top-level lookup. Resource delivery uses
@@ -577,11 +627,9 @@ ResolvedField Il2CppRuntime::ResolveField(
         ? ResolvedField{} : ResolvedField{info, static_cast<int32_t>(offset)};
 }
 
-void* Il2CppRuntime::ReadFieldObject(
-    const ResolvedField& field, void* instance) const {
+void* Il2CppRuntime::ReadFieldObject(const ResolvedField& field, void* instance) const {
     return ReadFieldObject(field.info, instance);
 }
-
 void* Il2CppRuntime::ReadFieldObject(const FieldInfo* field, void* instance) const {
     if (!field || !field_get_value_object_ || !field_get_flags_) return nullptr;
     constexpr int kStatic = 0x10, kLiteral = 0x40;
@@ -610,12 +658,14 @@ void* Il2CppRuntime::ReadFieldObject(const FieldInfo* field, void* instance) con
     void* result = Invoke(parse.info, nullptr, args, &exception);
     return exception ? nullptr : result;
 }
-
-Il2CppThreadScope::Il2CppThreadScope(const Il2CppRuntime& runtime)
-    : runtime_(runtime), thread_(runtime.AttachCurrentThread()) {}
-
-Il2CppThreadScope::~Il2CppThreadScope() {
-    runtime_.DetachCurrentThread(thread_);
+Il2CppThreadScope::Il2CppThreadScope(const Il2CppRuntime& runtime) : runtime_(runtime) {
+    thread_ = runtime.CurrentThread();
+    if (!thread_) {
+        thread_ = runtime.AttachCurrentThread();
+        owns_attachment_ = thread_ != nullptr;
+    }
 }
-
-}  // namespace betterendfield
+Il2CppThreadScope::~Il2CppThreadScope() {
+    if (owns_attachment_) runtime_.DetachCurrentThread(thread_);
+}
+} // namespace betterendfieldnext

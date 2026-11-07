@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -21,8 +22,10 @@ JAVA_SUITES = (
 )
 PYTHON_SUITES = (
     "test_bem_v14", "test_bem_upload_report", "test_build_bem14_target",
-    "test_generate_android_lod_relations",
+    "test_android_lod_relations",
 )
+JSON_VERSION = "20240303"
+JSON_SHA256 = "3cf6cd6892e32e2b4c1c39e0f52f5248a2f5b37646fdfbb79a66b46b618414ed"
 
 
 class GateFailure(Exception):
@@ -45,19 +48,23 @@ def run(stage: str, command: list[str], cwd: Path, env: dict[str, str]) -> str:
     return result.stdout
 
 
-def gate(root: Path, java_home: Path, work_dir: Path) -> None:
-    package = Path("dev/betterendfield/android")
+def gate(root: Path, java_home: Path, work_dir: Path, json_jar: Path) -> None:
+    package = Path("dev/betterendfield/next")
     java_root = root / "android/app/src"
     sources = [java_root / "main/java" / package / f"{name}.java" for name in JAVA_OWNERS]
+    sources += [java_root / "main/java" / package / "Text.java",
+                root / "tools/AndroidPort/fixtures/AppLanguage.java"]
     sources += [java_root / "testHost/java" / package / f"{name}.java" for name in JAVA_SUITES]
     python_root = root / "tools/CustomModel"
     required = sources + [python_root / f"{name}.py" for name in PYTHON_SUITES]
     suffix = ".exe" if os.name == "nt" else ""
     javac, java = [java_home / "bin" / (name + suffix) for name in ("javac", "java")]
-    required += [javac, java]
+    required += [javac, java, json_jar]
     for path in required:
         if not path.is_file():
             raise GateFailure(f"input: missing file {path}")
+    if json_jar.stat().st_size > 4 * 1024 * 1024 or hashlib.sha256(json_jar.read_bytes()).hexdigest() != JSON_SHA256:
+        raise GateFailure(f"input: expected org.json:json:{JSON_VERSION} SHA-256 {JSON_SHA256}")
     work_dir.mkdir(parents=True, exist_ok=True)
     # 每轮独立且自动释放，禁止从旧 class 输出中取得通过结果。
     with tempfile.TemporaryDirectory(prefix="port-host-", dir=work_dir) as temporary:
@@ -68,12 +75,13 @@ def gate(root: Path, java_home: Path, work_dir: Path) -> None:
         for key in ("TMP", "TEMP", "TMPDIR"):
             env[key] = str(workspace)
         run("javac", [str(javac), "--release", "17", "-encoding", "UTF-8",
-                      "-d", str(classes), *map(str, sources)], root, env)
+                      "-cp", str(json_jar), "-d", str(classes), *map(str, sources)], root, env)
+        classpath = os.pathsep.join((str(classes), str(json_jar)))
         checks = 0
         for suite in JAVA_SUITES:
             output = run(suite, [str(java), "-Dfile.encoding=UTF-8",
-                         f"-Djava.io.tmpdir={workspace}", "-cp", str(classes),
-                         f"dev.betterendfield.android.{suite}"], root, env)
+                         f"-Djava.io.tmpdir={workspace}", "-cp", classpath,
+                         f"dev.betterendfield.next.{suite}"], root, env)
             counts = re.findall(r"\b(\d+) checks\b", output)
             if len(counts) != 1 or int(counts[0]) <= 0:
                 raise GateFailure(f"{suite}: missing nonzero check count")
@@ -91,14 +99,18 @@ def gate(root: Path, java_home: Path, work_dir: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--java-home", type=Path, default=os.environ.get("JAVA_HOME"))
+    parser.add_argument("--json-jar", type=Path, default=os.environ.get("BEM_PORT_JSON_JAR"),
+                        help=f"Verified org.json:json:{JSON_VERSION} JAR (or BEM_PORT_JSON_JAR)")
     parser.add_argument("--work-dir", type=Path, default=(
         Path("D:/codexdata/bem-port-host-work") if os.name == "nt"
         else Path(tempfile.gettempdir()) / "bem-port-host-work"))
     args = parser.parse_args()
     if args.java_home is None:
         parser.error("set JAVA_HOME or pass --java-home (JDK 17+)")
+    if args.json_jar is None:
+        parser.error(f"set BEM_PORT_JSON_JAR or pass --json-jar (org.json:json:{JSON_VERSION})")
     try:
-        gate(Path(__file__).resolve().parents[2], args.java_home.resolve(), args.work_dir.resolve())
+        gate(Path(__file__).resolve().parents[2], args.java_home.resolve(), args.work_dir.resolve(), args.json_jar.resolve())
     except (GateFailure, OSError) as error:
         print(f"FAIL Android port host gate: {error}", file=sys.stderr, flush=True)
         return 1

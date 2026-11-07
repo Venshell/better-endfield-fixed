@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $gamePackages = @('com.hypergryph.endfield', 'com.gryphline.endfield.gp')
-$modulePackage = 'dev.betterendfield.android'
+$modulePackage = 'dev.betterendfield.next'
 
 function Invoke-DeviceRead([string[]]$DeviceArguments, [switch]$AllowMissing) {
     $result = & $Adb -s $Serial @DeviceArguments 2>&1
