@@ -6,6 +6,14 @@
 
 接入上游 `ee441da9`（4.1.8 发布后的修复），处理 Next 命名、BEM/Android/原生模块与文档迁移冲突。保留本分支 Android 产品边界及内置第一人称、陀螺仪等本地功能。此条不是发布或游戏设备验收声明；处理原则和实际检查结果见 [合并记录](docs/ANDROID_UPSTREAM_MERGE_20261107.md)。上游发行变化另见 [上游历史更新日志](docs/archive/UPSTREAM_CHANGELOG_20261107.md)。
 
+## 4.1.8
+
+- Android ARM64 采用 Next 安装身份 `dev.betterendfield.next`，版本号 `40108`。Android 10 及以上使用 LSPosed/libxposed API 102。原 3.x 设置和作用域需在 Next 中重新设置。
+- 首页加入游戏管理，将启用功能一览放在游戏管理下方。恢复管理员武器外观、BEM 组合与预览、模型动效控制、MMD 导入确认与槽位配置。
+- 修复第一人称启用配置丢失，恢复会客室媒体屏投放并修正视频方向。这两项已在拆分前的调试包实测，正式 APK 的设备验收另计。
+- 内置 [v3/v61 头饰目录](https://github.com/Venshell/better-endfield-fixed/releases/tag/headwear-v3-v61)，共 898 份资源，适用于 Android 游戏 1.6.4（versionCode 61）。
+- 正式版保留原有持续冲刺。手动和自动缓降随 [实验构建](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide) 单独提供。
+
 ## 3.4.2（未发布）
 
 接入上游第三方模块的 Android ZIP 导入、私有代际部署、原生 Host/Hook 合同、网页桥与 Compose 管理入口。管理界面、包路径校验和部署已在 Android 10 设备测试；独立 ARM64 Host 已验证认证、消息、配置变更与停用。真实游戏进程中的第三方库、网页交互和长期资源清理仍待验收，本条不代表已发布。

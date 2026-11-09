@@ -1,4 +1,4 @@
-# Better Endfield
+# Better Endfield Next for Android
 
 [English](README.en.md) · [简体中文](README.md)
 
@@ -6,17 +6,26 @@ Better Endfield is an Android LSPosed module for *Arknights: Endfield*, with a s
 
 > This is an independently maintained derivative of [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield). It is not an official release of the upstream project or the game publisher.
 
-## Platforms and features
+[Stable download](https://github.com/Venshell/better-endfield-fixed/releases/latest) · [Experimental glide builds](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide) · [Changelog](CHANGELOG.md) · [Android setup and builds](android/README.md) · [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md)
 
-| Platform | Main capabilities | Entry point |
-| --- | --- | --- |
-| Android ARM64 | Models and BEM appearances, character voice, free camera, first person, camera motion, gyroscope and in-game control panel | LSPosed module and companion settings app |
+The current Android version is **4.1.8** (`dev.betterendfield.next`). Next installs separately from 3.x and requires its own LSPosed scope. It bundles 898 headwear assets for Android game version 1.6.4 (versionCode 61). Manual and automatic glide builds are available from the experimental branch's Actions artifacts.
+
+## Features
+
+See the release notes for device validation details.
+
+| Feature | Android ARM64 |
+| --- | --- |
+| Models and appearance | BEM import and management, appearance and morph parameters, Endministrator weapon appearance, in-game model and animation controls |
+| Camera | First person and gyroscope, free camera, global FOV, character following, time freeze and camera paths |
+| MMD and reception room display | Work import and slot confirmation, in-game playback, image and video casting |
+| Game settings | Home screen game management and feature summary, in-game control panel, UI settings, character voice and sustained dash |
 
 Appearance packages use the standard BEMv1 `.bem` format. See the [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md) for format and conversion limits.
 
 ## Get started
 
-1. Download the APK from the [Android 3.4.1 release](https://github.com/NukumizuKazuhiko/better-endfield-fixed/releases/tag/v3.4.1), and check its compatibility notes and checksum.
+1. Download the APK from the [stable release](https://github.com/Venshell/better-endfield-fixed/releases/latest), and check its compatibility notes and checksum.
 2. Install it, enable the module in LSPosed, and select the Endfield package you play.
 3. Configure features in the companion app, fully stop the game, then start it again.
 
@@ -24,7 +33,7 @@ See the [Android guide](android/README.md) for setup, compatibility and troubles
 
 ## Build from source
 
-The Android build requires JDK 21, Android SDK 37, NDK 27.2.12479018, CMake 3.22.1, Dobby v1.0.5 and the complete headwear catalog. Follow the [Android build guide](android/README.md#从源码构建); the build fails when that catalog is missing.
+The Android build requires JDK 21, Android SDK 37, NDK 27.2.12479018, CMake 3.22.1, Dobby v1.0.5 and the complete headwear catalog. Follow the [Android build guide](android/README.md#从源码构建); and download the required catalog from the [Android headwear v3 / v61 resource release](https://github.com/Venshell/better-endfield-fixed/releases/tag/headwear-v3-v61).
 
 ## Documentation
 
@@ -36,7 +45,7 @@ The Android build requires JDK 21, Android SDK 37, NDK 27.2.12479018, CMake 3.22
 | [Changelog](CHANGELOG.md) | Releases and validation boundaries |
 | [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md) | Package authoring and validation |
 
-For bug reports, use [Issues](https://github.com/NukumizuKazuhiko/better-endfield-fixed/issues) and include the platform, game and module versions, and reproduction steps. The Android app can export its runtime log; review it for personal information before sharing.
+For bug reports, use [Issues](https://github.com/Venshell/better-endfield-fixed/issues) and include the platform, game and module versions, and reproduction steps. The Android app can export its runtime log; review it for personal information before sharing.
 
 ## Origin and license
 

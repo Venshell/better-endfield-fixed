@@ -14,7 +14,7 @@
 
 ## 安装与配置
 
-1. 安装本分支构建的 APK，在框架中启用 Next 并设置游戏作用域。
+1. 从 [正式发行页](https://github.com/Venshell/better-endfield-fixed/releases/latest) 下载 APK，安装后在框架中启用 Next 并设置游戏作用域。缓降实验包在 [Actions](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide) 的对应运行中下载。
 2. 打开应用配置所需模块，再完整重启游戏。
 3. 进入游戏后用悬浮面板操作自由镜头、时间暂停、第一人称和 MMD 等功能。
 4. 设置与运行日志可以从应用导出。排查时请同时保留失败时间、应用版本、游戏版本和相应日志。
@@ -41,7 +41,7 @@ MMD 支持本地动作、表情、镜头和音频，以及作品目录、ZIP 和
 
 工具页可打开 Compose 会客室媒体屏设置，选择图片、轮播图片或 MP4 后保存，并冷重启游戏装载配置。投屏是手动操作：进入会客室后，在游戏悬浮面板的“会客室投屏”中点击“开始／结束投屏”；停止可恢复原画面，视频支持暂停和跳转。面板读取原生播放状态并显示屏幕绑定/解码等错误，提交指令不代表已播放。用户此前报告保存并进入会客室后仍是原画面，本轮运行验收状态见[入口续接记录](../docs/ANDROID_UI_ALIGNMENT_20261109.md)。模型面板同样从原生读取当前已加载的动效列表，可控制开始、暂停、停止和速度；切换模型后旧控制令牌失效。
 
-工具页另有上游创意工坊入口；关于页提供语言切换、软件更新、资源包导入与更新、项目和许可证链接。项目主页与许可证指向 [NukumizuKazuhiko/better-endfield-fixed](https://github.com/NukumizuKazuhiko/better-endfield-fixed)，许可条款和必要署名保留；软件与基础资源更新协议本轮未改。原作者个人社交、群号和赞助入口不再保留。启动时自动检查可在关于页关闭。旧 View 版 MMD 作品页已由当前 Compose MMD 页及作品导入链取代。
+工具页另有上游创意工坊入口；关于页提供语言切换、软件更新、资源包导入与更新、项目和许可证链接。项目主页与许可证指向 [Venshell/better-endfield-fixed](https://github.com/Venshell/better-endfield-fixed)，许可条款和必要署名保留；软件与基础资源更新协议本轮未改。原作者个人社交、群号和赞助入口不再保留。启动时自动检查可在关于页关闭。旧 View 版 MMD 作品页已由当前 Compose MMD 页及作品导入链取代。
 
 ## 本地构建
 

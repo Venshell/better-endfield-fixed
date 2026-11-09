@@ -1,24 +1,31 @@
-# Better Endfield
+# Better Endfield Next for Android
 
 [简体中文](README.md) · [English](README.en.md)
 
-Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed 模块，提供设置应用与游戏内悬浮面板。角色外观、语音、相机、音乐与战斗数据等能力由独立模块提供。当前项目只开发和发行 Android 端；仓库中的 Windows 代码与构建脚本属于历史遗留，不是当前产品目标或验收范围。完整边界见[产品边界](docs/PRODUCT_BOUNDARY.md)，功能状态以[更新日志](CHANGELOG.md)与发行说明为准。
+Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed 模块，提供设置应用与游戏内悬浮面板。角色外观、语音、相机和 MMD 等能力由独立模块提供。当前项目只开发和发行 Android 端；仓库中的 Windows 代码与构建脚本属于历史遗留，不是当前产品目标或验收范围。完整边界见[产品边界](docs/PRODUCT_BOUNDARY.md)，功能状态以[更新日志](CHANGELOG.md)与发行说明为准。
 
 > 本仓库独立维护，派生自 [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield)，并非原项目或游戏发行商的官方版本。
 
-当前开发分支正在整合上游 4.1.8，安装身份为 `dev.betterendfield.next`，使用 versionCode 61 的 898 份头饰资源；这不是下方历史 3.4.1 发行包。Next 与旧版独立安装，需重新启用模块和设置作用域。合并与验证范围见 [本轮记录](docs/ANDROID_UPSTREAM_MERGE_20261107.md)。
+[下载正式版](https://github.com/Venshell/better-endfield-fixed/releases/latest) · [缓降实验构建](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide) · [更新说明](CHANGELOG.md) · [Android 使用与构建](android/README.md) · [BEM 创作者指南](docs/custom_model/BEM_CREATOR_GUIDE.md)
 
-## 平台与功能
+当前 Android 版本为 **4.1.8**（`dev.betterendfield.next`）。Next 与 3.x 独立安装，安装后需重新启用模块和设置作用域。内置 898 份头饰资源面向原生 Android 游戏 1.6.4（versionCode 61）。手动和自动缓降由独立实验分支提供，APK 可在 Actions 对应运行的 Artifacts 下载。
 
-| 平台 | 主要能力 | 入口 |
-| --- | --- | --- |
-| Android ARM64 | 模型与 BEM 外观、角色配音、自由相机、第一人称、运镜、陀螺仪及游戏内悬浮面板 | LSPosed 模块与配套设置应用 |
+## 功能一览
+
+功能表列出 Android 端的入口和用途。实机验收范围见对应发行说明。
+
+| 功能 | Android ARM64 |
+| --- | --- |
+| 角色模型与外观 | BEM 导入和管理、外观与形态参数、管理员武器外观替换、游戏内模型和动效控制 |
+| 相机 | 第一人称与陀螺仪、自由相机、全局 FOV、人物跟随、时间冻结、运镜 |
+| MMD 与会客室媒体屏 | 作品导入与槽位确认、游戏内播放、会客室图片和视频投屏 |
+| 游戏设置 | 首页游戏管理与启用功能一览、游戏内悬浮面板、界面调整、角色配音与持续冲刺 |
 
 `.bem` 外观包使用标准 BEMv1 格式；具体能力边界与制作流程见 [BEM 创作者指南](docs/custom_model/BEM_CREATOR_GUIDE.md)。
 
 ## 开始使用
 
-1. 从 [Android 3.4.1 发行页](https://github.com/NukumizuKazuhiko/better-endfield-fixed/releases/tag/v3.4.1)取得 APK，核对发行说明中的适用版本与校验值。
+1. 从 [正式发行页](https://github.com/Venshell/better-endfield-fixed/releases/latest)取得 APK，核对发行说明中的适用版本与校验值。
 2. 安装 APK，在 LSPosed 中启用模块并勾选实际游玩的 Endfield 包名。
 3. 在设置应用中配置功能，彻底停止游戏后重新启动。首次启用某些模块需要冷启动。
 
@@ -26,7 +33,7 @@ Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed �
 
 ## 从源码构建
 
-Android 构建需要 JDK 21、Android SDK 37、NDK 27.2.12479018、CMake 3.22.1、Dobby v1.0.5 与完整头饰目录。请按 [Android 构建说明](android/README.md#从源码构建)准备输入；缺少头饰目录时构建会失败。
+Android 构建需要 JDK 21、Android SDK 37、NDK 27.2.12479018、CMake 3.22.1、Dobby v1.0.5 与完整头饰目录。请按 [Android 构建说明](android/README.md#从源码构建)准备输入。完整目录可从 [Android 头饰资源 v3 / v61](https://github.com/Venshell/better-endfield-fixed/releases/tag/headwear-v3-v61) 获取，缺少目录时构建会失败。
 
 ## 文档
 
@@ -38,7 +45,7 @@ Android 构建需要 JDK 21、Android SDK 37、NDK 27.2.12479018、CMake 3.22.1�
 | [更新日志](CHANGELOG.md) | 版本变更与验收边界 |
 | [BEM 创作者指南](docs/custom_model/BEM_CREATOR_GUIDE.md) | 外观包制作与验证 |
 
-遇到问题时可在 [Issues](https://github.com/NukumizuKazuhiko/better-endfield-fixed/issues) 描述平台、游戏版本、Better Endfield 版本和复现步骤。Android 端可从设置应用的“运行日志”页导出日志；日志中若有个人信息，请先检查再上传。
+遇到问题时可在 [Issues](https://github.com/Venshell/better-endfield-fixed/issues) 描述平台、游戏版本、Better Endfield 版本和复现步骤。Android 端可从设置应用的“运行日志”页导出日志；日志中若有个人信息，请先检查再上传。
 
 ## 来源与许可
 
