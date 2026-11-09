@@ -425,11 +425,11 @@ val verifyReleaseEntryPoints by tasks.registering {
         )
         // Exports with no Java declaration behind them any more. The panel-to-
         // runtime channel moved from JNI to plain files (see the
-        // NativeCommandBridge header comment), and the prebuilt library still
-        // carries the old entry points, so they cannot come out of the dex --
-        // they are simply never resolved. R8 renaming that class is harmless.
+        // NativeCommandBridge header comment), and the native bridge still
+        // carries the old entry points, and Java never resolves those exports.
         val obsoleteJniExports = setOf(
             "dev.betterendfield.next.NativeCommandBridge.key",
+            "dev.betterendfield.next.NativeCommandBridge.look",
             "dev.betterendfield.next.NativeCommandBridge.releaseKeys",
             "dev.betterendfield.next.NativeCommandBridge.status",
             "dev.betterendfield.next.NativeCommandBridge.submit",
@@ -466,7 +466,7 @@ val verifyReleaseEntryPoints by tasks.registering {
         // A regex that stops matching would silently disable the checks below,
         // so pin the set that is known to exist today.
         val expectedNatives = setOf(
-            "dev.betterendfield.next.BemInstaller.inspectNative",
+            "dev.betterendfield.next.BemInstaller.inspectNativeWithOptions",
             "dev.betterendfield.next.BemInstaller.convertNative",
             "dev.betterendfield.next.BemInstaller.cancelNative"
         )
@@ -561,28 +561,22 @@ val verifyReleaseEntryPoints by tasks.registering {
                 // 2. Every JNI export shipped in every native library must be
                 //    backed by a Java declaration, and that declaration must
                 //    still carry its original name.
-                val unaccounted = mutableListOf<String>()
-                nativeLibraries.forEach { (library, bytes) ->
-                    val prefix = "Java_dev_betterendfieldnext_android_"
-                    var at = bytes.indexOf(prefix)
-                    while (at >= 0) {
-                        var end = at + prefix.length
-                        while (end < bytes.length &&
-                            (bytes[end].isLetterOrDigit() || bytes[end] == '_')) end++
-                        // C++ mangles the enclosing function, so the tail after
-                        // the JNI name is garbage (e.g. "..._convertNativeE3"):
-                        // a prefix match is the honest test.
-                        val qualified = "dev.betterendfield.next." +
-                            bytes.substring(at + prefix.length, end).replaceFirst('_', '.')
-                        val known = declaredNatives.any { qualified.startsWith(it) } ||
-                            obsoleteJniExports.any { qualified.startsWith(it) }
-                        if (!known) unaccounted.add("$library!$qualified")
-                        at = bytes.indexOf(prefix, at + prefix.length)
-                    }
-                }
+                val exportPattern = Regex(
+                    """Java_dev_betterendfield_next_([A-Za-z0-9]+)_([A-Za-z0-9]+)\x00"""
+                )
+                val exports = nativeLibraries.values.flatMap { bytes ->
+                    exportPattern.findAll(bytes).map { match ->
+                        val (owner, method) = match.destructured
+                        "dev.betterendfield.next.$owner.$method"
+                    }.toList()
+                }.toSet()
+                val unaccounted = exports - declaredNatives - obsoleteJniExports
                 check(unaccounted.isEmpty()) {
-                    "${apk.name} ships JNI exports no keep rule or Java declaration " +
-                        "accounts for: ${unaccounted.sorted()}"
+                    "${apk.name} ships JNI exports without Java declarations: ${unaccounted.sorted()}"
+                }
+                val missingExports = declaredNatives - exports
+                check(missingExports.isEmpty()) {
+                    "${apk.name} is missing JNI exports for: ${missingExports.sorted()}"
                 }
 
                 // 3. Class names. mapping.txt is the authority: R8 prints an
@@ -599,12 +593,8 @@ val verifyReleaseEntryPoints by tasks.registering {
                 }
 
                 // 4. Method names. mapping.txt is deliberately NOT the witness
-                //    here: R8 prints no mapping entry for a `native` method,
-                //    because its name is already fixed by the JNI symbol
-                //    contract. Measured on this build -- inspectNative,
-                //    convertNative and cancelNative occur zero times in
-                //    mapping.txt, while conversionProgress, a plain kept method,
-                //    occurs on three lines. So the dex string table is used: if
+                //    here: R8 can omit unchanged native method names from mapping.txt.
+                //    The dex string table is used: if
                 //    a keep rule stops applying, R8 renames declaration and call
                 //    sites together and the original name leaves the dex.
                 val lostMethods = (declaredNatives.map { it.substringAfterLast('.') }
