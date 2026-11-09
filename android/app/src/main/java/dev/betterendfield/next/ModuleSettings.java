@@ -1368,6 +1368,7 @@ final class ModuleSettings {
                         + "global_fov_enabled=" + globalFovEnabled + "\n"
                         + "global_fov=" + number(getGlobalFov(context)) + "\n"
                         + "free_camera_follow_character=" + isFreeCameraFollowCharacter(context) + "\n"
+                        + "first_person_enabled=" + firstPerson + "\n"
                         + "first_person_fov=" + number(firstPersonFov) + "\n"
                         + "first_person_eye_forward=" + number(eyeForward) + "\n"
                         + "first_person_eye_height=" + number(eyeHeight) + "\n"

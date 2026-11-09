@@ -26,6 +26,7 @@ final class CameraSettingsTest {
                     ModuleSettings.getCameraMotion(isolated));
             ModuleSettings.republishConfigurations(isolated);
             String ini = ModuleConfigurations.read(preferences).camera();
+            check(ini.contains("first_person_enabled=true\n"), "first-person switch reaches the native camera configuration");
             check(ini.contains("first_person_eye_forward=0.1234\n"), "forward round trip");
             check(ini.contains("first_person_eye_height=-0.25\n"), "height round trip");
             check(ini.contains("first_person_near_clip=0.001\n"), "clip round trip");
@@ -102,6 +103,7 @@ final class CameraSettingsTest {
         check(ini.contains("global_fov_enabled=true\n") && ini.contains("global_fov=81\n"),
                 "global FOV alone starts camera module");
         check(ini.contains("free_camera_follow_character=true\n"), "follow serialized");
+        check(ini.contains("first_person_enabled=false\n"), "first person stays disabled when another camera feature starts the module");
         check(ModuleSettings.setGlobalFov(context, false, Double.NaN), "global FOV disable");
         ModuleSettings.setCameraSettings(context, false, false, false, false, true, true,
                 5, 60, 75, 0.03, 0.05, 0.03, false,
