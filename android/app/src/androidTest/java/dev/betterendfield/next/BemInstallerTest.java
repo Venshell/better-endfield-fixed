@@ -9,6 +9,7 @@ import java.io.*;
 import java.nio.file.Files;
 
 public final class BemInstallerTest extends Instrumentation {
+    public void testOverlayResourcesOnForeignHost() throws Exception {OverlayResourceContextDeviceTest.run(getTargetContext());}
     public void testIndexRevisionRejectsStalePageAndOverlay() throws Exception {BemIndexRevisionDeviceTest.stale(getTargetContext());}
     public void testIndexDraftRefreshRetainsAndBlocks() throws Exception {BemIndexRevisionDeviceTest.refresh(getTargetContext());}
     public void testIndexCleanRefreshAndImportConflict() throws Exception {BemIndexRevisionDeviceTest.cleanAndImport(getTargetContext());}

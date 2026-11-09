@@ -5,6 +5,10 @@ import android.view.View
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -90,11 +94,20 @@ class OverlaySurface(
     fun composeNow() {
         if (compositionInitialized) return
         check(handle.isAttachedToWindow && panel.isAttachedToWindow)
+        val resourceContext = OverlayResourceContext(handle.context)
         handle.setContent {
-            OverlayTheme { FloatingHandle(callbacks::toggle, callbacks::drag, callbacks::dragEnd) }
+            CompositionLocalProvider(LocalContext provides resourceContext,
+                LocalResources provides resourceContext.resources,
+                LocalConfiguration provides resourceContext.resources.configuration) {
+                OverlayTheme { FloatingHandle(callbacks::toggle, callbacks::drag, callbacks::dragEnd) }
+            }
         }
         panel.setContent {
-            OverlayTheme { OverlayPanel(features, preview, journal, callbacks) }
+            CompositionLocalProvider(LocalContext provides resourceContext,
+                LocalResources provides resourceContext.resources,
+                LocalConfiguration provides resourceContext.resources.configuration) {
+                OverlayTheme { OverlayPanel(features, preview, journal, callbacks) }
+            }
         }
         handle.createComposition()
         panel.createComposition()

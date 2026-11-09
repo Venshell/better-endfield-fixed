@@ -308,6 +308,7 @@ final class GameOverlay {
         OverlayFeatures current;
         try {
             SharedPreferences preferences = settings.get();
+            AppLanguage.read(preferences);
             current = OverlayFeatures.read(preferences);
             applyAppearance(ModuleSettings.getOverlayAppearance(preferences));
         } catch (RuntimeException unavailable) { current = OverlayFeatures.off(); }
