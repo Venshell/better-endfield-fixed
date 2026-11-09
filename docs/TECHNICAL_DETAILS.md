@@ -307,7 +307,7 @@ $catalog = 'D:\path\to\catalog-bundled'
 .\android\gradlew.bat -p android :app:assembleRelease :app:verifyReleaseEntryPoints "-PheadwearCatalogDir=$catalog" --offline --no-daemon
 ```
 
-release 构建开 R8（`isMinifyEnabled=true`），优化器阶段必须保持关闭（`-dontoptimize`）：R8 的类合并会把游戏进程内被轮询的静态类折进 Compose 持有者，导致游戏进程无堆栈崩溃。`:app:verifyReleaseEntryPoints` 挂在 `packageRelease` 上，校验 libxposed 入口、manifest 组件及游戏路径类，并按 Next 包名双向核对 Java native 声明和 APK 内的 JNI 导出。仅对明确登记的旧导出允许没有 Java 声明。
+release 构建开 R8（`isMinifyEnabled=true`），优化器阶段必须保持关闭（`-dontoptimize`）：R8 的类合并会把游戏进程内被轮询的静态类折进 Compose 持有者，导致游戏进程无堆栈崩溃。`:app:verifyReleaseEntryPoints` 挂在 `packageRelease` 上，校验 libxposed 入口、manifest 组件及游戏路径类，并按 Next 包名双向核对 Java native 声明和 APK 内的 JNI 导出。仅对明确登记的旧导出允许没有 Java 声明。R8 必须保留 NativeCommandBridge 的原生方法和由原生层按名称调用的 MMD、模型动效音频回调，发行门禁会检查这些名称。
 
 MMD 导入在读取 ZIP 条目数据前拒绝 Zstandard 压缩方法 20 和 93。Commons Compress 的可选解码类 `ZstdInputStream` 仅由此格式使用，发行构建对该类单独配置 R8 缺失类规则。
 

@@ -421,7 +421,8 @@ val verifyReleaseEntryPoints by tasks.registering {
         val jniCallbacks = mapOf(
             "dev.betterendfield.next.BemInstaller" to listOf("conversionProgress"),
             "dev.betterendfield.next.NativeCommandBridge" to listOf(
-                "audioOpen", "audioControl", "audioStatus", "audioError")
+                "audioOpen", "audioControl", "audioStatus", "audioError",
+                "driverAudioStart", "driverAudioStop", "driverAudioStopAll", "driverAudioStatus")
         )
         // Exports with no Java declaration behind them any more. The panel-to-
         // runtime channel moved from JNI to plain files (see the

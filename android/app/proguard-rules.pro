@@ -34,6 +34,9 @@
 # build.gradle.kts records them explicitly instead of ignoring them, so a new
 # native method without a rule here fails the build rather than disappearing.
 -keep class dev.betterendfield.next.BemInstaller { *; }
+-keepclassmembers class dev.betterendfield.next.NativeCommandBridge {
+    native <methods>;
+}
 
 # --- prevent R8 from merging unrelated game-process and Compose classes ------
 # R8's optimiser merges classes: anything never instantiated is folded into a
@@ -92,6 +95,10 @@
     static int audioControl(long, int, double);
     static double[] audioStatus(long);
     static java.lang.String audioError(long);
+    static int driverAudioStart(java.lang.String, java.lang.String, float, boolean);
+    static void driverAudioStop(java.lang.String);
+    static void driverAudioStopAll();
+    static java.lang.String driverAudioStatus();
 }
 
 # Commons Compress links this optional decoder for Zstandard ZIP entries.
