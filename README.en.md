@@ -10,6 +10,16 @@ Better Endfield is an Android LSPosed module for *Arknights: Endfield*, with a s
 
 The current Android version is **4.1.8** (`dev.betterendfield.next`). Next installs separately from 3.x and requires its own LSPosed scope. It bundles 898 headwear assets for Android game version 1.6.4 (versionCode 61). Manual and automatic glide builds are available from the experimental branch's Actions artifacts.
 
+## Differences from upstream Next
+
+This repository targets Android ARM64 releases. These features and branch choices distinguish it from [upstream](https://github.com/Dr-hydra/Better-Endfield).
+
+- **First-person gyroscope**: steer the first-person view with the phone's gyroscope. Its switch and sensitivity are in the Android settings app.
+- **Bundled headwear assets**: the APK contains 898 v3/v61 assets for hiding or replacing meshes that obstruct first-person vision. They target game versionCode 61. Character-by-character results require device validation.
+- **Experimental glide branch**: manual and automatic glide are on [`experimental/android-glide`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/android-glide). [Download the experimental APK from Actions](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467). The stable `main` branch retains sustained dash.
+
+The Android settings app and in-game panel use this repository's Compose screens for first person, BEM management, MMD import and reception-room display controls. See the [Android guide](android/README.md) for entry points and the [changelog](CHANGELOG.md) for version changes.
+
 ## Features
 
 See the release notes for device validation details.

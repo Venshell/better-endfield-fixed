@@ -10,6 +10,16 @@ Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed �
 
 当前 Android 版本为 **4.1.8**（`dev.betterendfield.next`）。Next 与 3.x 独立安装，安装后需重新启用模块和设置作用域。内置 898 份头饰资源面向原生 Android 游戏 1.6.4（versionCode 61）。手动和自动缓降由独立实验分支提供，APK 可在 Actions 对应运行的 Artifacts 下载。
 
+## 与上游 Next 的差异
+
+本仓库以 Android ARM64 为发行目标。以下是相对 [上游项目](https://github.com/Dr-hydra/Better-Endfield) 的本仓特有能力和分支安排。
+
+- **第一人称陀螺仪**：第一人称视角可使用手机陀螺仪控制方向，相关开关和灵敏度在 Android 设置应用中。
+- **内置头饰资源**：APK 随包提供 898 份 v3/v61 头饰资源，供第一人称隐藏或替换遮挡视野的网格。资源对应游戏 versionCode 61，逐角色效果以实机验收为准。
+- **缓降实验分支**：手动和自动缓降保存在 [`experimental/android-glide`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/android-glide)，从 [Actions 下载实验 APK](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467)。正式版 `main` 保留原有持续冲刺。
+
+Android 设置应用和游戏内悬浮面板沿用本仓库的 Compose 入口，保留第一人称、BEM 管理、MMD 导入和会客室媒体屏操作。具体入口见 [Android 使用说明](android/README.md)，版本变更见 [更新日志](CHANGELOG.md)。
+
 ## 功能一览
 
 功能表列出 Android 端的入口和用途。实机验收范围见对应发行说明。
