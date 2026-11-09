@@ -14,11 +14,12 @@ import tempfile
 JAVA_OWNERS = (
     "BemConfigurationLimit", "BemHotSwitchUpdate", "BemImportStream",
     "BemImportArchive", "BemIndexCommit", "FrameworkServiceWait",
-    "OverlayReconnectPolicy", "BemIndexRevision",
+    "OverlayReconnectPolicy", "BemIndexRevision", "BemTransformPublication", "BemPackageCopy", "ModelDriverControl",
 )
 JAVA_SUITES = (
     "BemHotSwitchUpdateTest", "BemImportArchiveTest", "BemIndexCommitTest",
-    "FrameworkServiceWaitTest", "OverlayReconnectPolicyTest", "BemIndexRevisionTest",
+    "FrameworkServiceWaitTest", "OverlayReconnectPolicyTest", "BemIndexRevisionTest", "BemTransformPublicationTest",
+    "BemPackageCopyTest", "ModelDriverControlTest",
 )
 PYTHON_SUITES = (
     "test_bem_v14", "test_bem_upload_report", "test_build_bem14_target",

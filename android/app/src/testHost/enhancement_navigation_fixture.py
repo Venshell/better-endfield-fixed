@@ -28,7 +28,8 @@ def main():
     pages = {"HOME": "HomePage", "EXPERIENCE": "ExperiencePage",
              "CHARACTERS": "CharacterPage", "TOOLS": "ToolsPage",
              "FIRST_PERSON": "FirstPersonPage", "CAMERA_MOTION": "CameraMotionPage",
-             "MMD": "MmdPage", "APPEARANCE": "AppearancePage", "LOG": "LogPage", "ABOUT": "AboutPage"}
+             "MMD": "MmdPage", "APPEARANCE": "AppearancePage", "LOG": "LogPage", "ABOUT": "AboutPage",
+             "ADMINISTRATOR_APPEARANCE": "AdministratorAppearancePage"}
     for page, component in pages.items():
         check(re.search(r"const val " + page + r" = [0-9]+", state) is not None
               and re.search(r"SettingsPage\." + page + r"\s*->\s*" + component + r"\(", shell) is not None,
@@ -49,6 +50,18 @@ def main():
           "retained local module manager is wired and registered")
     check("MediaScreenActivity::class.java" in tools and ".MediaScreenActivity" in activities,
           "upstream media screen is wired and registered")
+    mmd = (source / "MmdPage.kt").read_text(encoding="utf-8")
+    check("MmdImportActivity::class.java" in mmd and ".MmdImportActivity" in activities,
+          "MMD reviewed import is wired and registered")
+    about = (source / "AboutPage.kt").read_text(encoding="utf-8")
+    project = (source / "ProjectLinks.kt").read_text(encoding="utf-8")
+    check("ProjectLinks.REPOSITORY" in about and "ProjectLinks.LICENSE" in about
+          and "https://github.com/NukumizuKazuhiko/better-endfield-fixed" in project,
+          "project and license actions use the fork identity")
+    check(not (source / "SponsorDialog.java").exists()
+          and not (android / "app/src/main/res/raw/sponsor_wechat.png").exists()
+          and all(key not in about for key in ("next_bilibili", "next_xiaoheihe", "next_qq_group", "next_discord", "SponsorDialog")),
+          "author personal links and sponsorship resources are removed")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     files = [source / name for name in ("MainActivity.kt", "SettingsShell.kt", "SettingsState.kt", "ToolPages.kt")]
