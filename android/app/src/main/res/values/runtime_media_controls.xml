@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_runtime_title">会客室投屏</string>
+    <string name="media_runtime_start">开始／结束投屏</string>
+    <string name="media_runtime_stop">停止并恢复原画面</string>
+    <string name="media_runtime_pause">暂停／继续</string>
+    <string name="media_runtime_seek_back">后退 10 秒</string>
+    <string name="media_runtime_seek_forward">前进 10 秒</string>
+    <string name="media_runtime_unavailable">媒体模块未就绪；请保存设置并重启游戏</string>
+    <string name="media_runtime_idle">待播放</string>
+    <string name="media_runtime_loading">正在加载</string>
+    <string name="media_runtime_playing">播放中</string>
+    <string name="media_runtime_paused">已暂停</string>
+    <string name="media_runtime_ended">播放结束</string>
+    <string name="media_runtime_error">投屏失败：%1$s</string>
+    <string name="media_runtime_queued">指令已提交，等待游戏处理</string>
+    <string name="media_runtime_rejected">指令未提交：模块未就绪或队列已满</string>
+    <string name="media_runtime_manual_hint">保存并重启游戏后，进入会客室，在游戏悬浮面板的“会客室投屏”中点击“开始／结束投屏”。</string>
+    <string name="media_runtime_no_screens">未选择墙屏或桌屏</string>
+    <string name="media_runtime_screen_released">屏幕已离开，需重新开始投屏</string>
+    <string name="media_runtime_desk_unavailable">未找到桌面屏幕</string>
+    <string name="media_runtime_settings_changed">设置已更改，请重新开始投屏</string>
+</resources>

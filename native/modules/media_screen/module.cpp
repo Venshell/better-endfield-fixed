@@ -504,6 +504,8 @@ void Start(const Configuration& config) {
         if (!android_decoder.Open(running.path)) throw std::runtime_error("Failed to open video via Android MediaCodec");
         int video_w = android_decoder.CropWidth();
         int video_h = android_decoder.CropHeight();
+        Log("Android video display: "+std::to_string(video_w)+"x"+std::to_string(video_h)+
+            " clockwise_rotation="+std::to_string(android_decoder.Rotation()));
         if (video_w <= 0 || video_h <= 0) {
             video_w = running.width;
             video_h = running.height;
@@ -1068,6 +1070,7 @@ BE_EXPORT int BE_CALL BetterEndfieldNext_MediaScreenCommandV1(unsigned action, d
 BE_EXPORT int BE_CALL BetterEndfieldNext_MediaScreenStatusV1(char* destination, size_t capacity) {
     using namespace BetterEndfieldNext::MediaScreen;
     if (!destination || !capacity) return 0;
+    if (!initialized.load() || stopping.load()) { destination[0] = 0; return 0; }
     std::lock_guard lock(status_mutex); size_t count = std::min(capacity - 1, status_text.size());
     std::memcpy(destination, status_text.data(), count); destination[count] = 0;
     return static_cast<int>(count);

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_runtime_title">Reception room projection</string>
+    <string name="media_runtime_start">Start / end projection</string>
+    <string name="media_runtime_stop">Stop and restore screen</string>
+    <string name="media_runtime_pause">Pause / resume</string>
+    <string name="media_runtime_seek_back">Back 10 seconds</string>
+    <string name="media_runtime_seek_forward">Forward 10 seconds</string>
+    <string name="media_runtime_unavailable">Media module is not ready; save settings and restart the game</string>
+    <string name="media_runtime_idle">Ready to start</string>
+    <string name="media_runtime_loading">Loading</string>
+    <string name="media_runtime_playing">Playing</string>
+    <string name="media_runtime_paused">Paused</string>
+    <string name="media_runtime_ended">Playback ended</string>
+    <string name="media_runtime_error">Projection failed: %1$s</string>
+    <string name="media_runtime_queued">Command queued; waiting for the game</string>
+    <string name="media_runtime_rejected">Command was not queued: module unavailable or queue full</string>
+    <string name="media_runtime_manual_hint">After saving and restarting the game, enter the reception room and use Start / end projection under Reception room projection in the game overlay.</string>
+    <string name="media_runtime_no_screens">No wall or desk screen selected</string>
+    <string name="media_runtime_screen_released">Screen released; start projection again</string>
+    <string name="media_runtime_desk_unavailable">Desk screen not found</string>
+    <string name="media_runtime_settings_changed">Settings changed; start projection again</string>
+</resources>

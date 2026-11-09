@@ -93,6 +93,9 @@ internal fun OverlayPanel(
         if (features.mmd()) {
             MmdControls(callbacks)
         }
+        if (features.mediaScreen()) {
+            MediaScreenControls(preview)
+        }
         if (features.freeCamera()) {
             // Aiming comes first: framing a shot is look, then move, then set
             // the lens, and the pad that does the most work should not be the

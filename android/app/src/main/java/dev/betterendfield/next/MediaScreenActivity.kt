@@ -290,6 +290,7 @@ private fun MediaScreenPage(onBack: () -> Unit) {
                 ) {
                 SwitchRow(stringResource(R.string.media_enable), "", config.enabled,
                     { save(config.copy(enabled = it)) }, enabled = !busy)
+                BodyText(stringResource(R.string.media_runtime_manual_hint))
                 }
             PanelCard {
                 CardTitle(stringResource(R.string.media_section_content))

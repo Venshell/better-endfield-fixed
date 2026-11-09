@@ -12,6 +12,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "video_orientation.h"
 
 namespace BetterEndfieldNext::MediaScreen {
 
@@ -78,6 +79,16 @@ public:
         AMediaFormat_getInt32(track_format, AMEDIAFORMAT_KEY_WIDTH, &width_);
         AMediaFormat_getInt32(track_format, AMEDIAFORMAT_KEY_HEIGHT, &height_);
         AMediaFormat_getInt64(track_format, AMEDIAFORMAT_KEY_DURATION, &duration_us_);
+        rotation_ = 0;
+        AMediaFormat_getInt32(track_format, AMEDIAFORMAT_KEY_ROTATION, &rotation_);
+        if (!VideoOrientation::Valid(rotation_)) {
+            AMediaFormat_delete(track_format);
+            Close();
+            return false;
+        }
+        // Byte-buffer decoding has no output Surface to apply display rotation.
+        // Retain the track orientation and apply it exactly once in ConvertFrame.
+        AMediaFormat_setInt32(track_format, AMEDIAFORMAT_KEY_ROTATION, 0);
 
         crop_left_ = 0;
         crop_top_ = 0;
@@ -139,6 +150,7 @@ public:
         crop_top_ = 0;
         stride_ = 0;
         slice_height_ = 0;
+        rotation_ = 0;
         duration_us_ = 0;
         current_pts_us_ = -1;
         input_eos_ = false;
@@ -249,12 +261,16 @@ public:
         return false;
     }
 
-    int32_t CropWidth() const { return crop_width_ > 0 ? crop_width_ : width_; }
-    int32_t CropHeight() const { return crop_height_ > 0 ? crop_height_ : height_; }
+    int32_t CropWidth() const { return Orientation().Width(); }
+    int32_t CropHeight() const { return Orientation().Height(); }
+    int32_t Rotation() const { return rotation_; }
     double Duration() const { return duration_us_ > 0 ? static_cast<double>(duration_us_) / 1000000.0 : 0.0; }
     bool IsOpened() const { return opened_; }
 
 private:
+    VideoOrientation Orientation() const {
+        return {crop_width_ > 0 ? crop_width_ : width_, crop_height_ > 0 ? crop_height_ : height_, rotation_};
+    }
     void UpdateFormat(AMediaFormat* fmt) {
         if (!fmt) return;
         int32_t val = 0;
@@ -296,6 +312,7 @@ private:
         const int w = crop_width_ > 0 ? crop_width_ : width_;
         const int h = crop_height_ > 0 ? crop_height_ : height_;
         if (w <= 0 || h <= 0) return;
+        const auto orientation = Orientation();
 
         size_t required = static_cast<size_t>(w) * h * 4;
         if (rgba_buffer_.size() != required) {
@@ -310,11 +327,7 @@ private:
 
         for (int y = 0; y < h; ++y) {
             int src_y = crop_top_ + y;
-            // 垂直翻转适配 Unity Texture2D 坐标系（原点在左下角）
-            int dst_y = h - 1 - y;
-
             const uint8_t* py = y_plane + (src_y * stride_) + crop_left_;
-            uint8_t* pdst = rgba_buffer_.data() + (static_cast<size_t>(dst_y) * w * 4);
 
             int uv_y = src_y / 2;
             if (is_i420) {
@@ -322,6 +335,7 @@ private:
                 const uint8_t* pu = uv_plane + (uv_y * u_stride) + (crop_left_ / 2);
                 const uint8_t* pv = pu + ((stride_ / 2) * (slice_height_ / 2));
                 for (int x = 0; x < w; ++x) {
+                    uint8_t* pixel = rgba_buffer_.data() + orientation.UnityPixel(x,y)*4;
                     int Y = py[x];
                     int U = pu[x / 2];
                     int V = pv[x / 2];
@@ -331,14 +345,15 @@ private:
                     int d = U - 128;
                     int e = V - 128;
 
-                    pdst[x * 4 + 0] = static_cast<uint8_t>(std::clamp((298 * c + 409 * e + 128) >> 8, 0, 255));
-                    pdst[x * 4 + 1] = static_cast<uint8_t>(std::clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255));
-                    pdst[x * 4 + 2] = static_cast<uint8_t>(std::clamp((298 * c + 516 * d + 128) >> 8, 0, 255));
-                    pdst[x * 4 + 3] = 255;
+                    pixel[0] = static_cast<uint8_t>(std::clamp((298 * c + 409 * e + 128) >> 8, 0, 255));
+                    pixel[1] = static_cast<uint8_t>(std::clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255));
+                    pixel[2] = static_cast<uint8_t>(std::clamp((298 * c + 516 * d + 128) >> 8, 0, 255));
+                    pixel[3] = 255;
                 }
             } else {
                 const uint8_t* puv = uv_plane + (uv_y * stride_) + (crop_left_ & ~1);
                 for (int x = 0; x < w; ++x) {
+                    uint8_t* pixel = rgba_buffer_.data() + orientation.UnityPixel(x,y)*4;
                     int Y = py[x];
                     int u_idx = (x / 2) * 2;
                     int U = is_nv21 ? puv[u_idx + 1] : puv[u_idx];
@@ -349,10 +364,10 @@ private:
                     int d = U - 128;
                     int e = V - 128;
 
-                    pdst[x * 4 + 0] = static_cast<uint8_t>(std::clamp((298 * c + 409 * e + 128) >> 8, 0, 255));
-                    pdst[x * 4 + 1] = static_cast<uint8_t>(std::clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255));
-                    pdst[x * 4 + 2] = static_cast<uint8_t>(std::clamp((298 * c + 516 * d + 128) >> 8, 0, 255));
-                    pdst[x * 4 + 3] = 255;
+                    pixel[0] = static_cast<uint8_t>(std::clamp((298 * c + 409 * e + 128) >> 8, 0, 255));
+                    pixel[1] = static_cast<uint8_t>(std::clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255));
+                    pixel[2] = static_cast<uint8_t>(std::clamp((298 * c + 516 * d + 128) >> 8, 0, 255));
+                    pixel[3] = 255;
                 }
             }
         }
@@ -371,6 +386,7 @@ private:
     int32_t stride_ = 0;
     int32_t slice_height_ = 0;
     int32_t color_format_ = 0;
+    int32_t rotation_ = 0;
     int64_t duration_us_ = 0;
 
     int64_t current_pts_us_ = -1;

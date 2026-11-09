@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(MediaVideoOrientationTests LANGUAGES CXX)
+enable_testing()
+add_executable(media_video_orientation_tests video_orientation_tests.cpp)
+target_compile_features(media_video_orientation_tests PRIVATE cxx_std_17)
+add_test(NAME media_video_orientation COMMAND media_video_orientation_tests)
