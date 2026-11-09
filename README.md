@@ -6,7 +6,11 @@ Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed �
 
 > 本仓库独立维护，派生自 [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield)，并非原项目或游戏发行商的官方版本。
 
-[下载正式版](https://github.com/Venshell/better-endfield-fixed/releases/latest) · [缓降实验构建](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide) · [更新说明](CHANGELOG.md) · [Android 使用与构建](android/README.md) · [BEM 创作者指南](docs/custom_model/BEM_CREATOR_GUIDE.md)
+[![正式版 4.1.8](https://img.shields.io/badge/%E6%AD%A3%E5%BC%8F%E7%89%88-4.1.8-26CDCB)](https://github.com/Venshell/better-endfield-fixed/releases/latest)
+[![缓降实验版](https://img.shields.io/badge/%E7%BC%93%E9%99%8D-%E5%AE%9E%E9%AA%8C%E7%89%88-E85327)](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467)
+[![更新日志](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-%E6%9B%B4%E6%96%B0%E6%97%A5%E5%BF%97-1C4A9C)](CHANGELOG.md)
+[![Android 使用与构建](https://img.shields.io/badge/Android-%E4%BD%BF%E7%94%A8%E4%B8%8E%E6%9E%84%E5%BB%BA-1C4A9C)](android/README.md)
+[![BEM 创作者指南](https://img.shields.io/badge/BEM-%E5%88%9B%E4%BD%9C%E8%80%85%E6%8C%87%E5%8D%97-1C4A9C)](docs/custom_model/BEM_CREATOR_GUIDE.md)
 
 当前 Android 版本为 **4.1.8**（`dev.betterendfield.next`）。Next 与 3.x 独立安装，安装后需重新启用模块和设置作用域。内置 898 份头饰资源面向原生 Android 游戏 1.6.4（versionCode 61）。手动和自动缓降由独立实验分支提供，APK 可在 Actions 对应运行的 Artifacts 下载。
 

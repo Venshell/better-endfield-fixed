@@ -6,7 +6,11 @@ Better Endfield is an Android LSPosed module for *Arknights: Endfield*, with a s
 
 > This is an independently maintained derivative of [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield). It is not an official release of the upstream project or the game publisher.
 
-[Stable download](https://github.com/Venshell/better-endfield-fixed/releases/latest) · [Experimental glide builds](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide) · [Changelog](CHANGELOG.md) · [Android setup and builds](android/README.md) · [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md)
+[![Stable 4.1.8](https://img.shields.io/badge/Stable-4.1.8-26CDCB)](https://github.com/Venshell/better-endfield-fixed/releases/latest)
+[![Experimental glide](https://img.shields.io/badge/Glide-Experimental-E85327)](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467)
+[![Changelog](https://img.shields.io/badge/Docs-Changelog-1C4A9C)](CHANGELOG.md)
+[![Android setup and builds](https://img.shields.io/badge/Android-Setup%20and%20builds-1C4A9C)](android/README.md)
+[![BEM creator guide](https://img.shields.io/badge/BEM-Creator%20guide-1C4A9C)](docs/custom_model/BEM_CREATOR_GUIDE.md)
 
 The current Android version is **4.1.8** (`dev.betterendfield.next`). Next installs separately from 3.x and requires its own LSPosed scope. It bundles 898 headwear assets for Android game version 1.6.4 (versionCode 61). Manual and automatic glide builds are available from the experimental branch's Actions artifacts.
 
