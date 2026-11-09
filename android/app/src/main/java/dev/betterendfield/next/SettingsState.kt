@@ -75,13 +75,14 @@ object SettingsPage {
     const val ABOUT = 13
     const val CAMERA_MOTION = 14
     const val MMD = 15
+    const val ADMINISTRATOR_APPEARANCE = 16
 
     fun isSubPage(page: Int): Boolean = page >= FIRST_PERSON
 
     /** The tab a page belongs to, so a sub-page keeps its parent highlighted. */
     fun parentOf(page: Int): Int = when (page) {
         FIRST_PERSON, CAMERA_MOTION, MMD -> EXPERIENCE
-        APPEARANCE -> CHARACTERS
+        APPEARANCE, ADMINISTRATOR_APPEARANCE -> CHARACTERS
         LOG, ABOUT -> TOOLS
         else -> page
     }
@@ -131,6 +132,11 @@ class SettingsState(private val context: Context) {
         // load next, which any other page can have changed since it was built.
         if (index == SettingsPage.TOOLS || index == SettingsPage.LOG) refreshDiagnostics()
         if (index == SettingsPage.HOME) refreshHome()
+    }
+
+    fun markAdministratorAppearanceSaved() {
+        markPending()
+        refreshHome()
     }
 
     /** Returns from a sub-page to the tab that owns it. */
@@ -1975,7 +1981,11 @@ class SettingsState(private val context: Context) {
 
     val appearancePackages: List<BemPackage> get() = bem.packages
 
+    var homeRevision by mutableStateOf(0)
+        private set
+
     fun refreshHome() {
+        homeRevision++
         bem.refresh()
     }
 

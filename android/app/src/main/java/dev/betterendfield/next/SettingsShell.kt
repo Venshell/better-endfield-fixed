@@ -161,6 +161,7 @@ private fun SettingsBody(
                 SettingsPage.CAMERA_MOTION -> CameraMotionPage(state)
                 SettingsPage.MMD -> MmdPage(state)
                 SettingsPage.APPEARANCE -> AppearancePage(state, onInstallBem)
+                SettingsPage.ADMINISTRATOR_APPEARANCE -> AdministratorAppearancePage(state::markAdministratorAppearanceSaved)
                 SettingsPage.LOG -> LogPage(state)
                 SettingsPage.ABOUT -> AboutPage()
             }

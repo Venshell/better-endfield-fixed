@@ -3,15 +3,10 @@ package dev.betterendfield.next
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.RadioButton
@@ -20,8 +15,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,7 +37,7 @@ import androidx.compose.ui.unit.sp
 fun HomePage(state: SettingsState) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
         GameManagementCard()
-        ModuleStatusCard(state)
+        EnabledFeaturesCard(state)
         PendingCard(state)
 
         PanelCard {
@@ -89,46 +84,42 @@ fun HomePage(state: SettingsState) {
     }
 }
 
-/**
- * Which modules the next launch will start.
- *
- * Listed one per line with an accent dot rather than as a sentence, because the
- * list is the thing being read; a module that is absent is the normal state for
- * a feature nobody turned on, so the empty case explains the rule instead of
- * showing an error.
- */
 @Composable
-private fun ModuleStatusCard(state: SettingsState) {
-    val modules = state.loadedModuleIds()
+private fun EnabledFeaturesCard(state: SettingsState) {
+    val context = LocalContext.current
+    // The store also changes in separate Activities, which refreshHome observes on resume.
+    val features = state.homeRevision.let { HomeFeatureSummary.read(context, state) }
     SectionCard(
         eyebrow = stringResource(R.string.home_eyebrow),
-        title = stringResource(R.string.home_modules_title),
-        subtitle = if (modules.isEmpty()) stringResource(R.string.home_modules_none) else null,
+        title = stringResource(R.string.home_title),
     ) {
-        if (modules.isNotEmpty()) {
-            Column(
-                Modifier.padding(top = Be.Space.l),
-                verticalArrangement = Arrangement.spacedBy(Be.Space.m),
-            ) {
-                modules.forEach { module -> ModuleLine(module) }
+        BodyText(stringResource(R.string.home_feature_snapshot_hint))
+        if (features.isEmpty()) {
+            BodyText(stringResource(R.string.home_feature_empty), Modifier.padding(top = Be.Space.m))
+        } else {
+            BodyText(stringResource(R.string.home_count, features.size), Modifier.padding(top = Be.Space.m))
+            features.forEach { feature ->
+                Column(
+                    Modifier.fillMaxWidth().padding(top = Be.Space.m)
+                        .clip(RoundedCornerShape(Be.Radius.row)).background(Be.Colors.row)
+                        .clickable {
+                            when (feature.destination) {
+                                HomeFeatureSummary.Destination.CHARACTERS -> state.openPage(SettingsPage.CHARACTERS)
+                                HomeFeatureSummary.Destination.EXPERIENCE -> state.openPage(SettingsPage.EXPERIENCE)
+                                HomeFeatureSummary.Destination.ADMINISTRATOR -> state.openPage(SettingsPage.ADMINISTRATOR_APPEARANCE)
+                                HomeFeatureSummary.Destination.FIRST_PERSON -> state.openPage(SettingsPage.FIRST_PERSON)
+                                HomeFeatureSummary.Destination.MMD -> state.openPage(SettingsPage.MMD)
+                                HomeFeatureSummary.Destination.TOOLS -> state.openPage(SettingsPage.TOOLS)
+                                HomeFeatureSummary.Destination.MEDIA -> context.startActivity(
+                                    android.content.Intent(context, MediaScreenActivity::class.java))
+                            }
+                        }.padding(Be.Space.l),
+                ) {
+                    CardTitle(stringResource(feature.title))
+                    BodyText(feature.detail, Modifier.padding(top = Be.Space.s))
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun ModuleLine(id: String) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(Be.Colors.accent))
-        Spacer(Modifier.width(Be.Space.m))
-        Text(
-            text = id,
-            color = Be.Colors.textPrimary,
-            fontSize = Be.Type.value,
-        )
     }
 }
 

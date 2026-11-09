@@ -47,6 +47,14 @@ fun CharacterPage(state: SettingsState, onInstallBem: () -> Unit) {
             )
         }
 
+        PanelCard {
+            SubPageRow(
+                title = stringResource(R.string.appearance_card_title),
+                hint = "",
+                state = ModuleSettings.isAppearanceEnabled(androidx.compose.ui.platform.LocalContext.current),
+                onClick = { state.openPage(SettingsPage.ADMINISTRATOR_APPEARANCE) },
+            )
+        }
         LoginDisplayPage(state)
         VoicePage(state)
     }

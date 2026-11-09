@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="admin_appearance_eyebrow">管理员</string>
+    <string name="admin_appearance_next_launch">已保存的设置将在下次启动游戏时装载。</string>
+    <string name="admin_appearance_save_failed">设置保存失败，请重试。</string>
+    <string name="home_feature_snapshot_hint">以下为已保存的启用设置，不代表当前游戏进程已生效。</string>
+    <string name="home_feature_empty">尚未启用增强功能。</string>
+    <string name="home_dash_no_characters">尚未选择角色。</string>
+</resources>
