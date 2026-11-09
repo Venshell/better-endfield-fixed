@@ -93,3 +93,7 @@
     static double[] audioStatus(long);
     static java.lang.String audioError(long);
 }
+
+# Commons Compress links this optional decoder for Zstandard ZIP entries.
+# MmdImportArchive rejects methods 20 and 93 before opening an entry stream.
+-dontwarn com.github.luben.zstd.ZstdInputStream

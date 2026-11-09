@@ -309,6 +309,8 @@ $catalog = 'D:\path\to\catalog-bundled'
 
 release 构建开 R8（`isMinifyEnabled=true`），优化器阶段必须保持关闭（`-dontoptimize`）：R8 的类合并会把游戏进程内被轮询的静态类折进 Compose 持有者，导致游戏进程无堆栈崩溃。`:app:verifyReleaseEntryPoints` 挂在 `packageRelease` 上，校验 libxposed 入口、JNI 符号、manifest 组件与游戏路径类未被合并。
 
+MMD 导入在读取 ZIP 条目数据前拒绝 Zstandard 压缩方法 20 和 93。Commons Compress 的可选解码类 `ZstdInputStream` 仅由此格式使用，发行构建对该类单独配置 R8 缺失类规则。
+
 GitHub Actions 的 `android-release` 可手动选择 `build_only=true`：使用 CI 中的发行签名构建并上传 `better-endfield-release-apk` artifact，仍检查版本号和证书，但不创建标签或 GitHub Release。默认 `build_only=false` 保留正式发布流程；已存在同版本 Release 时，单纯请求构建应选构建模式。artifact 只证明构建与签名门禁，游戏内行为仍需实机验收。
 
 AGP 9 内置 Kotlin：只 apply Compose 编译器插件（`org.jetbrains.kotlin.plugin.compose`），**不得** apply `org.jetbrains.kotlin.android`。
