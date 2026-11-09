@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
                                 runCatching {
                                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl)))
                                 }.onFailure {
-                                    Toast.makeText(this@MainActivity, R.string.sponsor_open_failed, Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(this@MainActivity, R.string.next_link_open_failed, Toast.LENGTH_SHORT).show()
                                 }
                             })
                         },

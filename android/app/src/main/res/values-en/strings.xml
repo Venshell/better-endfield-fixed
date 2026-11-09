@@ -52,18 +52,6 @@
     <string name="custom_model_description">Install and manage third-party BEM model packages that replace in-game character assets. This module keeps its own packages and appearance settings.</string>
     <string name="custom_model_install">Install / manage BEM packages</string>
     <string name="about_page">About</string>
-    <string name="sponsor">Sponsor</string>
-    <string name="sponsor_wechat">WeChat</string>
-    <string name="sponsor_afdian">Afdian</string>
-    <string name="sponsor_paypal">PayPal</string>
-    <string name="sponsor_kofi">Ko-fi</string>
-    <string name="sponsor_close">Close</string>
-    <string name="sponsor_save">Save QR code</string>
-    <string name="sponsor_saving">Saving…</string>
-    <string name="sponsor_saved">Saved to the gallery; pick the image in WeChat Scan</string>
-    <string name="sponsor_save_failed">Could not save the QR code; try again</string>
-    <string name="sponsor_load_failed">Could not read the QR code; try again</string>
-    <string name="sponsor_open_failed">Unable to open the link</string>
     <string name="voice_page">Character voice</string>
     <string name="enhancement_page">Enhancements</string>
     <string name="home_page">Home</string>
@@ -283,11 +271,6 @@
     <string name="next_resource_failed">Resource operation failed: %1$s</string>
     <string name="next_project">Project</string>
     <string name="next_github">GitHub repository</string>
-    <string name="next_community">Author and community</string>
-    <string name="next_bilibili">Bilibili profile</string>
-    <string name="next_xiaoheihe">Xiaoheihe profile</string>
-    <string name="next_qq_group">Copy QQ group 851586605</string>
-    <string name="next_discord">Discord community</string>
     <string name="next_disclaimer">Risks and disclaimer</string>
     <string name="next_disclaimer_short">This is an unofficial experimental tool. Injection and runtime changes can cause crashes, incompatibility, or account risks.</string>
     <string name="next_disclaimer_full">Read full disclaimer</string>
@@ -345,4 +328,6 @@
     <string name="media_file_large">File is too large</string>
     <string name="media_file_empty">File is empty</string>
     <string name="media_index_failed">Could not save media index</string>
+    <string name="next_link_open_failed">Unable to open the link</string>
+    <string name="next_close">Close</string>
 </resources>

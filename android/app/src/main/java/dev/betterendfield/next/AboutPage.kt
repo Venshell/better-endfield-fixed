@@ -174,21 +174,9 @@ fun AboutPage() {
 
         PanelCard {
             CardTitle(stringResource(R.string.next_project))
-            GhostButton(stringResource(R.string.next_github), { open(AppUpdateChecker.REPOSITORY) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
+            GhostButton(stringResource(R.string.next_github), { open(ProjectLinks.REPOSITORY) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
             GhostButton(stringResource(R.string.next_open_releases), { open(AppUpdateChecker.RELEASES) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.about_license), { open("${AppUpdateChecker.REPOSITORY}/blob/main/LICENSE") }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-        }
-
-        PanelCard {
-            CardTitle(stringResource(R.string.next_community))
-            GhostButton(stringResource(R.string.next_bilibili), { open("https://space.bilibili.com/441133155") }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.next_xiaoheihe), { open("https://www.xiaoheihe.cn/app/user/profile/38080236") }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.next_qq_group), {
-                (context.getSystemService(Activity.CLIPBOARD_SERVICE) as? android.content.ClipboardManager)
-                    ?.setPrimaryClip(android.content.ClipData.newPlainText(context.getString(R.string.next_qq_group), "851586605"))
-            }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.next_discord), { open("https://discord.gg/Hadjs5XvS") }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.sponsor), { SponsorDialog.show(activity) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
+            GhostButton(stringResource(R.string.about_license), { open(ProjectLinks.LICENSE) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
         }
 
         PanelCard {
@@ -196,13 +184,13 @@ fun AboutPage() {
             BodyText(stringResource(R.string.next_disclaimer_short), Modifier.padding(top = Be.Space.m))
             GhostButton(stringResource(R.string.next_disclaimer_full), { showDisclaimer = true }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
         }
-        if (linkError) BodyText(stringResource(R.string.sponsor_open_failed))
+        if (linkError) BodyText(stringResource(R.string.next_link_open_failed))
     }
 
     if (showDisclaimer) AlertDialog(
         onDismissRequest = { showDisclaimer = false },
         title = { Text(stringResource(R.string.next_disclaimer)) },
         text = { Text(stringResource(R.string.next_disclaimer_text)) },
-        confirmButton = { GhostButton(stringResource(R.string.sponsor_close), { showDisclaimer = false }) },
+        confirmButton = { GhostButton(stringResource(R.string.next_close), { showDisclaimer = false }) },
     )
 }

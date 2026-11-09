@@ -781,13 +781,7 @@ final class Text {
         put("GitHub 仓库", "GitHub repository");
         put("全部版本", "All releases");
         put("GNU AGPL v3.0 开源许可", "GNU AGPL v3.0 license");
-        put("作者与交流", "Author & Community");
-        put("打开 B站主页", "Bilibili Space");
-        put("打开小黑盒主页", "Heybox Profile");
-        put("QQ群  ", "QQ Group  ");
         put("复制", "Copy");
-        put("QQ群", "QQ Group");
-        put("Discord 社区", "Discord community");
         put("风险与免责声明", "Risk & Disclaimer");
         put("本项目为非官方实验工具，与鹰角网络、峘形山工作室及 GRYPHLINE 无关。注入和运行时修改可能造成游戏崩溃、版本不兼容或账号风险。",
                 "This is an unofficial experimental tool, unaffiliated with Hypergryph, Mountain Contour Studio or GRYPHLINE. Injection and runtime modification may cause game crashes, version incompatibilities or account risk.");

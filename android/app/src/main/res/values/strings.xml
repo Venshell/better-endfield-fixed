@@ -369,29 +369,17 @@
 
 <string name="about_page">关于</string>
 
-<string name="sponsor">赞助</string>
 
-<string name="sponsor_wechat">微信赞赏</string>
 
-<string name="sponsor_afdian">爱发电</string>
 
-<string name="sponsor_paypal">PayPal</string>
 
-<string name="sponsor_kofi">Ko-fi</string>
 
-<string name="sponsor_close">关闭</string>
 
-<string name="sponsor_save">保存赞赏码</string>
 
-<string name="sponsor_saving">保存中…</string>
 
-<string name="sponsor_saved">已保存到相册，可在微信扫一扫中选择该图片</string>
 
-<string name="sponsor_save_failed">赞赏码保存失败，请重试</string>
 
-<string name="sponsor_load_failed">赞赏码读取失败，请重试</string>
 
-<string name="sponsor_open_failed">无法打开链接</string>
 
 <string name="voice_page">角色配音</string>
 
@@ -662,11 +650,6 @@
     <string name="next_resource_failed">资源操作失败：%1$s</string>
     <string name="next_project">项目</string>
     <string name="next_github">GitHub 仓库</string>
-    <string name="next_community">作者与交流</string>
-    <string name="next_bilibili">打开 B 站主页</string>
-    <string name="next_xiaoheihe">打开小黑盒主页</string>
-    <string name="next_qq_group">复制 QQ 群号 851586605</string>
-    <string name="next_discord">Discord 社区</string>
     <string name="next_disclaimer">风险与免责声明</string>
     <string name="next_disclaimer_short">本项目为非官方实验工具。注入和运行时修改可能造成游戏崩溃、版本不兼容或账号风险。</string>
     <string name="next_disclaimer_full">查看完整说明</string>
@@ -724,4 +707,6 @@
     <string name="media_file_large">文件过大</string>
     <string name="media_file_empty">文件为空</string>
     <string name="media_index_failed">媒体索引保存失败</string>
+    <string name="next_link_open_failed">无法打开链接</string>
+    <string name="next_close">关闭</string>
 </resources>
