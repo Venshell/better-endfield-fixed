@@ -228,6 +228,8 @@ internal fun OverlayModelPage(preview: Boolean, onBack: () -> Unit) {
         }
     }
 
+    ModelDriverControls(preview)
+
     OverlaySection("已安装模型") {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val entries = remember(index) { parseModels(index) }

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="model_driver_title">当前模型动效</string>
+    <string name="model_driver_preview">预览模式无法读取游戏内动效。</string>
+    <string name="model_driver_unavailable">动效运行状态暂不可用。</string>
+    <string name="model_driver_empty">当前加载的模型没有动效。</string>
+    <string name="model_driver_rejected">操作未完成，已重新读取状态。模型可能已切换，请重试。</string>
+    <string name="model_driver_status">%1$s · %2$s</string>
+    <string name="model_driver_playing">播放中</string>
+    <string name="model_driver_paused">已暂停</string>
+    <string name="model_driver_finished">已结束</string>
+    <string name="model_driver_once">单次播放</string>
+    <string name="model_driver_loop">循环播放</string>
+    <string name="model_driver_stopped">已停止</string>
+    <string name="model_driver_start">开始</string>
+    <string name="model_driver_replay">重播</string>
+    <string name="model_driver_pause">暂停</string>
+    <string name="model_driver_resume">继续</string>
+    <string name="model_driver_stop">停止</string>
+    <string name="model_driver_speed">速度 %1$s×</string>
+</resources>

@@ -29,6 +29,9 @@
 #endif
 #include "animation_driver.h"
 #include "driver_audio.h"
+#if defined(__ANDROID__)
+#include "../../shared/third_party/nlohmann/json.hpp"
+#endif
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -5308,7 +5311,8 @@ void PollAnimationDriverControls() {
 // and stop distinct on both platforms.
 struct AndroidDriverOverride { int state = 0; uint32_t speed_millis = 1000; };
 static std::unordered_map<std::string, AndroidDriverOverride> s_driver_overrides;
-void ClearAndroidDriverOverrides() {s_driver_overrides.clear();}
+static uint64_t s_driver_owner_epoch = 1;
+void ClearAndroidDriverOverrides() {s_driver_overrides.clear(); ++s_driver_owner_epoch;}
 
 void ReapplyAndroidDriverOverrides() {
     for (const auto& entry : s_driver_overrides) {
@@ -5321,29 +5325,37 @@ bool SetAndroidDriver(const char* id, int state, int speed_millis) {
     if (!id || *id == '\0') return false;
     std::lock_guard lock(g_state_mutex);
     if (g_driver_resources.empty() || g_animation_driver.DriverCount()==0) return false;
-    const int clamped = state < 0 ? 0 : (state > 2 ? 2 : state);
-    const uint32_t sp = (speed_millis >= 250 && speed_millis <= 4000)
-        ? static_cast<uint32_t>(speed_millis) : 1000;
-    s_driver_overrides[id] = AndroidDriverOverride{clamped, sp};
-    g_animation_driver.ApplyState(id, static_cast<DriverState>(clamped));
-    g_animation_driver.SetSpeedMillis(id, sp);
+    if (state < 0 || state > 2 || speed_millis < 250 || speed_millis > 4000) return false;
+    // Commands are scoped to the loaded owner. A stale panel cannot control a
+    // different package that happens to use the same author-defined driver id.
+    const std::string prefix = std::to_string(s_driver_owner_epoch) + ":";
+    const std::string command(id);
+    if (!command.starts_with(prefix)) return false;
+    const auto summaries = g_animation_driver.Summaries();
+    size_t position = 0;
+    while (position < summaries.size() && command != prefix + std::to_string(position)) ++position;
+    if (position == summaries.size()) return false;
+    const auto& driver_id = summaries[position].id;
+    const auto speed = static_cast<uint32_t>(speed_millis);
+    s_driver_overrides[driver_id] = AndroidDriverOverride{state, speed};
+    g_animation_driver.ApplyState(driver_id, static_cast<DriverState>(state));
+    g_animation_driver.SetSpeedMillis(driver_id, speed);
     return true;
 }
 
 std::string GetAndroidDriversJson() {
     std::lock_guard lock(g_state_mutex);
-    std::string json = "[";
-    bool first = true;
+    auto json = nlohmann::json::array();
+    if (g_driver_resources.empty()) return json.dump();
+    size_t position = 0;
     for (const auto& s : g_animation_driver.Summaries()) {
-        if (!first) json += ",";
-        first = false;
-        json += "{\"id\":\"" + s.id + "\",\"name\":\"" + s.name +
-            "\",\"state\":" + std::to_string(static_cast<int>(s.state)) +
-            ",\"once\":" + (s.playback == DriverPlayback::Once ? "true" : "false") +
-            ",\"speed_millis\":" + std::to_string(s.speed_millis) + "}";
+        json.push_back({{"id", s.id}, {"name", s.name},
+            {"command_id", std::to_string(s_driver_owner_epoch) + ":" + std::to_string(position++)},
+            {"state", static_cast<int>(s.state)}, {"once", s.playback == DriverPlayback::Once},
+            {"speed_millis", s.speed_millis}});
     }
-    json += "]";
-    return json;
+    // ASCII JSON also crosses JNI NewStringUTF safely for supplementary Unicode names.
+    return json.dump(-1, ' ', true, nlohmann::json::error_handler_t::replace);
 }
 #endif
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="model_driver_title">Current model animations</string>
+    <string name="model_driver_preview">Preview cannot read in-game animation state.</string>
+    <string name="model_driver_unavailable">Animation runtime state is unavailable.</string>
+    <string name="model_driver_empty">The currently loaded model has no animations.</string>
+    <string name="model_driver_rejected">The action failed. State was refreshed. The model may have changed; retry.</string>
+    <string name="model_driver_status">%1$s · %2$s</string>
+    <string name="model_driver_playing">Playing</string>
+    <string name="model_driver_paused">Paused</string>
+    <string name="model_driver_finished">Finished</string>
+    <string name="model_driver_once">Play once</string>
+    <string name="model_driver_loop">Loop</string>
+    <string name="model_driver_stopped">Stopped</string>
+    <string name="model_driver_start">Start</string>
+    <string name="model_driver_replay">Replay</string>
+    <string name="model_driver_pause">Pause</string>
+    <string name="model_driver_resume">Resume</string>
+    <string name="model_driver_stop">Stop</string>
+    <string name="model_driver_speed">Speed %1$s×</string>
+</resources>
