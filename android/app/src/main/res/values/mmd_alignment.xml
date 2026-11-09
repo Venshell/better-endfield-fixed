@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mmd_alignment_save_failed">设置保存失败，请重试。</string>
+    <string name="mmd_alignment_camera_smoothing">自由相机平滑</string>
+    <string name="mmd_alignment_library_hint">从 ZIP、7z 或目录识别作品，确认动作、表情、镜头与音乐后导入。选中作品后，散文件槽位不参与播放。</string>
+    <string name="mmd_alignment_library_empty">作品库是空的。导入作品并确认文件槽位后即可选择播放。</string>
+    <string name="mmd_alignment_open_import">导入作品</string>
+    <string name="mmd_alignment_back">返回</string>
+    <string name="mmd_alignment_import_title">导入 MMD 作品</string>
+    <string name="mmd_alignment_choose_archive">选择 ZIP / 7z</string>
+    <string name="mmd_alignment_choose_directory">选择目录</string>
+    <string name="mmd_alignment_work">识别到的作品</string>
+    <string name="mmd_alignment_name">作品名称</string>
+    <string name="mmd_alignment_unassigned">不使用此槽位</string>
+    <string name="mmd_alignment_choose_external">选择外部文件</string>
+    <string name="mmd_alignment_confirm">确认导入当前作品</string>
+    <string name="mmd_alignment_camera">镜头</string>
+    <string name="mmd_alignment_music">音乐</string>
+    <string name="mmd_alignment_motion">舞者 %1$d · 动作</string>
+    <string name="mmd_alignment_face">舞者 %1$d · 表情</string>
+    <string name="mmd_alignment_busy">正在处理作品，请稍后重试。</string>
+    <string name="mmd_alignment_import_failed">导入未完成：%1$s</string>
+</resources>

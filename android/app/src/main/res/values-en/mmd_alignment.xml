@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mmd_alignment_save_failed">Could not save settings. Please try again.</string>
+    <string name="mmd_alignment_camera_smoothing">Free camera smoothing</string>
+    <string name="mmd_alignment_library_hint">Inspect a ZIP, 7z or folder, then confirm motion, face, camera and music before importing. Selected library works replace the loose playback slots.</string>
+    <string name="mmd_alignment_library_empty">The library is empty. Import a work and confirm its file slots to begin.</string>
+    <string name="mmd_alignment_open_import">Import work</string>
+    <string name="mmd_alignment_back">Back</string>
+    <string name="mmd_alignment_import_title">Import MMD work</string>
+    <string name="mmd_alignment_choose_archive">Choose ZIP / 7z</string>
+    <string name="mmd_alignment_choose_directory">Choose folder</string>
+    <string name="mmd_alignment_work">Recognized work</string>
+    <string name="mmd_alignment_name">Work name</string>
+    <string name="mmd_alignment_unassigned">Leave unassigned</string>
+    <string name="mmd_alignment_choose_external">Choose external file</string>
+    <string name="mmd_alignment_confirm">Import selected work</string>
+    <string name="mmd_alignment_camera">Camera</string>
+    <string name="mmd_alignment_music">Music</string>
+    <string name="mmd_alignment_motion">Dancer %1$d · Motion</string>
+    <string name="mmd_alignment_face">Dancer %1$d · Face</string>
+    <string name="mmd_alignment_busy">A work is being processed. Please try again shortly.</string>
+    <string name="mmd_alignment_import_failed">Import failed: %1$s</string>
+</resources>

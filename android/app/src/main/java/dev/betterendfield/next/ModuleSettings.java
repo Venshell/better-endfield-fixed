@@ -687,6 +687,15 @@ final class ModuleSettings {
         return MOTION_PRESETS[0];
     }
 
+    static double getFreeCameraSmoothing(Context context) {
+        return bounded(parse(preferences(context).getString("free_camera_smoothing", "0.3"), 0.3), 0.3, 0, 0.95);
+    }
+
+    static boolean setFreeCameraSmoothing(Context context, double value) {
+        return preferences(context).edit().putString("free_camera_smoothing",
+                number(bounded(value, 0.3, 0, 0.95))).commit();
+    }
+
     static CameraMotion getCameraMotion(Context context) {
         SharedPreferences prefs = preferences(context);
         return new CameraMotion(
@@ -1379,7 +1388,7 @@ final class ModuleSettings {
                         // so the flag has to stay on and the pointer terms simply
                         // stay zero.
                         + "free_camera_mouse_look=true\n"
-                        + "free_camera_smoothing=0.3\n"
+                        + "free_camera_smoothing=" + number(getFreeCameraSmoothing(context)) + "\n"
                         + motion.toIniLines()
                         + mmd.toIniLines()
                         // The panel presses the exact codes the desktop module

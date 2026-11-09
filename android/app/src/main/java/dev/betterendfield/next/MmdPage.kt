@@ -15,6 +15,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,11 +36,9 @@ import androidx.compose.ui.unit.sp
  * while watching. They travel the same way the panel's own buttons do: a runtime
  * command the native director drains on the game's frame thread.
  *
- * The three file slots are the loose form of a playback - motion, face and music
- * - and they are the form that works today. The library form (a folder with a
- * `set.ini`, several dancers per work) needs an importer that can stage whole
- * directories through the framework's remote file space; until that exists the
- * page says so instead of offering a folder picker that would go nowhere.
+ * The loose slots and imported library works share the native playback owner.
+ * Library imports are inspected and reviewed in MmdImportActivity before any
+ * work is published through the framework file space.
  *
  * Everything in the parameter cards writes the camera configuration, which the
  * running game replays live. The two halves therefore behave differently and the
@@ -60,15 +60,9 @@ fun MmdPage(state: SettingsState) {
         Unit
     }
 
-    // The folder picker is a separate launcher because it is a separate
-    // contract: OpenDocument returns one file, OpenDocumentTree returns a tree
-    // whose children only exist behind the provider's cursor. Wiring the library
-    // import onto the file picker would hand it a single document and no way to
-    // enumerate what is beside it.
-    val folderPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree(),
-    ) { uri ->
-        if (uri != null) state.importMmdLibrary(uri)
+    val context = LocalContext.current
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        state.refreshMmdLibraryAfterImport()
     }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
@@ -102,7 +96,7 @@ fun MmdPage(state: SettingsState) {
         LibraryCard(
             state = state,
             busy = state.mmdLibraryBusy || state.mmdLibraryImporting,
-            onImportFolder = { folderPicker.launch(null) },
+            onImportFolder = { importLauncher.launch(android.content.Intent(context, MmdImportActivity::class.java)) },
         )
 
         SourceCard(
@@ -272,12 +266,11 @@ private fun LibraryCard(state: SettingsState, busy: Boolean, onImportFolder: () 
     SectionCard(
         eyebrow = "SOURCE · LIBRARY",
         title = "作品库",
-        subtitle = "导入整个作品文件夹：里面有 set.ini 的动作、表情、镜头与音乐，支持双人到四人同台。" +
-            "选中一个作品后按作品播放，下面的散文件槽位不再参与。",
+        subtitle = stringResource(R.string.mmd_alignment_library_hint),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
             if (state.mmdWorks.isEmpty()) {
-                BodyText("作品库是空的。点下面的按钮选择一个作品文件夹，识别到的作品会装进来。")
+                BodyText(stringResource(R.string.mmd_alignment_library_empty))
             } else {
                 state.mmdWorks.forEach { work ->
                     WorkRow(
@@ -300,7 +293,7 @@ private fun LibraryCard(state: SettingsState, busy: Boolean, onImportFolder: () 
                 }
             }
             GhostButton(
-                text = if (state.mmdLibraryImporting) "正在导入…" else "导入作品目录",
+                text = stringResource(R.string.mmd_alignment_open_import),
                 onClick = onImportFolder,
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),

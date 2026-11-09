@@ -665,6 +665,8 @@ class SettingsState(private val context: Context) {
         private set
     var mouseSensitivity by mutableStateOf(0.1f)
         private set
+    var freeCameraSmoothing by mutableStateOf(0.3f)
+        private set
     var motionPreset by mutableStateOf(0)
         private set
     var motionSpeed by mutableStateOf(1f)
@@ -840,6 +842,7 @@ class SettingsState(private val context: Context) {
         gyroscopeDeadzone = gyro.deadzone().toFloat()
         gyroscopeSmoothing = gyro.smoothing().toFloat()
         firstPersonLookProbe = ModuleSettings.readFirstPersonLookProbe(context)
+        freeCameraSmoothing = ModuleSettings.getFreeCameraSmoothing(context).toFloat()
         val motion = ModuleSettings.getCameraMotion(context)
         mouseInvertY = motion.invertY()
         mouseSensitivity = motion.sensitivity().toFloat()
@@ -1116,6 +1119,15 @@ class SettingsState(private val context: Context) {
 
     fun updateMotionPreset(index: Int) {
         motionPreset = index
+        saveCameraSettings()
+    }
+
+    fun updateFreeCameraSmoothing(value: Float) {
+        if (!ModuleSettings.setFreeCameraSmoothing(context, value.toDouble())) {
+            status = context.getString(R.string.mmd_alignment_save_failed)
+            return
+        }
+        freeCameraSmoothing = ModuleSettings.getFreeCameraSmoothing(context).toFloat()
         saveCameraSettings()
     }
 
@@ -1576,62 +1588,9 @@ class SettingsState(private val context: Context) {
         runLibraryOperation { MmdLibraryInstaller.republish(context, generation) }
     }
 
-    /**
-     * Imports a picked folder into the library.
-     *
-     * The folder is copied into a private cache and analysed on a worker thread;
-     * this call only arms that and then watches it, because the copy can take
-     * minutes on a large work and the page has to stay responsive and say what
-     * it is doing. Once the analysis names its works they are installed in
-     * order - the installer runs one operation at a time, so a second work has to
-     * wait for the first to finish rather than be rejected.
-     */
-    fun importMmdLibrary(uri: android.net.Uri) {
-        if (mmdLibraryImporting || mmdLibraryBusy) return
-        val session = MmdImportSession.open(context.applicationContext, null)
-        mmdLibraryImporting = true
-        mmdLibraryStatus = "正在读取所选目录…"
-        Thread({
-            session.prepare(context, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION, true, null)
-            while (session.busy) {
-                val text = session.status
-                if (text.isNotEmpty()) Handler(Looper.getMainLooper()).post { mmdLibraryStatus = text }
-                Thread.sleep(150)
-            }
-            Handler(Looper.getMainLooper()).post { installInspectedWorks(session) }
-        }, "BetterEndfield-MmdLibraryImport").start()
-    }
-
-    private fun installInspectedWorks(session: MmdImportSession) {
-        val plan = session.plan
-        if (plan == null || plan.works.isEmpty()) {
-            mmdLibraryImporting = false
-            mmdLibraryStatus = session.status.ifEmpty { "所选目录里没有可识别的作品。" }
-            session.dispose()
-            return
-        }
-        mmdLibraryStatus = "识别到 ${plan.works.size} 个作品，正在导入…"
-        Thread({
-            var installed = 0
-            for (work in plan.works) {
-                while (MmdLibraryInstaller.busy) Thread.sleep(150)
-                if (!MmdLibraryInstaller.start(context, session, work.name, work.slots, work.settings)) break
-                while (MmdLibraryInstaller.busy) {
-                    val text = MmdLibraryInstaller.status
-                    if (text.isNotEmpty()) Handler(Looper.getMainLooper()).post { mmdLibraryStatus = text }
-                    Thread.sleep(150)
-                }
-                installed += 1
-            }
-            val summary = MmdLibraryInstaller.status
-            Handler(Looper.getMainLooper()).post {
-                mmdLibraryImporting = false
-                refreshMmdWorks()
-                mmdLibraryStatus =
-                    if (installed > 0) "已导入 $installed 个作品。$summary" else summary
-                session.dispose()
-            }
-        }, "BetterEndfield-MmdLibraryInstall").start()
+    fun refreshMmdLibraryAfterImport() {
+        refreshMmdWorks()
+        mmdLibraryStatus = MmdLibraryInstaller.status
     }
 
     private fun formatVmdTime(millis: Long): String =

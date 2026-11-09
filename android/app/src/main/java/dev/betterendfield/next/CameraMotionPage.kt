@@ -60,6 +60,15 @@ fun CameraMotionPage(state: SettingsState) {
                     decimals = 2,
                     enabled = state.cameraMotionAvailable,
                 )
+                SliderRow(
+                    label = stringResource(R.string.mmd_alignment_camera_smoothing),
+                    value = state.freeCameraSmoothing,
+                    onValueChange = state::updateFreeCameraSmoothing,
+                    valueRange = 0f..0.95f,
+                    steps = 94,
+                    decimals = 2,
+                    enabled = state.cameraMotionAvailable,
+                )
                 BodyText(stringResource(R.string.motion_look_hint))
                 SwitchRow(
                     title = stringResource(R.string.motion_look_invert),

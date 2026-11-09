@@ -149,8 +149,24 @@ final class MmdImportSession {
                 } else {
                     String path = MmdLibraryFiles.path(filename);
                     if (path.contains("/")) throw new IOException("无效文件名");
-                    try (InputStream in = input(app, uri)) {
-                        MmdLibraryFiles.copy(in, new File(incoming, path), path, declaredSize(app, uri), budget);
+                    if (slot == null) {
+                        // Whole-file imports are archives. Keep the compressed input
+                        // outside the inspected tree and use the existing bounded
+                        // ZIP/7z owner, including its CRC and path checks.
+                        File archive = new File(directory, ".archive-" + UUID.randomUUID());
+                        try {
+                            try (InputStream in = input(app, uri)) {
+                                MmdImportArchive.copy(in, archive, "archive", declaredSize(app, uri),
+                                        new MmdImportArchive.Budget(), this::check, null);
+                            }
+                            MmdImportArchive.extract(archive, incoming, this::check);
+                        } finally {
+                            archive.delete();
+                        }
+                    } else {
+                        try (InputStream in = input(app, uri)) {
+                            MmdLibraryFiles.copy(in, new File(incoming, path), path, declaredSize(app, uri), budget);
+                        }
                     }
                 }
                 check("正在识别…");

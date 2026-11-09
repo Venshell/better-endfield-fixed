@@ -18,10 +18,8 @@ import java.util.Set;
  * byte is written, and the checks live in one place so the tree walk, the loose
  * slot import and the installer cannot drift apart.
  *
- * There is deliberately no archive support: ZIP and 7z would need an extraction
- * library this app does not otherwise carry, and a work that arrives as an
- * archive has to be unpacked outside the app anyway. A directory tree is the
- * form the library is defined in, and it is the form this checks.
+ * Archive extraction is owned by MmdImportArchive. The import session feeds
+ * its extracted tree into the same planner and installer as a picked directory.
  */
 final class MmdLibraryFiles {
 
