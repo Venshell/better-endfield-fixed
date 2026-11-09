@@ -96,7 +96,7 @@ public final class BemComposeActivity extends ModuleActivity {
                     for(String generation:sources){JSONObject found=null;for(JSONObject entry:BemComposeState.objects(index))if(generation.equals(entry.optString("generation")))found=entry;
                         if(found==null)throw new IOException(Text.of("源包已更新，请重新打开预览。"));
                         String selection=found.optInt("bem_minor",0)>0?found.optString("selected_options",found.optString("default_options")):found.optString("selected_appearance",found.optString("default_appearance"));
-                        inputs.put(new JSONObject().put("path",BemComposeSession.installed(this,generation).getAbsolutePath()).put("selection",selection).put("parameters",""));
+                        inputs.put(new JSONObject().put("path",session.installed(this,generation).getAbsolutePath()).put("selection",selection).put("parameters",""));
                     }
                     request=new JSONObject().put("schema",1).put("platform","android-arm64").put("project_id","compose."+session.id()).put("name",name).put("author","BEM Composer").put("version","auto").put("sources",inputs);
                 }

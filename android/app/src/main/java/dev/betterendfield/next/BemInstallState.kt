@@ -54,6 +54,17 @@ class BemPackage(
 
     val convertedTextures: Boolean get() = textureMode != "original"
 
+    val astcConverted: Boolean get() = textureMode == "astc" || raw.optBoolean("astc_converted", false)
+
+    fun resetParameters() {
+        try {
+            parameters = BemParameters.encode(BemParameters.parse(raw, ""))
+            problem = null
+        } catch (error: Exception) {
+            problem = error.message
+        }
+    }
+
     /** What this package currently claims it should be saved as. */
     fun draft(): JSONObject = JSONObject().apply {
         put("generation", generation)
@@ -163,6 +174,28 @@ class BemInstallState(private val context: Context) {
     }
     fun selectTarget(id: String) { selectedTarget = id }
 
+    val experiments = listOf(
+        BemInstaller.HOT_SWITCH to R.string.next_bem_hot_switch,
+        BemInstaller.FAST_LOADING to R.string.next_bem_fast_loading,
+        BemInstaller.SKIP_VALIDATION to R.string.next_bem_skip_validation,
+        BemInstaller.CLONE_SUPPORT to R.string.next_bem_clone_support,
+        BemInstaller.RELEASE_RETIRED_RESOURCES to R.string.next_bem_release_retired,
+    )
+    val experimentValues = mutableStateMapOf<String, Boolean>()
+    private var savedSelections: Map<String, String> = emptyMap()
+    val hasDraft: Boolean get() = selections() != savedSelections
+    val canTransform: Boolean get() = !busy && !indexConflict && indexBroken == null && !hasDraft
+
+    fun changeExperiment(key: String, enabled: Boolean) {
+        if (busy || experiments.none { it.first == key }) return
+        if (FrameworkSettings.open(context).edit().putBoolean(key, enabled).commit()) {
+            experimentValues[key] = enabled
+        } else {
+            BemInstaller.status = context.getString(R.string.next_bem_setting_failed)
+            status = BemInstaller.status
+        }
+    }
+
     private val draftSession = BemIndexRevision.Draft()
     var indexConflict by mutableStateOf(false)
         private set
@@ -170,6 +203,8 @@ class BemInstallState(private val context: Context) {
 
     fun refresh() {
         status = BemInstaller.status
+        val prefs = FrameworkSettings.open(context)
+        experiments.forEach { (key, _) -> experimentValues[key] = prefs.getBoolean(key, false) }
         busy = BemInstaller.busy
         pendingBundle = BemInstaller.pendingBundle
         removing = BemInstaller.removing
@@ -199,7 +234,8 @@ class BemInstallState(private val context: Context) {
         val parsed = JSONArray(snapshot.index)
         val list = (0 until parsed.length()).map { position -> parse(parsed.getJSONObject(position)) }
         packages = list
-        draftSession.accept(snapshot.revision, selections())
+        savedSelections = selections()
+        draftSession.accept(snapshot.revision, savedSelections)
         indexConflict = false
         indexBroken = null
         if (selectedTarget.isNotEmpty() && list.none { it.targetKey == selectedTarget }) selectedTarget = ""
@@ -346,7 +382,21 @@ class BemInstallState(private val context: Context) {
     }
 
     fun convert(generation: String) {
+        if (!canTransform) return
         BemInstaller.convert(context, generation)
+        refresh()
+    }
+
+    fun convertAstc(generation: String) {
+        if (!canTransform) return
+        if (!BemInstaller.convertToAstc(context, generation)) status = context.getString(R.string.bem_operation_busy)
+        refresh()
+    }
+
+    fun repairNormals() {
+        if (!canTransform) return
+        if (!BemInstaller.repairAllInstalledNormals(context)) status = context.getString(R.string.bem_operation_busy)
+        refresh()
     }
 
     fun remove(generation: String) {

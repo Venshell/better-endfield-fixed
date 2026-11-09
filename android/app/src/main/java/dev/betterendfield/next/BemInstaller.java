@@ -115,7 +115,7 @@ final class BemInstaller {
                 String gen=entry.optString("generation");
                 if(!gen.isEmpty()) {
                     File bemFile=new File(new File(root,gen),"installed.bem");
-                    if(bemFile.isFile() && bemFile.length()>0 && bemFile.length()!=entry.optLong("bytes",0)) {
+                    if(bemFile.isFile() && bemFile.length()>0 && !entry.has("bytes")) {
                         entry.put("bytes",bemFile.length());
                     }
                 }
@@ -158,7 +158,7 @@ final class BemInstaller {
         return startImport(context, BemImportRequest.requireContentUri(uri));
     }
     static synchronized void convert(Context context, String generation) {
-        run(context, null, generation);
+        startTransform(context, generation, Transform.AUTO);
     }
     private static synchronized boolean startImport(Context context,Uri uri) {
         if(busy) return false;
@@ -322,104 +322,150 @@ final class BemInstaller {
         if(error instanceof SecurityException) return Text.of("读取授权已失效，请重新选择文件或从文件管理器打开。");
         String message=error.getMessage();return message==null || message.isEmpty()?error.getClass().getSimpleName():message;
     }
-    private static synchronized boolean run(Context context, Uri uri, String previousGeneration) {
+    private enum Transform { AUTO, ASTC, NORMALS }
+
+    /** All transforms publish a new immutable generation; the active payload is never overwritten. */
+    private static synchronized boolean startTransform(Context context,String generation,Transform transform) {
         if(busy) return false;
-        boolean converting=previousGeneration!=null;
-        progressPercent=-1;startedAt=android.os.SystemClock.elapsedRealtime();
-        busy=true; cancelled=false; status=converting?Text.of("正在准备纹理转换…"):Text.of("正在读取并校验包（不转换纹理）…");
         Context app=context.getApplicationContext();
-        boolean skipValidation=FrameworkSettings.open(app).getBoolean(SKIP_VALIDATION,false);
-        try {
-        worker.execute(() -> {
-            File stage=null;
+        busy=true;cancelled=false;progressPercent=-1;startedAt=android.os.SystemClock.elapsedRealtime();
+        status=app.getString(R.string.next_bem_transform_preparing);
+        try {worker.execute(()->{
+            int completed=0,cleanupPending=0;
             try {
-                File root=new File(app.getFilesDir(),"bem-installed");
-                if(!root.isDirectory() && !root.mkdirs()) throw new IOException(Text.of("无法创建安装目录"));
-                // Every transaction gets its own directory. A process death cannot replace the active generation.
-                stage=new File(root,"stage-"+UUID.randomUUID());
-                if(!stage.mkdir()) throw new IOException(Text.of("无法创建临时目录"));
-                File output=new File(stage,"installed.bem");
-                File source=converting?new File(stage,"source.bem"):output;
-                JSONObject previousEntry=null;
-                if(converting) {
-                    if(!previousGeneration.matches("[a-f0-9-]{36}")) throw new IOException(Text.of("无效的模型包版本"));
-                    previousEntry=findEntry(index(app),previousGeneration);
-                    if(previousEntry==null) throw new IOException(Text.of("模型包已被替换，请刷新后重试"));
-                }
-                File localSource=converting?new File(new File(root,previousGeneration),"installed.bem"):null;
-                if(converting && !localSource.isFile()) {
-                    if(!FrameworkSettings.isConnected()) status=Text.of("正在等待框架服务连接…");
-                    FrameworkSettings.awaitConnection();
-                    status=Text.of("正在准备纹理转换…");
-                }
-                try(InputStream in=converting
-                        ?(localSource.isFile()?new FileInputStream(localSource):FrameworkSettings.openBem("bem-"+previousGeneration+".bem"))
-                        :app.getContentResolver().openInputStream(uri); FileOutputStream out=new FileOutputStream(source)) {
-                    if(in==null) throw new IOException(Text.of("无法打开包"));
-                    if(converting) copy(in,out,BemImportStream.MAX_BYTES);
-                    else BemImportStream.copy(in,out,BemImportStream.MAX_BYTES,BemInstaller::checkpoint);
-                    out.getFD().sync();
-                }
-                loadCodec();checkpoint();
-                JSONObject result;
-                if(converting) {
-                    boolean astc=AstcSupport.available();
-                    status=astc?Text.of("正在转换 ASTC 纹理；大包可能需要数分钟…"):Text.of("设备未报告 ASTC，正在生成 RGBA32 资源…");
-                    String rules;
-                    try(InputStream in=GameResourceStore.openCore(app,"model/android-normal-rules.json");
-                        ByteArrayOutputStream bytes=new ByteArrayOutputStream()) {
-                        byte[] buffer=new byte[8192];int count;
-                        while((count=in.read(buffer))!=-1) bytes.write(buffer,0,count);
-                        rules=new String(bytes.toByteArray(),StandardCharsets.UTF_8);
-                    }
-                    result=new JSONObject(convertNative(source.getAbsolutePath(),output.getAbsolutePath(),rules,astc));
-                    result.put("texture_mode",astc?"astc":"rgba32");
-                    source.delete();
-                } else {
-                    result=new JSONObject(inspectNativeWithOptions(source.getAbsolutePath(),skipValidation));
-                    result.put("texture_mode","original");
-                }
-                checkpoint();
-                try(FileOutputStream out=new FileOutputStream(new File(stage,"report.json"))) {out.write(result.toString(2).getBytes(StandardCharsets.UTF_8));out.getFD().sync();}
-                String generation=UUID.randomUUID().toString();
-                File installed=new File(root,generation);
-                if(!stage.renameTo(installed)) throw new IOException(Text.of("安装结果发布失败"));
-                stage=installed;
-                result.put("generation",generation).put("remote","bem-"+generation+".bem").put("enabled",true);
-                // Validate all preserved selections before publishing a payload.
-                installedIndex(index(app),result,previousGeneration);
-                progressPercent=-1;
-                if(!FrameworkSettings.isConnected()) status=Text.of("正在等待框架服务连接…");
-                FrameworkSettings.awaitConnection();
-                checkpoint();status=Text.of("正在发布给游戏…");
-                FrameworkSettings.publishBem(new File(installed,"installed.bem"),result.getString("remote"));
-                checkpoint();
-                synchronized(BemInstaller.class) {
+                JSONArray requested=generation==null?index(app):new JSONArray().put(new JSONObject().put("generation",generation));
+                for(int i=0;i<requested.length();++i) {
                     checkpoint();
-                    JSONArray previous=index(app),next=installedIndex(previous,result,previousGeneration);
-                    commitIndex(app,previous.toString(),next,Text.of("安装索引保存失败"));
+                    if(!transformInstalled(app,requested.getJSONObject(i).getString("generation"),transform)) cleanupPending++;
+                    completed++;
                 }
-                // The game reads its private copy, so a replaced conversion source is unreachable.
-                if(converting) discardGeneration(root,previousGeneration);
-                if(!FrameworkSettings.open(app).getBoolean(KEEP_LOCAL_COPIES,true)) new File(installed,"installed.bem").delete();
-                stage=null;status=(converting?Text.of("已转换："):Text.of("已原样导入："))+result.getString("name")+Text.of("。重启游戏后生效。");
+                status=app.getString(R.string.next_bem_transform_complete,completed)
+                        +(cleanupPending==0?"":"\n"+app.getString(R.string.next_bem_cleanup_pending));
             } catch(Throwable error) {
-                String reason=error instanceof SecurityException
-                        ?Text.of("没有读取权限或临时授权已失效，请从文件管理器重新打开，或使用应用内文件选择器。")
-                        :error.getMessage();
-                if(reason==null || reason.isEmpty()) reason=error.getClass().getSimpleName();
-                if(reason!=null && reason.contains("Normal slot has no verified source encoding"))
-                    reason=Text.of("此包缺少已确认的法线贴图编码信息，暂时无法转换；可继续使用原包。");
-                status=(converting?Text.of("转换未完成，原包和启用状态已保留："):Text.of("导入未完成："))+reason;
+                status=app.getString(R.string.next_bem_transform_failed,completed,importError(error));
                 android.util.Log.e("BetterEndfieldNext.Install",status,error);
+            } finally {busy=false;progressPercent=-1;}
+        });return true;}
+        catch(RuntimeException rejected) {
+            busy=false;status=app.getString(R.string.next_bem_transform_failed,0,importError(rejected));return false;
+        }
+    }
+
+    private static boolean transformInstalled(Context app,String previousGeneration,Transform transform) throws Exception {
+        if(!previousGeneration.matches("[a-f0-9-]{36}")) throw new IOException(app.getString(R.string.next_bem_invalid_generation));
+        JSONObject previousEntry;
+        synchronized(BemInstaller.class) {
+            JSONObject entry=findEntry(index(app),previousGeneration);
+            if(entry==null) throw new IOException(app.getString(R.string.next_bem_generation_changed));
+            previousEntry=new JSONObject(entry.toString());
+        }
+        File root=new File(app.getFilesDir(),"bem-installed"),stage=null;
+        final boolean[] committed={false};
+        try {
+            if(!root.isDirectory() && !root.mkdirs()) throw new IOException(app.getString(R.string.next_bem_stage_failed));
+            stage=new File(root,"stage-"+UUID.randomUUID());
+            if(!stage.mkdir()) throw new IOException(app.getString(R.string.next_bem_stage_failed));
+            File source=new File(stage,"source.bem"),output=new File(stage,"installed.bem");
+            long expected=previousEntry.optLong("bytes",-1);
+            if(expected<=0 || expected>BemImportStream.MAX_BYTES)
+                throw new IOException(app.getString(R.string.next_bem_source_size_mismatch));
+            File local=new File(new File(root,previousGeneration),"installed.bem");
+            boolean localReady=local.isFile() && local.length()==expected;
+            if(!localReady && !FrameworkSettings.awaitConnection(BemInstaller::checkpoint))
+                throw new IOException(app.getString(R.string.next_bem_framework_unavailable));
+            try(InputStream input=localReady?new FileInputStream(local):FrameworkSettings.openBem("bem-"+previousGeneration+".bem");
+                FileOutputStream out=new FileOutputStream(source)) {
+                if(input==null) throw new IOException(app.getString(R.string.next_bem_source_missing));
+                BemPackageCopy.copyExact(input,out,expected,BemInstaller::checkpoint);
+                out.getFD().sync();
+            } catch(BemPackageCopy.Failure mismatch) {
+                throw new IOException(app.getString(R.string.next_bem_source_size_mismatch),mismatch);
             }
-            finally {if(stage!=null) deleteOwned(stage);busy=false;}
-        });
-        return true;
-        } catch(RuntimeException rejected) {
-            busy=false;
-            status=Text.of("无法启动导入任务，请重试。");
-            throw rejected;
+            checkpoint();loadCodec();
+            boolean astc=transform==Transform.ASTC || (transform==Transform.AUTO && AstcSupport.available());
+            if(transform==Transform.NORMALS) {
+                astc="astc".equals(previousEntry.optString("texture_mode")) || previousEntry.optBoolean("astc_converted",false);
+                repairNormalsNative(source.getAbsolutePath(),output.getAbsolutePath(),astc);
+            } else {
+                String rules;
+                try(InputStream in=GameResourceStore.openCore(app,"model/android-normal-rules.json");
+                    ByteArrayOutputStream bytes=new ByteArrayOutputStream()) {
+                    copy(in,bytes,4*1024*1024);
+                    rules=new String(bytes.toByteArray(),StandardCharsets.UTF_8);
+                }
+                convertNative(source.getAbsolutePath(),output.getAbsolutePath(),rules,astc);
+            }
+            checkpoint();
+            if(!output.isFile() || output.length()==0 || output.length()>BemImportStream.MAX_BYTES)
+                throw new IOException(app.getString(R.string.next_bem_invalid_output));
+            JSONObject result=new JSONObject(inspectNativeWithOptions(output.getAbsolutePath(),
+                    FrameworkSettings.open(app).getBoolean(SKIP_VALIDATION,false)));
+            result.put("texture_mode",transform==Transform.NORMALS?previousEntry.optString("texture_mode","original"):(astc?"astc":"rgba32"));
+            result.put("astc_converted",astc).put("normal_repaired",true).put("bytes",output.length());
+            if(!source.delete()) throw new IOException(app.getString(R.string.next_bem_stage_failed));
+            String generation=UUID.randomUUID().toString();
+            result.put("generation",generation).put("remote","bem-"+generation+".bem");
+            synchronized(BemInstaller.class) {installedIndex(index(app),result,previousGeneration);}
+            try(FileOutputStream out=new FileOutputStream(new File(stage,"report.json"))) {
+                out.write(result.toString(2).getBytes(StandardCharsets.UTF_8));out.getFD().sync();
+            }
+            File installed=new File(root,generation);
+            if(!stage.renameTo(installed)) throw new IOException(app.getString(R.string.next_bem_stage_failed));
+            stage=installed;
+            boolean cleaned=BemTransformPublication.execute(new BemTransformPublication.Store() {
+                @Override public void publish() throws Exception {
+                    if(!FrameworkSettings.awaitConnection(BemInstaller::checkpoint))
+                        throw new IOException(app.getString(R.string.next_bem_framework_unavailable));
+                    checkpoint();
+                    FrameworkSettings.publishBem(new File(installed,"installed.bem"),result.getString("remote"));
+                }
+                @Override public void commit() throws Exception {
+                    checkpoint();
+                    synchronized(BemInstaller.class) {
+                        JSONArray previous=index(app),next=installedIndex(previous,result,previousGeneration);
+                        commitIndex(app,previous.toString(),next,app.getString(R.string.next_bem_index_failed));
+                        committed[0]=true;
+                    }
+                }
+                @Override public boolean retire() throws IOException {
+                    boolean localClean=true;
+                    if(!FrameworkSettings.open(app).getBoolean(KEEP_LOCAL_COPIES,true)) {
+                        File localCopy=new File(installed,"installed.bem");
+                        localClean=!localCopy.exists() || localCopy.delete();
+                    }
+                    try {return discardGeneration(root,previousGeneration) && localClean;}
+                    catch(IOException cleanup) {
+                        android.util.Log.w("BetterEndfieldNext.Install","Retired generation cleanup deferred",cleanup);
+                        throw cleanup;
+                    }
+                }
+                @Override public void discardUncommitted() {
+                    if(!unreferencedTransform(app,generation)) {
+                        committed[0]=true; // A failed index rollback must not turn an advertised package into missing data.
+                        android.util.Log.e("BetterEndfieldNext.Install","Index outcome uncertain; preserving both generations");
+                        return;
+                    }
+                    if(!FrameworkSettings.removeBem("bem-"+generation+".bem"))
+                        android.util.Log.w("BetterEndfieldNext.Install","Uncommitted remote package cleanup deferred: "+generation);
+                    deleteOwned(installed);
+                }
+            });
+            stage=null; // The committed index owns the new generation, including cleanup failures.
+            return cleaned;
+        } finally {if(stage!=null && !committed[0]) deleteOwned(stage);}
+    }
+    private static boolean unreferencedTransform(Context app,String generation) {
+        try {
+            String preference=BemConfigurationLimit.index(FrameworkSettings.open(app).getString(INDEX,"[]"));
+            if(findEntry(new JSONArray(preference),generation)!=null) return false;
+            android.util.AtomicFile durable=new android.util.AtomicFile(new File(app.getFilesDir(),"bem-index.json"));
+            try(InputStream in=durable.openRead();ByteArrayOutputStream bytes=new ByteArrayOutputStream()) {
+                BemPackageCopy.copy(in,bytes,BemConfigurationLimit.MAX_BYTES,()->{});
+                return findEntry(new JSONArray(new String(bytes.toByteArray(),StandardCharsets.UTF_8)),generation)==null;
+            } catch(FileNotFoundException absent) {return true;}
+        } catch(Exception uncertain) {
+            android.util.Log.e("BetterEndfieldNext.Install","Could not verify failed transformation index",uncertain);
+            return false;
         }
     }
     private static JSONObject findEntry(JSONArray entries,String generation) throws Exception {
@@ -526,14 +572,23 @@ final class BemInstaller {
         return complete && !version.exists();
     }
     private static java.util.Set<String> referencedGenerations(Context app) throws Exception {
-        java.util.Set<String> keep=new java.util.HashSet<>();
-        JSONArray entries=index(app);
-        for(int i=0;i<entries.length();++i) keep.add(entries.getJSONObject(i).getString("generation"));
+        java.util.Set<String> keep=referencedGenerations(index(app));
         // The durable mirror is consulted too; a generation either copy references is never discarded.
         File durable=new File(app.getFilesDir(),"bem-index.json");
         if(durable.isFile()) {
             JSONArray saved=new JSONArray(new String(new android.util.AtomicFile(durable).readFully(),StandardCharsets.UTF_8));
-            for(int i=0;i<saved.length();++i) keep.add(saved.getJSONObject(i).getString("generation"));
+            keep.addAll(referencedGenerations(saved));
+        }
+        return keep;
+    }
+    static java.util.Set<String> referencedGenerations(JSONArray entries) throws IOException {
+        BemConfigurationLimit.index(entries.toString());
+        java.util.Set<String> keep=new java.util.HashSet<>();
+        for(int i=0;i<entries.length();++i) {
+            JSONObject entry=entries.optJSONObject(i);
+            String generation=entry==null?"":entry.optString("generation");
+            if(!generation.matches("[a-f0-9-]{36}")) throw new IOException(Text.of("无效的模型包版本"));
+            keep.add(generation);
         }
         return keep;
     }
@@ -616,142 +671,18 @@ final class BemInstaller {
         return true;
     }
     static void copy(InputStream in,OutputStream out,long limit) throws IOException {
-        byte[] buffer=new byte[65536];long size=0;int count;
-        while((count=in.read(buffer))!=-1) {checkpoint();size+=count;if(size>limit) throw new IOException(Text.of("文件超过大小限制"));out.write(buffer,0,count);}
+        try {BemPackageCopy.copy(in,out,limit,BemInstaller::checkpoint);}
+        catch(BemPackageCopy.Failure oversized) {throw new IOException(Text.of("文件超过大小限制"),oversized);}
     }
     private static void deleteOwned(File file) {File[] children=file.listFiles();if(children!=null) for(File child:children) deleteOwned(child);file.delete();}
     static synchronized void select(Context app,String generation,String appearance,boolean enabled) throws Exception {
         saveAll(app,new JSONArray().put(new JSONObject().put("generation",generation).put("appearance",appearance).put("enabled",enabled)));
     }
-    static synchronized boolean convertToAstc(Context context, String generation) {
-        if(busy) return false;
-        Context app = context.getApplicationContext();
-        progressPercent = -1; startedAt = android.os.SystemClock.elapsedRealtime();
-        busy = true; cancelled = false; status = Text.of("正在准备转换为 ASTC 格式…");
-        worker.execute(() -> {
-            File root = new File(app.getFilesDir(), "bem-installed");
-            File folder = new File(root, generation);
-            File bemFile = new File(folder, "installed.bem");
-            File tempRepaired = new File(folder, "installed.bem.tmp");
-            try {
-                checkpoint();
-                loadCodec();
-                String rules = "{}";
-                try(InputStream in = GameResourceStore.openCore(app,"model/android-normal-rules.json");
-                    ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
-                    byte[] buffer = new byte[8192]; int count;
-                    while((count = in.read(buffer)) != -1) bytes.write(buffer, 0, count);
-                    rules = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
-                } catch(Throwable ignored) {}
-
-                status = Text.of("正在转换为 ASTC 格式并流压缩…");
-                convertNative(bemFile.getAbsolutePath(), tempRepaired.getAbsolutePath(), rules, true);
-                if(tempRepaired.isFile() && tempRepaired.length() > 0) {
-                    if(bemFile.delete() && tempRepaired.renameTo(bemFile)) {
-                        File reportFile = new File(folder, "report.json");
-                        JSONObject reportJson = reportFile.isFile()
-                            ? new JSONObject(new String(java.nio.file.Files.readAllBytes(reportFile.toPath()), StandardCharsets.UTF_8))
-                            : new JSONObject();
-                        reportJson.put("astc_converted", true);
-                        reportJson.put("texture_mode", "astc");
-                        reportJson.put("normal_repaired", true);
-                        reportJson.put("bytes", bemFile.length());
-                        try(FileOutputStream out = new FileOutputStream(reportFile)) {
-                            out.write(reportJson.toString(2).getBytes(StandardCharsets.UTF_8));
-                            out.getFD().sync();
-                        } catch(Throwable ignored) {}
-
-                        JSONArray list = index(app);
-                        String modelName = generation;
-                        String remote = "bem-" + generation + ".bem";
-                        for(int i = 0; i < list.length(); ++i) {
-                            JSONObject item = list.getJSONObject(i);
-                            if(generation.equals(item.optString("generation"))) {
-                                modelName = item.optString("name", modelName);
-                                remote = item.optString("remote", remote);
-                                item.put("astc_converted", true);
-                                item.put("texture_mode", "astc");
-                                item.put("normal_repaired", true);
-                                item.put("bytes", bemFile.length());
-                                break;
-                            }
-                        }
-                        commitIndex(app, list.toString(), list, Text.of("保存 ASTC 转换索引失败"));
-                        FrameworkSettings.publishBem(bemFile, remote);
-                        status = Text.of("「") + modelName + Text.of("」已成功转换为 ASTC 格式。重启游戏后生效。");
-                    } else {
-                        throw new IOException(Text.of("无法替换转换后的模型包"));
-                    }
-                }
-            } catch(Throwable error) {
-                if(tempRepaired.exists()) tempRepaired.delete();
-                status = Text.of("ASTC 转换未完成：") + importError(error);
-            } finally {
-                busy = false; progressPercent = -1;
-            }
-        });
-        return true;
+    static synchronized boolean convertToAstc(Context context,String generation) {
+        return startTransform(context,generation,Transform.ASTC);
     }
-
     static synchronized boolean repairAllInstalledNormals(Context context) {
-        if(busy) return false;
-        Context app=context.getApplicationContext();
-        progressPercent=-1;startedAt=android.os.SystemClock.elapsedRealtime();
-        busy=true;cancelled=false;status=Text.of("正在扫描已安装模型包…");
-        worker.execute(()->{
-            int total=0,repairedCount=0;
-            try {
-                File root=new File(app.getFilesDir(),"bem-installed");
-                JSONArray list=index(app);total=list.length();
-                loadCodec();
-                for(int i=0;i<list.length();++i) {
-                    checkpoint();
-                    JSONObject entry=list.getJSONObject(i);
-                    String gen=entry.getString("generation");
-                    String name=entry.optString("name",gen);
-                    File folder=new File(root,gen);
-                    File bemFile=new File(folder,"installed.bem");
-                    if(!bemFile.isFile()) continue;
-                    status=Text.of("正在检查并修复法线 (")+(i+1)+" / "+total+Text.of(")：")+name;
-                    progressPercent=(i*100)/Math.max(1,total);
-                    File tempRepaired=new File(folder,"installed.bem.tmp");
-                    try {
-                        repairNormalsNative(bemFile.getAbsolutePath(),tempRepaired.getAbsolutePath(),true);
-                        if(tempRepaired.isFile() && tempRepaired.length()>0) {
-                            if(bemFile.delete() && tempRepaired.renameTo(bemFile)) {
-                                repairedCount++;
-                                entry.put("normal_repaired",true);
-                                entry.put("bytes",bemFile.length());
-                                File reportFile=new File(folder,"report.json");
-                                if(reportFile.isFile()) {
-                                    try {
-                                        JSONObject reportJson=new JSONObject(new String(java.nio.file.Files.readAllBytes(reportFile.toPath()),StandardCharsets.UTF_8));
-                                        reportJson.put("normal_repaired",true);
-                                        reportJson.put("bytes",bemFile.length());
-                                        try(FileOutputStream out=new FileOutputStream(reportFile)) {
-                                            out.write(reportJson.toString(2).getBytes(StandardCharsets.UTF_8));
-                                            out.getFD().sync();
-                                        }
-                                    } catch(Throwable ignored) {}
-                                }
-                                FrameworkSettings.publishBem(bemFile,entry.getString("remote"));
-                            }
-                        }
-                    } catch(Exception err) {
-                        if(tempRepaired.exists()) tempRepaired.delete();
-                    }
-                }
-                if(repairedCount>0) {
-                    commitIndex(app,list.toString(),list,Text.of("保存法线修复索引失败"));
-                }
-                status=Text.of("法线修复完成：共扫描 ")+total+Text.of(" 个模型包，更新了 ")+repairedCount+Text.of(" 个包。重启游戏后生效。");
-            } catch(Throwable error) {
-                status=Text.of("法线修复未完成：")+importError(error);
-            } finally {
-                busy=false;progressPercent=-1;
-            }
-        });
-        return true;
+        return startTransform(context,null,Transform.NORMALS);
     }
 
     static synchronized void disableAll(Context app) throws Exception {

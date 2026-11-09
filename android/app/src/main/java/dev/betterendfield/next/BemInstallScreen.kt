@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,11 +51,14 @@ import androidx.compose.ui.unit.sp
  */
 @Composable
 fun BemInstallScreen(state: BemInstallState) {
+    val activity = LocalContext.current as android.app.Activity
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) state.import(uri)
     }
     var pendingRemoval by remember { mutableStateOf<BemPackage?>(null) }
     var discardDraft by remember { mutableStateOf(false) }
+    var astcTarget by remember { mutableStateOf<BemPackage?>(null) }
+    var repairNormals by remember { mutableStateOf(false) }
 
     Surface(
         color = Be.Colors.background,
@@ -108,6 +112,33 @@ fun BemInstallScreen(state: BemInstallState) {
                     enabled = !state.busy && state.indexBroken == null && !state.indexConflict && state.packages.any { it.enabled },
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                GhostButton(
+                    text = stringResource(R.string.next_bem_compose),
+                    onClick = { BemComposeActivity.open(activity) },
+                    enabled = state.canTransform,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                GhostButton(
+                    text = stringResource(R.string.next_bem_repair_normals),
+                    onClick = { repairNormals = true },
+                    enabled = state.canTransform && state.packages.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (state.hasDraft) BodyText(stringResource(R.string.next_bem_save_before_tools))
+
+                PanelCard {
+                    ListCaption(stringResource(R.string.next_bem_experiments))
+                    state.experiments.forEach { (key, title) ->
+                        SwitchRow(
+                            title = stringResource(title),
+                            description = "",
+                            checked = state.experimentValues[key] == true,
+                            onCheckedChange = { state.changeExperiment(key, it) },
+                            enabled = !state.busy,
+                        )
+                    }
+                }
 
                 if (state.indexConflict) {
                     StatusBlock(stringResource(R.string.bem_draft_conflict))
@@ -202,7 +233,9 @@ fun BemInstallScreen(state: BemInstallState) {
                             PackageCard(
                                 pkg = pkg,
                                 busy = state.busy,
-                                onConvert = { state.convert(pkg.generation) },
+                                toolsEnabled = state.canTransform,
+                                onPreview = { BemPreviewActivity.open(activity, pkg.generation) },
+                                onConvertAstc = { astcTarget = pkg },
                                 onRemove = { pendingRemoval = pkg },
                             )
                         }
@@ -212,6 +245,30 @@ fun BemInstallScreen(state: BemInstallState) {
         }
     }
 
+    astcTarget?.let { pkg ->
+        AlertDialog(
+            onDismissRequest = { astcTarget = null },
+            title = { Text(stringResource(R.string.next_bem_astc_title, pkg.name)) },
+            text = { Text(stringResource(R.string.next_bem_astc_confirm)) },
+            confirmButton = { TextButton(onClick = {
+                state.convertAstc(pkg.generation)
+                astcTarget = null
+            }) { Text(stringResource(R.string.next_bem_convert_astc)) } },
+            dismissButton = { TextButton(onClick = { astcTarget = null }) { Text(stringResource(android.R.string.cancel)) } },
+        )
+    }
+    if (repairNormals) {
+        AlertDialog(
+            onDismissRequest = { repairNormals = false },
+            title = { Text(stringResource(R.string.next_bem_repair_normals)) },
+            text = { Text(stringResource(R.string.next_bem_repair_confirm)) },
+            confirmButton = { TextButton(onClick = {
+                state.repairNormals()
+                repairNormals = false
+            }) { Text(stringResource(android.R.string.ok)) } },
+            dismissButton = { TextButton(onClick = { repairNormals = false }) { Text(stringResource(android.R.string.cancel)) } },
+        )
+    }
     val target = pendingRemoval
     val bundle = state.pendingBundle
     if (bundle != null) {
@@ -302,7 +359,9 @@ fun BemInstallScreen(state: BemInstallState) {
 private fun PackageCard(
     pkg: BemPackage,
     busy: Boolean,
-    onConvert: () -> Unit,
+    toolsEnabled: Boolean,
+    onPreview: () -> Unit,
+    onConvertAstc: () -> Unit,
     onRemove: () -> Unit,
 ) {
     PanelCard {
@@ -317,6 +376,7 @@ private fun PackageCard(
             Switch(
                 checked = pkg.enabled,
                 onCheckedChange = { pkg.enabled = it },
+                enabled = !busy,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Be.Colors.accent,
                     checkedTrackColor = Be.Colors.accentSoft,
@@ -347,6 +407,7 @@ private fun PackageCard(
                         onSelect = { choiceIndex ->
                             pkg.chooseOption(group.id, group.choices[choiceIndex].id)
                         },
+                        enabled = !busy,
                     )
                 }
             }
@@ -356,6 +417,7 @@ private fun PackageCard(
                 options = pkg.appearances,
                 selectedIndex = pkg.appearanceIndex,
                 onSelect = { pkg.appearanceIndex = it },
+                enabled = !busy,
             )
         }
 
@@ -367,11 +429,25 @@ private fun PackageCard(
                 valueRange = group.min.toFloat()..group.max.toFloat(),
                 steps = (group.max - group.min) / group.step,
                 decimals = 0,
-                enabled = pkg.parameterAvailable(group),
+                enabled = !busy && pkg.parameterAvailable(group),
                 modifier = Modifier.padding(top = Be.Space.m),
             )
         }
 
+        if (pkg.parameterGroups.isNotEmpty()) {
+            GhostButton(
+                text = stringResource(R.string.next_bem_author_defaults),
+                onClick = pkg::resetParameters,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
+            )
+        }
+        GhostButton(
+            text = stringResource(R.string.next_bem_preview),
+            onClick = onPreview,
+            enabled = toolsEnabled,
+            modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
+        )
         pkg.problem?.let { message ->
             Text(
                 text = message,
@@ -388,11 +464,11 @@ private fun PackageCard(
                 .padding(top = Be.Space.xxl),
             horizontalArrangement = Arrangement.spacedBy(Be.Space.m),
         ) {
-            if (!pkg.convertedTextures) {
+            if (!pkg.astcConverted) {
                 GhostButton(
-                    text = "转换纹理",
-                    onClick = onConvert,
-                    enabled = !busy,
+                    text = stringResource(R.string.next_bem_convert_astc),
+                    onClick = onConvertAstc,
+                    enabled = toolsEnabled,
                     modifier = Modifier.weight(1f),
                 )
             }

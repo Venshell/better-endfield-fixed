@@ -45,10 +45,10 @@ final class BemComposeSession {
         JSONObject plan=run("plan",file("unused"),file("cancel-plan"));
         write("plan.json",plan);write("choices.json",new JSONObject());
     }
-    static File installed(Context context,String generation) throws IOException {
-        if(!generation.matches("[a-f0-9-]{36}"))throw new IOException("Invalid source generation");
-        File input=new File(new File(new File(context.getFilesDir(),"bem-installed"),generation),"installed.bem");
-        if(!input.isFile())throw new IOException(Text.of("请先开启保留本地副本"));return input;
+    File installed(Context context,String generation) throws IOException {
+        return BemInstalledSource.materialize(context,generation,file("sources"),()->{
+            if(Thread.currentThread().isInterrupted()) throw new IOException(context.getString(R.string.next_bem_source_cancelled));
+        });
     }
     // Apply only declared options from a successfully rendered snapshot. Region edits stay intact.
     void applySelection(String selection,JSONObject declared,String prefix) throws Exception {

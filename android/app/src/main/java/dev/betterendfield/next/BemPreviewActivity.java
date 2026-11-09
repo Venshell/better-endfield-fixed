@@ -132,7 +132,11 @@ public final class BemPreviewActivity extends ModuleActivity {
         for(int i=0;i<entries.length();i++)if(generation.equals(entries.getJSONObject(i).optString("generation")))return entries.getJSONObject(i);
         throw new java.io.IOException(Text.of("模型包已移除，请关闭预览。"));
     }
-    private File source() {return new File(new File(new File(getFilesDir(),"bem-installed"),generation),"installed.bem");}
+    private File source() throws java.io.IOException {
+        return BemInstalledSource.materialize(this,generation,new File(directory,"source"),()->{
+            if(closed || Thread.currentThread().isInterrupted()) throw new java.io.IOException(getString(R.string.next_bem_source_cancelled));
+        });
+    }
     private void callback(String method,String value) {
         runOnUiThread(()->{if(!closed && web!=null)web.evaluateJavascript("window."+method+"("+JSONObject.quote(value)+")",null);});
     }

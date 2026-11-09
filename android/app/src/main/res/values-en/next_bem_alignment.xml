@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="next_bem_compose">Compose appearance</string>
+    <string name="next_bem_preview">Preview</string>
+    <string name="next_bem_repair_normals">Repair all normals</string>
+    <string name="next_bem_experiments">Experimental features</string>
+    <string name="next_bem_hot_switch">Model hot switching</string>
+    <string name="next_bem_fast_loading">Optimized model loading</string>
+    <string name="next_bem_skip_validation">Disable model validation</string>
+    <string name="next_bem_clone_support">Cloned model support</string>
+    <string name="next_bem_release_retired">Release retired model resources</string>
+    <string name="next_bem_author_defaults">Author defaults</string>
+    <string name="next_bem_convert_astc">Convert to ASTC</string>
+    <string name="next_bem_astc_title">Convert “%1$s” to ASTC?</string>
+    <string name="next_bem_astc_confirm">Re-encode all textures as ASTC and repair normals. The current version stays active during conversion. A new version is published on success and takes effect after restarting the game.</string>
+    <string name="next_bem_repair_confirm">Check and repair installed packages in order. Each package is published separately. On failure or cancellation, completed packages remain saved and unprocessed packages remain unchanged.</string>
+    <string name="next_bem_save_before_tools">Save your selection before previewing, composing or processing packages.</string>
+    <string name="next_bem_setting_failed">Could not save the experimental setting. Please retry.</string>
+    <string name="next_bem_transform_preparing">Preparing package processing…</string>
+    <string name="next_bem_transform_complete">Completed %1$d packages. Restart the game to apply.</string>
+    <string name="next_bem_transform_failed">Completed %1$d packages. Further processing did not finish: %2$s</string>
+    <string name="next_bem_invalid_generation">Invalid package generation.</string>
+    <string name="next_bem_generation_changed">The package was replaced. Refresh and retry.</string>
+    <string name="next_bem_stage_failed">Could not create or publish the package staging directory.</string>
+    <string name="next_bem_framework_unavailable">Framework connection unavailable. Connect and retry.</string>
+    <string name="next_bem_source_missing">The installed package file is missing.</string>
+    <string name="next_bem_invalid_output">The processed package is empty or exceeds the size limit.</string>
+    <string name="next_bem_index_failed">Could not save the processed package index.</string>
+    <string name="next_bem_cleanup_pending">The new version was saved, but some retired files could not be removed. Clean unused files later.</string>
+    <string name="next_bem_source_cancelled">Package loading cancelled.</string>
+    <string name="next_bem_source_size_mismatch">The package size does not match the installation index. Please import it again.</string>
+</resources>
