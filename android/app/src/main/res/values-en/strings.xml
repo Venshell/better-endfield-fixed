@@ -2,6 +2,42 @@
 <!-- English UI. Keys mirror res/values/strings.xml one to one; keep the
      format specifiers (%1$s, %1$d, %%) identical when editing. -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="game_management_eyebrow">GAME MANAGEMENT</string>
+    <string name="game_management_title">Game management</string>
+    <string name="game_none_installed">No supported game is installed.</string>
+    <string name="game_multiple_choose">Choose one game before launching, changing scope, or stopping it.</string>
+    <string name="game_scope_included">LSPosed scope: included</string>
+    <string name="game_scope_missing">LSPosed scope: missing</string>
+    <string name="game_scope_status_unavailable">LSPosed service unavailable; scope cannot be read</string>
+    <string name="game_launch">Open game</string>
+    <string name="game_force_stop">Stop selected game</string>
+    <string name="game_scope_request">Request LSPosed scope</string>
+    <string name="game_shizuku_request">Request Shizuku permission</string>
+    <string name="game_shizuku_state_granted">Shizuku connected and authorized</string>
+    <string name="game_shizuku_state_denied">Shizuku connected; permission needed</string>
+    <string name="game_shizuku_state_unavailable">Shizuku disconnected or outdated</string>
+    <string name="game_choose_target">Choose a game first.</string>
+    <string name="game_launch_unavailable">This game has no launch entry.</string>
+    <string name="game_launch_requested">Launch requested; check whether the game opens.</string>
+    <string name="game_launch_failed">Could not request launch.</string>
+    <string name="game_scope_unavailable">LSPosed service is not connected.</string>
+    <string name="game_scope_approved">LSPosed approved; scope has been refreshed.</string>
+    <string name="game_scope_unverified">LSPosed responded, but the selected game is missing from scope.</string>
+    <string name="game_scope_failed">LSPosed did not approve the request.</string>
+    <string name="game_scope_waiting">Approve the LSPosed scope request from the notification, then return here.</string>
+    <string name="game_shizuku_granted">Shizuku permission granted.</string>
+    <string name="game_shizuku_denied">Shizuku permission denied.</string>
+    <string name="game_shizuku_unavailable">Shizuku is unavailable. Check whether it is running.</string>
+    <string name="game_shizuku_old_version">Update Shizuku before retrying.</string>
+    <string name="game_shizuku_waiting">Shizuku permission request sent.</string>
+    <string name="game_shizuku_need_permission">Grant Shizuku permission first.</string>
+    <string name="game_force_stop_busy">A stop request is already running.</string>
+    <string name="game_force_stop_starting">Connecting to Shizuku.</string>
+    <string name="game_force_stop_sent">Stop request accepted; this does not confirm the game has closed.</string>
+    <string name="game_force_stop_rejected">The target failed the safety check.</string>
+    <string name="game_force_stop_timeout">Stop request timed out; the service has ended.</string>
+    <string name="game_force_stop_failed">Stop request failed. Check Shizuku and its permission.</string>
+    <string name="game_force_stop_disconnected">Shizuku service disconnected.</string>
     <string name="media_screen_title">Reception room media screen</string>
     <string name="media_screen_hint">Choose images or videos for the reception room screens. Restart the game after saving.</string>
     <string name="media_screen_open">Manage media screen</string>

@@ -6,6 +6,8 @@ import android.util.Log;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.List;
+import java.util.HashSet;
 import java.io.FileOutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -15,6 +17,10 @@ import io.github.libxposed.service.XposedServiceHelper;
 
 /** Local UI preferences remain authoritative; framework service publishes snapshots. */
 final class FrameworkSettings {
+    interface ScopeResultCallback {
+        void onApproved(Set<String> scope);
+        void onFailed(String message);
+    }
     private static XposedService service;
     private static Context appContext;
     private static SharedPreferences local;
@@ -147,6 +153,41 @@ final class FrameworkSettings {
      */
     static synchronized boolean remoteAvailable() {
         return remoteService != null;
+    }
+
+    /** Current libxposed scope, or null when its service is unavailable. */
+    static synchronized Set<String> gameScope() {
+        if (service == null) return null;
+        try { return new HashSet<>(service.getScope()); }
+        catch (RuntimeException error) { return null; }
+    }
+
+    /** Requests an explicit scope addition for one supported game. */
+    static synchronized boolean requestGameScope(List<String> packages, ScopeResultCallback callback) {
+        if (service == null || packages == null || packages.isEmpty() || callback == null) return false;
+        for (String packageName : packages) {
+            if (!"com.hypergryph.endfield".equals(packageName)
+                    && !"com.gryphline.endfield.gp".equals(packageName)) return false;
+        }
+        try {
+            Set<String> currentScope = new HashSet<>(service.getScope());
+            if (currentScope.containsAll(packages)) {
+                callback.onApproved(currentScope);
+                return true;
+            }
+            service.requestScope(packages, new XposedService.OnScopeEventListener() {
+                @Override public void onScopeRequestApproved(List<String> scope) {
+                    callback.onApproved(new HashSet<>(scope));
+                }
+                @Override public void onScopeRequestFailed(String message) {
+                    callback.onFailed(message);
+                }
+            });
+            return true;
+        } catch (RuntimeException error) {
+            callback.onFailed(error.getMessage() == null ? "scope request failed" : error.getMessage());
+            return false;
+        }
     }
 
     static boolean awaitConnection(FrameworkServiceWait.Checkpoint checkpoint) throws java.io.IOException {

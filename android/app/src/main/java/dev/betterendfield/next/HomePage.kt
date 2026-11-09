@@ -14,9 +14,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +41,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun HomePage(state: SettingsState) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+        GameManagementCard()
         ModuleStatusCard(state)
         PendingCard(state)
 
@@ -124,6 +129,88 @@ private fun ModuleLine(id: String) {
             color = Be.Colors.textPrimary,
             fontSize = Be.Type.value,
         )
+    }
+}
+
+@Composable
+private fun GameManagementCard() {
+    val activity = LocalContext.current as? android.app.Activity ?: return
+    val controller = remember(activity) { GameControlController(activity) }
+    val game = controller.state
+    DisposableEffect(controller) {
+        controller.start()
+        onDispose { controller.close() }
+    }
+
+    SectionCard(
+        eyebrow = stringResource(R.string.game_management_eyebrow),
+        title = stringResource(R.string.game_management_title),
+    ) {
+        if (game.targets.isEmpty()) {
+            BodyText(stringResource(R.string.game_none_installed))
+        } else {
+            game.targets.forEach { target ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = Be.Space.s),
+                    horizontalArrangement = Arrangement.spacedBy(Be.Space.s),
+                ) {
+                    RadioButton(
+                        selected = game.selectedPackage == target.packageName,
+                        onClick = { controller.select(target.packageName) },
+                    )
+                    Column(Modifier.weight(1f).padding(top = Be.Space.s)) {
+                        CardTitle(target.label)
+                        BodyText(target.packageName)
+                        val inScope = game.currentScope?.contains(target.packageName)
+                        BodyText(stringResource(when (inScope) {
+                            true -> R.string.game_scope_included
+                            false -> R.string.game_scope_missing
+                            null -> R.string.game_scope_status_unavailable
+                        }))
+                    }
+                }
+            }
+            if (game.targets.size > 1 && game.selectedPackage == null) {
+                BodyText(stringResource(R.string.game_multiple_choose),
+                    modifier = Modifier.padding(top = Be.Space.s))
+            }
+            Row(Modifier.fillMaxWidth().padding(top = Be.Space.m),
+                horizontalArrangement = Arrangement.spacedBy(Be.Space.s)) {
+                GhostButton(
+                    text = stringResource(R.string.game_launch),
+                    onClick = controller::launchSelected,
+                    modifier = Modifier.weight(1f),
+                )
+                GhostButton(
+                    text = stringResource(R.string.game_force_stop),
+                    onClick = controller::forceStopSelected,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (game.selectedPackage == null ||
+                    game.currentScope?.contains(game.selectedPackage) != true) {
+                GhostButton(
+                    text = stringResource(R.string.game_scope_request),
+                    onClick = controller::requestScope,
+                    modifier = Modifier.fillMaxWidth().padding(top = Be.Space.s),
+                )
+            }
+        }
+        BodyText(stringResource(when {
+            game.shizukuGranted -> R.string.game_shizuku_state_granted
+            game.shizukuAvailable -> R.string.game_shizuku_state_denied
+            else -> R.string.game_shizuku_state_unavailable
+        }), modifier = Modifier.padding(top = Be.Space.m))
+        if (!game.shizukuGranted) {
+            GhostButton(
+                text = stringResource(R.string.game_shizuku_request),
+                onClick = controller::requestShizukuPermission,
+                modifier = Modifier.fillMaxWidth().padding(top = Be.Space.s),
+            )
+        }
+        if (game.status.isNotEmpty()) {
+            BodyText(game.status, modifier = Modifier.padding(top = Be.Space.m))
+        }
     }
 }
 

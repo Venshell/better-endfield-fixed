@@ -96,6 +96,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        aidl = true
         // The settings app and BEM manager use Compose. This experimental branch
         // also composes the Activity-scoped game panel; device acceptance is pending.
         compose = true
@@ -672,6 +673,8 @@ tasks.matching { it.name == "packageRelease" }.configureEach {
 }
 
 dependencies {
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation("org.apache.commons:commons-compress:1.28.0")
     implementation("org.tukaani:xz:1.10")
     compileOnly("io.github.libxposed:api:102.0.0")
