@@ -20,7 +20,7 @@ Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed �
 
 - **第一人称陀螺仪**：第一人称视角可使用手机陀螺仪控制方向，相关开关和灵敏度在 Android 设置应用中。
 - **内置头饰资源**：APK 随包提供 898 份 v3/v61 头饰资源，供第一人称隐藏或替换遮挡视野的网格。资源对应游戏 versionCode 61，逐角色效果以实机验收为准。
-- **缓降实验分支**：手动和自动缓降保存在 [`experimental/android-glide`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/android-glide)，从 [Actions 下载实验 APK](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467)。正式版 `main` 保留原有持续冲刺。
+- **缓降实验分支**：手动和自动缓降保存在 [`experimental/android-glide`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/android-glide)，从 [Actions 下载实验 APK](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide)。正式版 `main` 保留原有持续冲刺。
 
 Android 设置应用和游戏内悬浮面板沿用本仓库的 Compose 入口，保留第一人称、BEM 管理、MMD 导入和会客室媒体屏操作。具体入口见 [Android 使用说明](android/README.md)，版本变更见 [更新日志](CHANGELOG.md)。
 

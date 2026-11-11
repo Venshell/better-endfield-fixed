@@ -1,6 +1,6 @@
 # Better Endfield Next Android
 
-本目录提供 Android ARM64 的 LSPosed 模块、设置应用和游戏内悬浮面板。当前源码跟进上游 `4.1.8`，应用包名为 `dev.betterendfield.next`；本地派生分支继续保留内置第一人称、陀螺仪、第三方模块入口和 Compose 设置界面。当前产品边界见[产品边界](../docs/PRODUCT_BOUNDARY.md)。
+本目录提供 Android ARM64 的 LSPosed 模块、设置应用和游戏内悬浮面板。当前 Android 源码版本为 `4.1.9`（versionCode `40109`），选择性接入上游 4.1.9 的创意工坊入口，应用包名为 `dev.betterendfield.next`；本地派生分支继续保留内置第一人称、陀螺仪、第三方模块入口和 Compose 设置界面。当前产品边界见[产品边界](../docs/PRODUCT_BOUNDARY.md)。
 
 本次上游合并使用 Next 身份。旧包名 `dev.betterendfield.android` 与 Next 是两个独立应用，安装不会迁移旧应用设置或框架作用域；请在框架中启用 Next 并重新选择实际游戏作用域。不要同时对同一游戏启用两个模块。可先保留旧应用及数据，完成新包验证后再决定旧应用处理方式。
 
@@ -41,7 +41,7 @@ MMD 支持本地动作、表情、镜头和音频，以及作品目录、ZIP 和
 
 工具页可打开 Compose 会客室媒体屏设置，选择图片、轮播图片或 MP4 后保存，并冷重启游戏装载配置。投屏是手动操作：进入会客室后，在游戏悬浮面板的“会客室投屏”中点击“开始／结束投屏”；停止可恢复原画面，视频支持暂停和跳转。面板读取原生播放状态并显示屏幕绑定/解码等错误，提交指令不代表已播放。用户此前报告保存并进入会客室后仍是原画面，本轮运行验收状态见[入口续接记录](../docs/ANDROID_UI_ALIGNMENT_20261109.md)。模型面板同样从原生读取当前已加载的动效列表，可控制开始、暂停、停止和速度；切换模型后旧控制令牌失效。
 
-工具页另有上游创意工坊入口；关于页提供语言切换、软件更新、资源包导入与更新、项目和许可证链接。项目主页与许可证指向 [Venshell/better-endfield-fixed](https://github.com/Venshell/better-endfield-fixed)，许可条款和必要署名保留；软件与基础资源更新协议本轮未改。原作者个人社交、群号和赞助入口不再保留。启动时自动检查可在关于页关闭。旧 View 版 MMD 作品页已由当前 Compose MMD 页及作品导入链取代。
+工具页的创意工坊入口打开应用内页面，分别展示直连与域名地址，支持复制和浏览器打开；断网时地址仍可查看与复制。关于页提供语言切换、软件更新、资源包导入与更新、项目和许可证链接，并增加原作者 [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield) 的 GitHub 致谢入口。项目主页与许可证指向 [Venshell/better-endfield-fixed](https://github.com/Venshell/better-endfield-fixed)，软件更新检查读取本仓库的 Android APK 发行版本，基础资源更新仍按现有资源索引处理。原作者 Discord、群号和赞助入口不再保留。启动时自动检查可在关于页关闭。旧 View 版 MMD 作品页已由当前 Compose MMD 页及作品导入链取代。
 
 ## 游戏内悬浮窗
 

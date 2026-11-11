@@ -113,7 +113,7 @@ fun SettingsShell(
  * The scrolling body that every page shares.
  *
  * The scroll offset is keyed by [SettingsState.page]. That is what makes a page
- * open at its top: one container serves all eight pages, so a state that
+ * open at its top: one container serves all pages, so a state that
  * outlived a page change would drop the reader into the middle of the next page
  * at whatever offset the previous one happened to be left at. Keying by page
  * still survives a rotation, because the page is restored before this composes.
@@ -164,6 +164,7 @@ private fun SettingsBody(
                 SettingsPage.ADMINISTRATOR_APPEARANCE -> AdministratorAppearancePage(state::markAdministratorAppearanceSaved)
                 SettingsPage.LOG -> LogPage(state)
                 SettingsPage.ABOUT -> AboutPage()
+                SettingsPage.WORKSHOP -> WorkshopPage()
             }
             Spacer(Modifier.height(Be.Space.xxl))
             if (state.status.isNotBlank()) Notice(state.status)

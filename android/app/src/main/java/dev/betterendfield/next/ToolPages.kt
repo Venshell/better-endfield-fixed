@@ -42,7 +42,6 @@ import androidx.compose.material3.Text
 @Composable
 fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
     val context = LocalContext.current
-    var workshopFailed by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
         OverlayCard(state, onPreviewOverlay)
         DiagnosticsCard(state)
@@ -71,18 +70,9 @@ fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
             CardTitle(stringResource(R.string.next_workshop))
             GhostButton(
                 text = stringResource(R.string.next_workshop),
-                onClick = {
-                    workshopFailed = runCatching {
-                        context.startActivity(
-                            android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse("https://146.235.16.65:8443/endfield/"))
-                                .addCategory(android.content.Intent.CATEGORY_BROWSABLE),
-                        )
-                    }.isFailure
-                },
+                onClick = { state.openPage(SettingsPage.WORKSHOP) },
                 modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
             )
-            if (workshopFailed) BodyText(stringResource(R.string.next_workshop_failed))
         }
 
         PanelCard {

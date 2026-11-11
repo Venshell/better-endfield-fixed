@@ -656,6 +656,13 @@
     <string name="next_disclaimer_text">本软件会将本机代码注入游戏进程，并在运行时修改模型、动画和语音资源选择。\n\n可能的风险包括游戏崩溃、存档或配置异常、更新后失效，以及被游戏安全或反作弊系统识别。使用在线账号可能产生账号限制风险。\n\n本项目为非官方实验工具，与鹰角网络、峘形山工作室及 GRYPHLINE 无关，也不提供任何形式的担保。请自行备份重要数据，遵守游戏服务条款，并自行承担使用后果。\n\n本软件不负责停用或绕过反作弊组件；游戏更新后如签名不匹配，相关 Hook 应停止使用，等待适配。</string>
     <string name="next_workshop">创意工坊</string>
     <string name="next_workshop_failed">无法打开创意工坊</string>
+    <string name="next_workshop_direct">直连</string>
+    <string name="next_workshop_domain">域名</string>
+    <string name="next_workshop_open">打开</string>
+    <string name="next_workshop_copy">复制</string>
+    <string name="next_workshop_copied">地址已复制</string>
+    <string name="next_workshop_copy_failed">无法复制地址</string>
+    <string name="next_upstream_github">原作者 GitHub · 致谢</string>
     <string name="media_screen_eyebrow">会客室 · MEDIA</string>
     <string name="media_enable">启用媒体屏</string>
     <string name="media_section_content">媒体内容</string>

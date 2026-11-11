@@ -277,6 +277,13 @@
     <string name="next_disclaimer_text">This software injects local code into the game process and changes model, animation, and voice resource selection at runtime.\n\nPossible risks include game crashes, save or configuration errors, breakage after updates, and detection by game security or anti-cheat systems. Using an online account may lead to account restrictions.\n\nThis is an unofficial experimental tool and is not affiliated with Hypergryph, Mountain Contour, or GRYPHLINE. It comes without warranty. Back up important data, follow the game terms of service, and use it at your own risk.\n\nThis software does not disable or bypass anti-cheat components. If signatures no longer match after a game update, affected hooks should stop until adapted.</string>
     <string name="next_workshop">Workshop</string>
     <string name="next_workshop_failed">Unable to open the workshop</string>
+    <string name="next_workshop_direct">Direct</string>
+    <string name="next_workshop_domain">Domain</string>
+    <string name="next_workshop_open">Open</string>
+    <string name="next_workshop_copy">Copy</string>
+    <string name="next_workshop_copied">Address copied</string>
+    <string name="next_workshop_copy_failed">Unable to copy address</string>
+    <string name="next_upstream_github">Original author on GitHub · Thanks</string>
     <string name="media_screen_eyebrow">RECEPTION ROOM · MEDIA</string>
     <string name="media_enable">Enable media screen</string>
     <string name="media_section_content">Media content</string>

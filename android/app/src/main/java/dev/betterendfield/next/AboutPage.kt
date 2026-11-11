@@ -175,6 +175,7 @@ fun AboutPage() {
         PanelCard {
             CardTitle(stringResource(R.string.next_project))
             GhostButton(stringResource(R.string.next_github), { open(ProjectLinks.REPOSITORY) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
+            GhostButton(stringResource(R.string.next_upstream_github), { open(ProjectLinks.UPSTREAM_REPOSITORY) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
             GhostButton(stringResource(R.string.next_open_releases), { open(AppUpdateChecker.RELEASES) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
             GhostButton(stringResource(R.string.about_license), { open(ProjectLinks.LICENSE) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
         }

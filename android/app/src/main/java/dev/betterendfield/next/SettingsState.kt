@@ -42,7 +42,7 @@ data class MmdWorkRow(
 /**
  * Page indices for the settings tree.
  *
- * Four tabs, and five sub-pages that are reached from a card inside a tab. Both
+ * Four tabs, and sub-pages that are reached from a card inside a tab. Both
  * kinds are addressed by the same integer because the shell switches on one
  * value; [parentOf] is what keeps the tab strip highlighted while a sub-page is
  * open, so "which tab am I in" stays answerable on every screen.
@@ -76,6 +76,7 @@ object SettingsPage {
     const val CAMERA_MOTION = 14
     const val MMD = 15
     const val ADMINISTRATOR_APPEARANCE = 16
+    const val WORKSHOP = 17
 
     fun isSubPage(page: Int): Boolean = page >= FIRST_PERSON
 
@@ -83,7 +84,7 @@ object SettingsPage {
     fun parentOf(page: Int): Int = when (page) {
         FIRST_PERSON, CAMERA_MOTION, MMD -> EXPERIENCE
         APPEARANCE, ADMINISTRATOR_APPEARANCE -> CHARACTERS
-        LOG, ABOUT -> TOOLS
+        LOG, ABOUT, WORKSHOP -> TOOLS
         else -> page
     }
 }
