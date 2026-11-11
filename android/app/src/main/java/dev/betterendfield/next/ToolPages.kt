@@ -119,6 +119,12 @@ private fun OverlayCard(state: SettingsState, onPreviewOverlay: () -> Unit) {
             checked = state.overlayAutoSnap,
             onCheckedChange = state::updateOverlayAutoSnap,
         )
+        SwitchRow(
+            title = stringResource(R.string.overlay_log_visible),
+            description = stringResource(R.string.overlay_log_visible_hint),
+            checked = state.overlayLogVisible,
+            onCheckedChange = state::updateOverlayLogVisible,
+        )
         SliderRow(
             label = stringResource(R.string.overlay_transparency),
             value = state.overlayTransparency,

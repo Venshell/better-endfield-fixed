@@ -5,8 +5,13 @@ import android.app.Application;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Build;
+import android.view.GestureDetector;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 import java.util.function.Supplier;
@@ -15,9 +20,13 @@ import java.util.function.Supplier;
 final class GameOverlay {
     private final Activity activity;
     private final FrameLayout host;
+    private final View outsideDismiss;
     private final View handle;
     private final View panel;
+    private final boolean windowHardwareAccelerationWasEnabled;
     private final OverlaySurface ui;
+    private final java.util.Map<ViewGroup, boolean[]> ancestorClipping =
+            new java.util.IdentityHashMap<>();
     private final boolean preview;
     /**
      * What the native modules last reported. Deliberately separate from the
@@ -78,6 +87,7 @@ final class GameOverlay {
      * threshold where a drag starts to feel detached from the camera.
      */
     private static final long LOOK_FLUSH_INTERVAL_MS = 16L;
+    private static final int HANDLE_TOUCH_DP = 56;
     /** Deltas accumulated since the last write; see LOOK_FLUSH_INTERVAL_MS. */
     private float lookPendingX;
     private float lookPendingY;
@@ -209,9 +219,35 @@ final class GameOverlay {
         this.activity = activity;
         this.preview = preview;
         this.settings = settings;
+        windowHardwareAccelerationWasEnabled = (activity.getWindow().getAttributes().flags
+                & WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED) != 0;
+        activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
         host = new FrameLayout(activity);
         host.setClipChildren(false);
+        host.setClipToPadding(false);
         host.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        outsideDismiss = new View(activity) {
+            private final GestureDetector taps = new GestureDetector(activity,
+                    new GestureDetector.SimpleOnGestureListener() {
+                        @Override public boolean onDown(MotionEvent event) { return true; }
+                        @Override public boolean onSingleTapUp(MotionEvent event) {
+                            performClick();
+                            return true;
+                        }
+                    });
+
+            @Override public boolean onTouchEvent(MotionEvent event) {
+                taps.onTouchEvent(event);
+                return true;
+            }
+
+            @Override public boolean performClick() {
+                super.performClick();
+                if (preview) remove(); else collapsePanel();
+                return true;
+            }
+        };
+        outsideDismiss.setVisibility(View.GONE);
         host.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
             @Override public void onViewAttachedToWindow(View v) {
                 mainHandler.post(composeCheck);
@@ -261,23 +297,38 @@ final class GameOverlay {
         ui.installOwnersOn(host);
         handle = ui.getHandle();
         panel = ui.getPanel();
+        // The game renders its SurfaceView independently. Request a UI rate for
+        // the Compose controls so their scrolling is not paced by that surface.
+        if (Build.VERSION.SDK_INT >= 36 && activity.getDisplay() != null) {
+            panel.setRequestedFrameRate(activity.getDisplay().getRefreshRate());
+        }
+        host.addView(outsideDismiss, new FrameLayout.LayoutParams(-1, -1));
         host.addView(panel, new FrameLayout.LayoutParams(dp(320), -2));
-        host.addView(handle, new FrameLayout.LayoutParams(dp(50), dp(50)));
+        host.addView(handle, new FrameLayout.LayoutParams(dp(HANDLE_TOUCH_DP), dp(HANDLE_TOUCH_DP)));
         // A cold Activity may not have a window yet during onActivityResumed.
         // The host's attach callback composes after both children are attached.
         try {
             activity.addContentView(host, new ViewGroup.LayoutParams(-1, -1));
+            allowEdgeDrawing();
         } catch (Throwable failure) {
             removedByUs = true;
             if (host.getParent() instanceof ViewGroup) {
                 ((ViewGroup) host.getParent()).removeView(host);
             }
+            restoreEdgeDrawing();
             ui.dispose();
+            if (!windowHardwareAccelerationWasEnabled) {
+                activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+            }
             if (failure instanceof Error) throw (Error) failure;
             if (failure instanceof RuntimeException) throw (RuntimeException) failure;
             throw new IllegalStateException("overlay composition failed", failure);
         }
-        panel.setVisibility(preview ? View.VISIBLE : View.GONE);
+        // Keep the hidden panel measured so Compose can prepare its static
+        // controls before the first tap without drawing or intercepting touch.
+        panel.setVisibility(preview ? View.VISIBLE : View.INVISIBLE);
+        if (preview) outsideDismiss.setVisibility(View.VISIBLE);
+        if (preview) handle.setVisibility(View.GONE);
         refresh();
         updateJournal();
         // A hidden overlay has no touch target left, so the volume key relay and
@@ -306,12 +357,15 @@ final class GameOverlay {
 
     private void refresh() {
         OverlayFeatures current;
+        boolean showJournal = true;
         try {
             SharedPreferences preferences = settings.get();
             AppLanguage.read(preferences);
             current = OverlayFeatures.read(preferences);
+            showJournal = ModuleSettings.isOverlayLogVisible(preferences);
             applyAppearance(ModuleSettings.getOverlayAppearance(preferences));
         } catch (RuntimeException unavailable) { current = OverlayFeatures.off(); }
+        ui.renderShowJournal(showJournal);
         if (preview) {
             current = new OverlayFeatures(true, current.hideHud(), current.freeCamera(),
                     current.worldPause(), current.firstPerson(), current.vmdCamera(),
@@ -845,39 +899,65 @@ final class GameOverlay {
         Toast.makeText(activity, message, Toast.LENGTH_SHORT).show();
     }
 
-    // Position both real touch surfaces within the Activity's inset content.
-    // The rest of the full-screen FrameLayout has no listener and passes events through.
+    // Position the handle and panel within the Activity's inset content.
+    // The transparent outside target only intercepts touches while the panel is open.
     private void layout() {
         if (closed || host.getWidth() == 0) return;
         int left = host.getPaddingLeft() + dp(8);
         int top = host.getPaddingTop() + dp(8);
         int width = Math.max(1, host.getWidth() - left - host.getPaddingRight() - dp(8));
         int height = Math.max(1, host.getHeight() - top - host.getPaddingBottom() - dp(8));
-        handle.setX(left + xFraction * Math.max(0, width - dp(50)));
-        handle.setY(top + yFraction * Math.max(0, height - dp(50)));
-        int panelWidth = Math.min(dp(320), width);
+        int[] hostPosition = new int[2];
+        int[] rootPosition = new int[2];
+        host.getLocationOnScreen(hostPosition);
+        host.getRootView().getLocationOnScreen(rootPosition);
+        float screenLeft = rootPosition[0] - hostPosition[0];
+        int screenWidth = Math.max(1, host.getRootView().getWidth());
+        handle.setX(autoSnap
+                ? screenLeft - dp(HANDLE_TOUCH_DP / 2) + xFraction * screenWidth
+                : left + xFraction * Math.max(0, width - dp(HANDLE_TOUCH_DP)));
+        handle.setY(top + yFraction * Math.max(0, height - dp(HANDLE_TOUCH_DP)));
+        boolean landscape = width > height;
+        int panelWidth = Math.min(host.getWidth(), landscape
+                ? Math.round(host.getRootView().getWidth() * 0.59f)
+                : dp(320));
         panel.measure(View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST));
-        int panelHeight = Math.min(height, panel.getMeasuredHeight());
+                View.MeasureSpec.makeMeasureSpec(landscape ? host.getHeight() : height, landscape
+                        ? View.MeasureSpec.EXACTLY : View.MeasureSpec.AT_MOST));
+        int panelHeight = landscape ? host.getHeight() : Math.min(height, panel.getMeasuredHeight());
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) panel.getLayoutParams();
         if (params.width != panelWidth || params.height != panelHeight) {
             params.width = panelWidth;
             params.height = panelHeight;
             panel.setLayoutParams(params);
         }
-        float beside = handle.getX() + dp(58);
+        float beside = handle.getX() + dp(HANDLE_TOUCH_DP + 8);
         if (beside + panelWidth > left + width) beside = handle.getX() - panelWidth - dp(8);
-        panel.setX(Math.max(left, Math.min(beside, left + width - panelWidth)));
-        panel.setY(Math.max(top, Math.min(handle.getY(), top + height - panelHeight)));
-        handle.bringToFront();
+        panel.setX(landscape ? 0
+                : Math.max(left, Math.min(beside, left + width - panelWidth)));
+        panel.setY(landscape ? 0
+                : Math.max(top, Math.min(handle.getY(), top + height - panelHeight)));
+        if (panel.getVisibility() == View.VISIBLE) {
+            outsideDismiss.bringToFront();
+            panel.bringToFront();
+        }
+        else handle.bringToFront();
     }
 
     private void dragBy(float dx, float dy) {
         int left = host.getPaddingLeft() + dp(8);
         int top = host.getPaddingTop() + dp(8);
-        int w = Math.max(1, host.getWidth() - left - host.getPaddingRight() - dp(58));
-        int h = Math.max(1, host.getHeight() - top - host.getPaddingBottom() - dp(58));
-        xFraction = clamp((handle.getX() + dx - left) / w);
+        int w = Math.max(1, host.getWidth() - left - host.getPaddingRight() - dp(HANDLE_TOUCH_DP + 8));
+        int h = Math.max(1, host.getHeight() - top - host.getPaddingBottom() - dp(HANDLE_TOUCH_DP + 8));
+        int[] hostPosition = new int[2];
+        int[] rootPosition = new int[2];
+        host.getLocationOnScreen(hostPosition);
+        host.getRootView().getLocationOnScreen(rootPosition);
+        float screenLeft = rootPosition[0] - hostPosition[0];
+        int screenWidth = Math.max(1, host.getRootView().getWidth());
+        xFraction = autoSnap
+                ? clamp((handle.getX() + dx - screenLeft + dp(HANDLE_TOUCH_DP / 2)) / screenWidth)
+                : clamp((handle.getX() + dx - left) / w);
         yFraction = clamp((handle.getY() + dy - top) / h);
         layout();
     }
@@ -892,8 +972,14 @@ final class GameOverlay {
     private void snapToEdge() {
         if (!autoSnap || closed) return;
         xFraction = xFraction < 0.5f ? 0f : 1f;
-        if (panel.getVisibility() == View.VISIBLE) collapsePanel();
+        if (panel.getVisibility() == View.VISIBLE) { collapsePanel(); return; }
+        float startX = handle.getX();
+        handle.animate().cancel();
         layout();
+        float targetX = handle.getX();
+        handle.setX(startX);
+        handle.animate().x(targetX).setDuration(180)
+                .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private void togglePanel() {
@@ -903,17 +989,29 @@ final class GameOverlay {
         cancelDeferredPlayback();
         refresh();
         updateJournal();
+        panel.animate().cancel();
         panel.setAlpha(0f);
         panel.setVisibility(View.VISIBLE);
+        outsideDismiss.setVisibility(View.VISIBLE);
         layout();
-        panel.animate().alpha(1f).setDuration(140).start();
+        float targetX = panel.getX();
+        panel.setX(targetX - dp(24));
+        panel.animate().alpha(1f).x(targetX).setDuration(200)
+                .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private void collapsePanel() {
         releaseHeldKeys();
         dropPendingLook();
-        panel.animate().alpha(0f).setDuration(100)
-                .withEndAction(() -> panel.setVisibility(View.GONE)).start();
+        outsideDismiss.setVisibility(View.GONE);
+        panel.animate().cancel();
+        panel.animate().alpha(0f).x(panel.getX() - dp(24)).setDuration(160)
+                .setInterpolator(new DecelerateInterpolator())
+                .withEndAction(() -> {
+                    panel.setVisibility(View.INVISIBLE);
+                    if (!stoodDown) handle.setVisibility(View.VISIBLE);
+                    snapToEdge();
+                }).start();
     }
 
     void remove() {
@@ -936,6 +1034,10 @@ final class GameOverlay {
         if (host.getParent() instanceof ViewGroup) {
             ((ViewGroup) host.getParent()).removeView(host);
         }
+        restoreEdgeDrawing();
+        if (!windowHardwareAccelerationWasEnabled) {
+            activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+        }
     }
 
     private void ensureOnTop() {
@@ -943,6 +1045,7 @@ final class GameOverlay {
         android.view.ViewGroup content = activity.findViewById(android.R.id.content);
         if (content == null) return;
         if (host.getParent() == content) {
+            allowEdgeDrawing();
             // setContentView-style rebuilds can leave our host attached but
             // underneath the freshly added game view; the detach watchdog
             // never fires because the host was never detached. Only the
@@ -958,10 +1061,31 @@ final class GameOverlay {
         }
         try {
             content.addView(host, new ViewGroup.LayoutParams(-1, -1));
+            allowEdgeDrawing();
             RuntimeLog.record("overlay host re-added to the content view");
         } catch (RuntimeException error) {
             RuntimeLog.record("overlay re-attach failed: " + error);
         }
+    }
+
+    private void allowEdgeDrawing() {
+        android.view.ViewParent ancestor = host.getParent();
+        while (ancestor instanceof ViewGroup group) {
+            ancestorClipping.putIfAbsent(group,
+                    new boolean[] {group.getClipChildren(), group.getClipToPadding()});
+            group.setClipChildren(false);
+            group.setClipToPadding(false);
+            ancestor = group.getParent();
+        }
+    }
+
+    private void restoreEdgeDrawing() {
+        for (java.util.Map.Entry<ViewGroup, boolean[]> entry : ancestorClipping.entrySet()) {
+            boolean[] original = entry.getValue();
+            entry.getKey().setClipChildren(original[0]);
+            entry.getKey().setClipToPadding(original[1]);
+        }
+        ancestorClipping.clear();
     }
 
     private static float clamp(float value) {

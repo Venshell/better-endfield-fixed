@@ -807,6 +807,8 @@ class SettingsState(private val context: Context) {
         private set
     var overlayAutoSnap by mutableStateOf(false)
         private set
+    var overlayLogVisible by mutableStateOf(true)
+        private set
 
     private fun loadEnhancement() {
         hideUid = ModuleSettings.isHideUidEnabled(context)
@@ -896,6 +898,7 @@ class SettingsState(private val context: Context) {
         overlayEnabled = ModuleSettings.isOverlayEnabled(context)
         overlayTransparency = ModuleSettings.getOverlayTransparency(context)
         overlayAutoSnap = ModuleSettings.isOverlayAutoSnap(context)
+        overlayLogVisible = ModuleSettings.isOverlayLogVisible(context)
     }
 
     /** Re-reads the panel switch, which the settings Activity can leave and re-enter. */
@@ -903,6 +906,7 @@ class SettingsState(private val context: Context) {
         overlayEnabled = ModuleSettings.isOverlayEnabled(context)
         overlayTransparency = ModuleSettings.getOverlayTransparency(context)
         overlayAutoSnap = ModuleSettings.isOverlayAutoSnap(context)
+        overlayLogVisible = ModuleSettings.isOverlayLogVisible(context)
     }
 
     fun updateHideUid(value: Boolean) {
@@ -1653,6 +1657,11 @@ class SettingsState(private val context: Context) {
     fun updateOverlayAutoSnap(value: Boolean) {
         ModuleSettings.setOverlayAutoSnap(context, value)
         overlayAutoSnap = value
+    }
+
+    fun updateOverlayLogVisible(value: Boolean) {
+        ModuleSettings.setOverlayLogVisible(context, value)
+        overlayLogVisible = value
     }
 
     private fun saveInterfaceSettings() {

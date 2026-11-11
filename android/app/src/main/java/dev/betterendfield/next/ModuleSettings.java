@@ -162,6 +162,7 @@ final class ModuleSettings {
     static final String OVERLAY_ENABLED = "overlay_enabled";
     private static final String OVERLAY_TRANSPARENCY = "overlay_transparency";
     private static final String OVERLAY_AUTO_SNAP = "overlay_auto_snap";
+    private static final String OVERLAY_LOG_VISIBLE = "overlay_log_visible";
     private static final String COMMAND_GENERATION = "command_generation";
 
     static final float OVERLAY_TRANSPARENCY_MAXIMUM = 80f;
@@ -191,7 +192,7 @@ final class ModuleSettings {
 
     static OverlayAppearance getOverlayAppearance(SharedPreferences settings) {
         return new OverlayAppearance(settings.getFloat(OVERLAY_TRANSPARENCY, 0f),
-                settings.getBoolean(OVERLAY_AUTO_SNAP, false));
+                settings.getBoolean(OVERLAY_AUTO_SNAP, true));
     }
 
     static float getOverlayTransparency(Context context) {
@@ -209,6 +210,18 @@ final class ModuleSettings {
 
     static void setOverlayAutoSnap(Context context, boolean enabled) {
         preferences(context).edit().putBoolean(OVERLAY_AUTO_SNAP, enabled).commit();
+    }
+
+    static boolean isOverlayLogVisible(SharedPreferences settings) {
+        return settings.getBoolean(OVERLAY_LOG_VISIBLE, true);
+    }
+
+    static boolean isOverlayLogVisible(Context context) {
+        return isOverlayLogVisible(preferences(context));
+    }
+
+    static void setOverlayLogVisible(Context context, boolean visible) {
+        preferences(context).edit().putBoolean(OVERLAY_LOG_VISIBLE, visible).commit();
     }
 
     /**

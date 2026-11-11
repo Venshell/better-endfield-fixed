@@ -65,3 +65,8 @@ are listed in `native/modules/camera/eiem/UPSTREAM.md`.
 - Used by the shared package decoder (`bem.cpp`) to read the BEM ZIP container
   described in format specification section 14. Only the ZIP reader APIs are
   used; no miniz source is modified.
+
+## Android overlay visual assets
+
+- `android/app/src/main/res/drawable-nodpi/overlay_cloud_contours.png` came from `res/sy.png` in the user-provided `EndfieldCloud-1-1.6.0.apk` for local design and validation. Redistribution rights have not been verified.
+- `android/app/src/main/res/drawable/overlay_settings_gear.xml` adapts Google's Material Design Icons `settings` 24px SVG from https://github.com/google/material-design-icons under Apache License 2.0. The source path was converted to Android vector XML and recolored.

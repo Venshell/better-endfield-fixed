@@ -72,6 +72,7 @@ class OverlaySurface(
     private val owner = OverlayOwner()
     private var features by mutableStateOf(OverlayFeatures.off())
     private var journal by mutableStateOf("")
+    private var showJournal by mutableStateOf(true)
     private var compositionInitialized = false
 
     val handle: ComposeView = ComposeView(activity).apply {
@@ -91,6 +92,7 @@ class OverlaySurface(
 
     fun render(next: OverlayFeatures) { features = next }
     fun renderJournal(next: String) { journal = next }
+    fun renderShowJournal(next: Boolean) { showJournal = next }
     fun composeNow() {
         if (compositionInitialized) return
         check(handle.isAttachedToWindow && panel.isAttachedToWindow)
@@ -106,7 +108,7 @@ class OverlaySurface(
             CompositionLocalProvider(LocalContext provides resourceContext,
                 LocalResources provides resourceContext.resources,
                 LocalConfiguration provides resourceContext.resources.configuration) {
-                OverlayTheme { OverlayPanel(features, preview, journal, callbacks) }
+                OverlayTheme { OverlayPanel(features, preview, journal, showJournal, callbacks) }
             }
         }
         handle.createComposition()

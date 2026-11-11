@@ -2,4 +2,6 @@
 <resources>
     <string name="overlay_transparency">透明度</string>
     <string name="overlay_auto_snap">画面端に自動吸着</string>
+    <string name="overlay_log_visible">フローティング画面の実行ログを表示</string>
+    <string name="overlay_log_visible_hint">ゲーム内のログ欄のみ切り替えます。記録は継続します。</string>
 </resources>

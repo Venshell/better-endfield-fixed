@@ -1,7 +1,10 @@
 package dev.betterendfield.next
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -11,7 +14,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
@@ -26,6 +31,7 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 @Composable
 internal fun MediaScreenControls(preview: Boolean) {
     val context = LocalContext.current
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val view = LocalView.current
     var shown by remember(view) { mutableStateOf(view.isShown) }
     var resumed by remember(view) { mutableStateOf(false) }
@@ -65,11 +71,23 @@ internal fun MediaScreenControls(preview: Boolean) {
     OverlaySection(stringResource(R.string.media_runtime_title)) {
         Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(mediaScreenStatusText(snapshot), color = Be.Colors.textSecondary, fontSize = 12.sp)
-            OverlayAction(stringResource(R.string.media_runtime_start), enabled = enabled) { send(0) }
-            OverlayAction(stringResource(R.string.media_runtime_stop), enabled = enabled) { send(1) }
-            OverlayAction(stringResource(R.string.media_runtime_pause), enabled = enabled && playing) { send(2) }
-            OverlayAction(stringResource(R.string.media_runtime_seek_back), enabled = enabled && playing && snapshot.detail() == "video") { send(3, -10.0) }
-            OverlayAction(stringResource(R.string.media_runtime_seek_forward), enabled = enabled && playing && snapshot.detail() == "video") { send(3, 10.0) }
+            if (landscape) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    OverlayAction(stringResource(R.string.media_runtime_start), Modifier.weight(1f), enabled) { send(0) }
+                    OverlayAction(stringResource(R.string.media_runtime_stop), Modifier.weight(1f), enabled) { send(1) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    OverlayAction(stringResource(R.string.media_runtime_pause), Modifier.weight(1f), enabled && playing) { send(2) }
+                    OverlayAction(stringResource(R.string.media_runtime_seek_back), Modifier.weight(1f), enabled && playing && snapshot.detail() == "video") { send(3, -10.0) }
+                    OverlayAction(stringResource(R.string.media_runtime_seek_forward), Modifier.weight(1f), enabled && playing && snapshot.detail() == "video") { send(3, 10.0) }
+                }
+            } else {
+                OverlayAction(stringResource(R.string.media_runtime_start), enabled = enabled) { send(0) }
+                OverlayAction(stringResource(R.string.media_runtime_stop), enabled = enabled) { send(1) }
+                OverlayAction(stringResource(R.string.media_runtime_pause), enabled = enabled && playing) { send(2) }
+                OverlayAction(stringResource(R.string.media_runtime_seek_back), enabled = enabled && playing && snapshot.detail() == "video") { send(3, -10.0) }
+                OverlayAction(stringResource(R.string.media_runtime_seek_forward), enabled = enabled && playing && snapshot.detail() == "video") { send(3, 10.0) }
+            }
             if (submission.isNotEmpty()) Text(submission, color = Be.Colors.textSecondary, fontSize = 10.sp)
         }
     }

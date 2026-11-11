@@ -2,4 +2,6 @@
 <resources>
     <string name="overlay_transparency">투명도</string>
     <string name="overlay_auto_snap">가장자리에 자동 붙이기</string>
+    <string name="overlay_log_visible">플로팅 창 실행 로그 표시</string>
+    <string name="overlay_log_visible_hint">게임 내 로그 영역만 표시하거나 숨깁니다. 기록은 계속됩니다.</string>
 </resources>

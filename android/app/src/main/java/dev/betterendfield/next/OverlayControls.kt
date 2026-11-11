@@ -33,9 +33,15 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun OverlaySection(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(title, color = Be.Colors.textSecondary, fontSize = 11.sp,
-            fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 2.dp))
+    Column(
+        Modifier.fillMaxWidth()
+            .background(Be.Colors.overlayRow, RoundedCornerShape(4.dp))
+            .border(1.dp, Be.Colors.overlayOutline, RoundedCornerShape(4.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, color = Be.Colors.textPrimary, fontSize = 12.sp,
+            fontWeight = FontWeight.Medium)
         content()
     }
 }
@@ -43,20 +49,20 @@ internal fun OverlaySection(title: String, content: @Composable () -> Unit) {
 @Composable
 internal fun OverlayAction(
     title: String,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.fillMaxWidth(),
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(
-        modifier.fillMaxWidth().height(42.dp)
+        modifier.height(30.dp)
             .alpha(if (enabled) 1f else 0.45f)
-            .background(Be.Colors.overlayRow, RoundedCornerShape(11.dp))
-            .border(1.dp, Be.Colors.outline, RoundedCornerShape(11.dp))
+            .background(Be.Colors.overlayField, RoundedCornerShape(3.dp))
+            .border(1.dp, Be.Colors.overlayOutline, RoundedCornerShape(3.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = title },
         contentAlignment = Alignment.Center,
     ) {
-        Text(title, color = Be.Colors.textPrimary, fontSize = 13.sp,
+        Text(title, color = Be.Colors.textPrimary, fontSize = 12.sp,
             fontWeight = FontWeight.Medium)
     }
 }
@@ -67,7 +73,7 @@ internal fun OverlayActionRow(
     second: String, secondClick: () -> Unit,
     secondEnabled: Boolean = true,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OverlayAction(first, Modifier.weight(1f), onClick = firstClick)
         OverlayAction(second, Modifier.weight(1f), enabled = secondEnabled, onClick = secondClick)
     }
@@ -83,9 +89,9 @@ internal fun HoldControl(
     callbacks: OverlaySurface.Callbacks,
 ) {
     Box(
-        modifier.height(43.dp)
-            .background(Be.Colors.overlayRow, RoundedCornerShape(11.dp))
-            .border(1.dp, Be.Colors.outline, RoundedCornerShape(11.dp))
+        modifier.height(30.dp)
+            .background(Be.Colors.overlayField, RoundedCornerShape(3.dp))
+            .border(1.dp, Be.Colors.overlayOutline, RoundedCornerShape(3.dp))
             .pointerInput(key) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
@@ -97,7 +103,7 @@ internal fun HoldControl(
             .semantics { contentDescription = "$description，按住生效" },
         contentAlignment = Alignment.Center,
     ) {
-        Text(title, color = Be.Colors.textPrimary, fontSize = 16.sp)
+        Text(title, color = Be.Colors.textPrimary, fontSize = 12.sp)
     }
 }
 
@@ -105,18 +111,16 @@ internal fun HoldControl(
 internal fun MovementPad(callbacks: OverlaySurface.Callbacks) {
     OverlaySection("镜头移动（按住）") {
         Column(
-            Modifier.fillMaxWidth().background(Be.Colors.overlayField, RoundedCornerShape(12.dp))
-                .border(1.dp, Be.Colors.outline, RoundedCornerShape(12.dp))
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                HoldControl("◀", Hotkeys.MOVE_LEFT, "左移", Modifier.weight(1f), callbacks)
-                HoldControl("▲", Hotkeys.MOVE_FORWARD, "前进", Modifier.weight(1f), callbacks)
-                HoldControl("▼", Hotkeys.MOVE_BACK, "后退", Modifier.weight(1f), callbacks)
-                HoldControl("▶", Hotkeys.MOVE_RIGHT, "右移", Modifier.weight(1f), callbacks)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HoldControl("左", Hotkeys.MOVE_LEFT, "左移", Modifier.weight(1f), callbacks)
+                HoldControl("前", Hotkeys.MOVE_FORWARD, "前进", Modifier.weight(1f), callbacks)
+                HoldControl("后", Hotkeys.MOVE_BACK, "后退", Modifier.weight(1f), callbacks)
+                HoldControl("右", Hotkeys.MOVE_RIGHT, "右移", Modifier.weight(1f), callbacks)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HoldControl("上升", Hotkeys.MOVE_UP, "上升", Modifier.weight(1f), callbacks)
                 HoldControl("下降", Hotkeys.MOVE_DOWN, "下降", Modifier.weight(1f), callbacks)
             }

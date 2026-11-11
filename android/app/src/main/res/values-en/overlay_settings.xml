@@ -2,4 +2,6 @@
 <resources>
     <string name="overlay_transparency">Transparency</string>
     <string name="overlay_auto_snap">Snap to edge</string>
+    <string name="overlay_log_visible">Show overlay runtime log</string>
+    <string name="overlay_log_visible_hint">Controls the in-game log section without stopping log recording.</string>
 </resources>

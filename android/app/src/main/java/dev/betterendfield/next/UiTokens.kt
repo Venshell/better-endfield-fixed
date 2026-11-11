@@ -91,10 +91,13 @@ object Be {
          * The previous Java/View panel mirrored them as integer constants;
          * game-process acceptance of the new composition remains pending.
          */
-        val overlayPanel = Color(0xF20A0A0A)
-        val overlayRow = Color(0xFF1D1D1D)
-        val overlayField = Color(0xFF121212)
+        val overlayPanel = Color(0xED1F2326)
+        val overlayRow = Color(0xC0343635)
+        val overlayField = Color(0x99343635)
         val overlayPressed = Color(0xFF2A2A2A)
+        val overlayOutline = Color(0x40B5B8BB)
+        val overlayHandle = Color(0xFFCECBC1)
+        val overlayHandleOutline = Color(0xFFB5B8BB)
 
         /** Palette presets offered for the login logo theme colour. */
         val logoPresets = listOf(

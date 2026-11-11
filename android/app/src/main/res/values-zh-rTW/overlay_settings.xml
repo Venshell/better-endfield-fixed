@@ -2,4 +2,6 @@
 <resources>
     <string name="overlay_transparency">透明度</string>
     <string name="overlay_auto_snap">自動貼邊</string>
+    <string name="overlay_log_visible">顯示懸浮窗執行日誌</string>
+    <string name="overlay_log_visible_hint">只控制遊戲內面板的日誌區，不影響日誌記錄。</string>
 </resources>

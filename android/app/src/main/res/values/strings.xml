@@ -199,7 +199,7 @@
     <string name="overlay_card_title">悬浮窗</string>
     <string name="overlay_enable">在游戏中显示悬浮窗</string>
     <string name="overlay_enable_hint">首次启用需重启游戏。</string>
-    <string name="overlay_auto_snap_hint">松开悬浮按钮后贴近左边或右边。</string>
+    <string name="overlay_auto_snap_hint">松开悬浮按钮或收起面板后贴边，按钮露出一半。</string>
     <string name="bem_disable_all_saved">全部模型已关闭，重启游戏后生效。</string>
     <string name="bem_disable_all_failed">关闭全部模型失败：%1$s</string>
     <string name="bem_storage_title">模型数据</string>
