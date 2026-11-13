@@ -15,14 +15,14 @@ import android.content.SharedPreferences;
  */
 record ModuleConfigurations(
         String voice, String model, String ui, String camera, String actions, String mediaScreen,
-        String appearance, String thirdParty) {
+        String appearance, String thirdParty, String link) {
     ModuleConfigurations(String voice, String model, String ui, String camera, String actions) {
-        this(voice, model, ui, camera, actions, "", "", "");
+        this(voice, model, ui, camera, actions, "", "", "", "");
     }
 
     ModuleConfigurations(String voice, String model, String ui, String camera, String actions,
             String mediaScreen) {
-        this(voice, model, ui, camera, actions, mediaScreen, "", "");
+        this(voice, model, ui, camera, actions, mediaScreen, "", "", "");
     }
 
     static ModuleConfigurations read(SharedPreferences settings) {
@@ -34,17 +34,18 @@ record ModuleConfigurations(
                 string(settings, ModuleSettings.ACTIONS_CONFIGURATION),
                 string(settings, ModuleSettings.MEDIA_CONFIGURATION),
                 string(settings, ModuleSettings.APPEARANCE_CONFIGURATION),
-                ThirdPartyModuleStore.selectedRuntimeIndex(settings));
+                ThirdPartyModuleStore.selectedRuntimeIndex(settings),
+                ModuleSettings.eflinkConfiguration(settings));
     }
 
     static ModuleConfigurations empty() {
-        return new ModuleConfigurations("", "", "", "", "", "", "", "");
+        return new ModuleConfigurations("", "", "", "", "", "", "", "", "");
     }
 
     boolean none() {
         return voice.isEmpty() && model.isEmpty() && ui.isEmpty()
                 && camera.isEmpty() && actions.isEmpty() && mediaScreen.isEmpty()
-                && appearance.isEmpty() && thirdParty.isEmpty();
+                && appearance.isEmpty() && thirdParty.isEmpty() && link.isEmpty();
     }
 
     /**
@@ -69,7 +70,8 @@ record ModuleConfigurations(
         return "voice=" + !voice.isEmpty() + " model=" + !model.isEmpty()
                 + " ui=" + !ui.isEmpty() + " camera=" + !camera.isEmpty()
                 + " actions=" + !actions.isEmpty() + " media=" + !mediaScreen.isEmpty()
-                + " appearance=" + !appearance.isEmpty() + " thirdParty=" + !thirdParty.isEmpty();
+                + " appearance=" + !appearance.isEmpty() + " thirdParty=" + !thirdParty.isEmpty()
+                + " link=" + !link.isEmpty();
     }
 
     private static String string(SharedPreferences settings, String key) {

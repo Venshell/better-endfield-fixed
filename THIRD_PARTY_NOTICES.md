@@ -48,6 +48,19 @@ compiled into `BetterEndfieldNext.Camera.dll` through `eiem/eiem_body.cpp`, whic
 replaces EIEM's loader, GUI, audio and hook installation. Local modifications
 are listed in `native/modules/camera/eiem/UPSTREAM.md`.
 
+## EF Link
+
+- Source: https://github.com/Venshell/EFLink at commit
+  `956a0d5d4b900f17ba06d7b30bc15d24770eb3a1` (1.6.6), a fork of
+  https://github.com/guchang233/EFLink
+- License: GNU Affero General Public License v3.0 (the same license as this project)
+- Used in: `native/modules/eflink/` — the LAN room wire format, host/client relay,
+  world-channel session state machine, and the POSIX socket shim. The Android
+  floating panel, pose sampler, and build integration are local. Dear ImGui,
+  the Windows DirectComposition menu, and the Windows IL2CPP world adapter are
+  not included. JSON for Modern C++ 3.12.0 was already vendored in this
+  repository under the MIT license and is not copied again.
+
 ## Endfield-Poser
 
 - Source: https://github.com/honxi1/Endfield-Poser (reviewed read-only)

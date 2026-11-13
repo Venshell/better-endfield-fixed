@@ -181,6 +181,7 @@ add_library(betterendfieldnext_android SHARED
     modules/desktop/desktop_module.cpp
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/shared/third_party_modules/third_party_host.cpp"
     modules/login_model/login_model_module.cpp
+    modules/eflink/eflink_module.cpp
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/modules/model/module.cpp")
 
 # The Android runtime currently uses its own Module interface. Compile the
@@ -196,6 +197,8 @@ set_source_files_properties(
 target_include_directories(betterendfieldnext_android PRIVATE
     .
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/modules/camera"
+    "${BETTER_ENDFIELD_NEXT_ROOT}/native/modules/eflink"
+    "${BETTER_ENDFIELD_NEXT_ROOT}/native/shared/third_party"
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/shared/android_compat"
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/shared/host"
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/shared/include")

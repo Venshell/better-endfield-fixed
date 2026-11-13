@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.Application;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.net.wifi.WifiManager;
 import android.system.Os;
 
 import java.io.File;
@@ -23,6 +24,7 @@ final class RuntimeBootstrap {
     private static final AtomicInteger ATTEMPTS = new AtomicInteger();
     private static volatile boolean loaded;
     private static volatile String failure = Text.of("等待游戏首帧");
+    private static WifiManager.MulticastLock eflinkMulticast;
 
     static String failure() { return failure; }
 
@@ -163,6 +165,14 @@ final class RuntimeBootstrap {
             Os.setenv("BETTER_ENDFIELD_NEXT_ACTIONS_CONFIG", configs.actions(), true);
             Os.setenv("BETTER_ENDFIELD_NEXT_MEDIA_SCREEN_CONFIG", MediaScreenFiles.configuration, true);
             Os.setenv("BETTER_ENDFIELD_NEXT_APPEARANCE_CONFIG", configs.appearance(), true);
+            Os.setenv("BETTER_ENDFIELD_NEXT_EFLINK_CONFIG", configs.link(), true);
+            File eflinkDirectory = new File(context.getFilesDir(), "eflink");
+            if (!configs.link().isEmpty()) {
+                //noinspection ResultOfMethodCallIgnored
+                eflinkDirectory.mkdirs();
+                holdEflinkMulticast(context, log);
+            }
+            Os.setenv("BETTER_ENDFIELD_NEXT_EFLINK_DIR", eflinkDirectory.getAbsolutePath(), true);
             Os.setenv("BETTER_ENDFIELD_NEXT_RUNTIME_LOCK", new File(context.getCacheDir(), "betterendfieldnext-runtime.lock").getAbsolutePath(), true);
             Os.setenv("BETTER_ENDFIELD_NEXT_ACTIONS_ASSET_ROOT", actionPoseRoot, true);
             Os.setenv("BETTER_ENDFIELD_NEXT_CUSTOM_MODEL_PROBE", debugResourceProbe() ? "1" : "0", true);
@@ -391,5 +401,30 @@ final class RuntimeBootstrap {
     static String customModelConfig() {
         String debug=debugCustomModelConfig();
         return debug.isEmpty()?BemInstalledResources.configuration:debug;
+    }
+
+    /**
+     * LAN discovery is UDP broadcast. Some Wi-Fi firmwares drop those packets
+     * unless the process holds a multicast lock. The lock is acquired as the
+     * game, so it succeeds only when the game itself holds
+     * {@code CHANGE_WIFI_MULTICAST_STATE}. Direct IP join does not need it.
+     */
+    private static void holdEflinkMulticast(Context context, Consumer<String> log) {
+        try {
+            WifiManager wifi = (WifiManager) context.getApplicationContext()
+                    .getSystemService(Context.WIFI_SERVICE);
+            if (wifi == null) {
+                log.accept("eflink multicast lock skipped: no wifi service");
+                return;
+            }
+            if (eflinkMulticast == null) {
+                eflinkMulticast = wifi.createMulticastLock("eflink");
+                eflinkMulticast.setReferenceCounted(false);
+            }
+            if (!eflinkMulticast.isHeld()) eflinkMulticast.acquire();
+            log.accept("eflink multicast lock held for LAN discovery");
+        } catch (Throwable error) {
+            log.accept("eflink multicast lock unavailable: " + error);
+        }
     }
 }

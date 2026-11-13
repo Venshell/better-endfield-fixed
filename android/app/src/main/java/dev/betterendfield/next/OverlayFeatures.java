@@ -19,7 +19,8 @@ public record OverlayFeatures(
         boolean vmdCamera,
         boolean mmd,
         boolean models,
-        boolean mediaScreen) {
+        boolean mediaScreen,
+        boolean link) {
 
     static OverlayFeatures read(SharedPreferences settings) {
         boolean freeCamera = settings.getBoolean(ModuleSettings.CAMERA_FREE, false);
@@ -47,14 +48,15 @@ public record OverlayFeatures(
                 // play button that queues a discarded command is worse than none.
                 settings.getBoolean("mmd_enabled", false),
                 index != null && !index.isEmpty() && !"[]".equals(index),
-                !settings.getString(ModuleSettings.MEDIA_CONFIGURATION, "").isEmpty());
+                !settings.getString(ModuleSettings.MEDIA_CONFIGURATION, "").isEmpty(),
+                settings.getBoolean(ModuleSettings.EFLINK_ENABLED, false));
     }
 
     static OverlayFeatures off() {
-        return new OverlayFeatures(false, false, false, false, false, false, false, false, false);
+        return new OverlayFeatures(false, false, false, false, false, false, false, false, false, false);
     }
 
     boolean anyControl() {
-        return hideHud || freeCamera || firstPerson || mmd || mediaScreen || models;
+        return hideHud || freeCamera || firstPerson || mmd || mediaScreen || models || link;
     }
 }
