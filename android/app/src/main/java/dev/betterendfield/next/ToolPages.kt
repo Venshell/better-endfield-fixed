@@ -44,6 +44,7 @@ fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
     val context = LocalContext.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
         OverlayCard(state, onPreviewOverlay)
+        EflinkSettingsCard(state)
         DiagnosticsCard(state)
 
         PanelCard {

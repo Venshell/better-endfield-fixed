@@ -15,6 +15,7 @@
 #include "modules/character_voice/character_voice_module.h"
 #include "modules/desktop/desktop_module.h"
 #include "modules/login_model/login_model_module.h"
+#include "modules/eflink/eflink_module.h"
 #include "modules/custom_model/resource_probe.h"
 #include "modules/custom_model/custom_model_module.h"
 #include "modules/camera/first_person_look_probe.h"
@@ -179,6 +180,9 @@ void RunModules() {
             &BetterEndfieldNext_GetWeaponAppearanceModuleApiV1,
             "same-source desktop appearance module active (administrator ink skins)"));
     }
+    if (Configured("BETTER_ENDFIELD_NEXT_EFLINK_CONFIG") != nullptr) {
+        state.modules.emplace_back(std::make_unique<EflinkModule>());
+    }
 
     // Missing hot-update metadata delays only the affected module. The actual
     // Start calls remain serialized; abandoning a timed-out C++ thread is unsafe
@@ -240,6 +244,7 @@ bool AnyModuleRequested() {
         "BETTER_ENDFIELD_NEXT_CUSTOM_MODEL_CONFIG",
         "BETTER_ENDFIELD_NEXT_MEDIA_SCREEN_CONFIG",
         "BETTER_ENDFIELD_NEXT_APPEARANCE_CONFIG",
+        "BETTER_ENDFIELD_NEXT_EFLINK_CONFIG",
     };
     for (const char* variable : kVariables) {
         if (Configured(variable) != nullptr) return true;

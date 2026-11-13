@@ -1,0 +1,459 @@
+#include "modules/eflink/eflink_module.h"
+
+#include "core/hook_broker.h"
+#include "core/log.h"
+#include "core/runtime.h"
+#include "link_net.h"
+#include "link_session.h"
+#include "link_version.h"
+
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace betterendfieldnext {
+namespace {
+
+using TickFn = void (*)(void*, float, void*);
+using Json = nlohmann::json;
+
+struct Vec3 { float x, y, z; };
+struct Quat { float x, y, z, w; };
+
+constexpr auto kSampleInterval = std::chrono::milliseconds(50);
+
+EflinkModule* g_module = nullptr;
+TickFn g_next_tick = nullptr;
+
+void OnTailLateTick(void* instance, float delta, void* method);
+
+float YawDegrees(const float rotation[4]) {
+    const float x = rotation[0], y = rotation[1], z = rotation[2], w = rotation[3];
+    return std::atan2(2.f * (w * y + x * z), 1.f - 2.f * (y * y + z * z)) * 57.2957795f;
+}
+
+class LinkRuntime {
+public:
+    bool Start(Il2CppRuntime& runtime, const std::string& config_text, const std::string& directory) {
+        std::lock_guard lock(mutex_);
+        if (started_) return true;
+        try {
+            directory_ = directory;
+            game_runtime_ = &runtime;
+            std::filesystem::create_directories(directory_);
+        } catch (const std::exception& error) {
+            LogError("eflink.core", error.what());
+            return false;
+        }
+        Json config = Json::parse(config_text, nullptr, false);
+        if (!config.is_object()) config = Json::object();
+        const auto name = config.value("player_name", std::string{});
+        player_name_ = name.empty() ? "玩家" : name.substr(0, 64);
+        room_name_ = config.value("room_name", std::string{});
+        port_ = static_cast<std::uint16_t>(std::clamp(config.value("port", 47615), 1024, 65535));
+        if (port_ == 47616) port_ = 47615;
+        max_players_ = static_cast<unsigned>(std::clamp(config.value("max_players", 8), 2, 16));
+        net_.version = EFLINK_VERSION;
+        net_.setName(player_name_);
+        net_.onData = [this](std::uint16_t from, std::uint32_t channel, const unsigned char* data, std::size_t size) {
+            if (channel == eflink::worldChannel) session_.receive(from, data, size);
+        };
+        if (!net_.start()) {
+            LogError("eflink.core", "network thread did not start");
+            return false;
+        }
+        Resolve(runtime);
+        started_ = true;
+        running_.store(true);
+        worker_ = std::thread([this] { Loop(); });
+        LogInfo("eflink.core", "LAN room stack started");
+        return true;
+    }
+
+    void Sample(Il2CppRuntime& runtime) {
+        if (!started_) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_sample_ < kSampleInterval) {
+            Pump();
+            return;
+        }
+        last_sample_ = now;
+        const auto role = net_.currentRole();
+        if (role != eflink::Role::Host && role != eflink::Role::Client) {
+            Pump();
+            return;
+        }
+        try {
+            eflink::proto::PlayerState pose;
+            if (ReadPose(runtime, pose)) {
+                pose_ready_.store(true);
+                net_.setLocalState(std::move(pose));
+                eflink::proto::PlayerInfo info;
+                {
+                    std::lock_guard lock(mutex_);
+                    info.name = player_name_;
+                    info.modelPath = model_path_;
+                    info.bones = bone_names_;
+                    info.skeleton = skeleton_;
+                }
+                net_.setLocalInfo(std::move(info));
+            }
+        } catch (const std::exception& error) {
+            LogError("eflink.core", error.what());
+        } catch (...) {
+            LogError("eflink.core", "pose sample failed");
+        }
+        Pump();
+    }
+
+    bool hooked() const { return hooked_.load(); }
+    void MarkHooked() { hooked_.store(true); }
+
+private:
+    struct Method {
+        betterendfieldnext::ResolvedMethod resolved;
+    };
+
+    void Resolve(Il2CppRuntime& runtime) {
+        auto take = [&](const char* assembly, const char* space, const char* type,
+                        const char* name, int parameters) {
+            return runtime.ResolveMethod(assembly, space, type, name, parameters);
+        };
+        main_character_ = take("Gameplay.Beyond.dll", "Beyond.Gameplay.Core", "PlayerController", "GetMainCharacter", 0);
+        model_component_ = take("Gameplay.Beyond.dll", "Beyond.Gameplay.Core", "Entity", "get_modelCom", 0);
+        model_object_ = take("Gameplay.Beyond.dll", "Beyond.Gameplay.View", "BaseModelComponent", "GetModelGo", 0);
+        object_transform_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "GameObject", "get_transform", 0);
+        position_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "Transform", "get_position", 0);
+        rotation_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "Transform", "get_rotation", 0);
+        local_rotation_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "Transform", "get_localRotation", 0);
+        local_position_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "Transform", "get_localPosition", 0);
+        child_count_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "Transform", "get_childCount", 0);
+        child_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "Transform", "GetChild", 1);
+        object_name_ = take("UnityEngine.CoreModule.dll", "UnityEngine", "Object", "get_name", 0);
+        tail_tick_ = take("Gameplay.Beyond.dll", "Beyond.Gameplay.View", "CameraManager", "TailLateTick", 1);
+        const bool pose = main_character_.entry && model_component_.entry && model_object_.entry &&
+            object_transform_.entry && position_.entry && rotation_.entry;
+        LogInfo("eflink.core", pose ? "character pose contracts resolved" : "character pose contracts missing; room list still works");
+    }
+
+    void* Call(Il2CppRuntime& runtime, const ResolvedMethod& method, void* instance, void** parameters) const {
+        if (!method.info) return nullptr;
+        void* exception = nullptr;
+        void* result = runtime.Invoke(method.info, instance, parameters, &exception);
+        return exception ? nullptr : result;
+    }
+    template <typename T>
+    bool Read(Il2CppRuntime& runtime, const ResolvedMethod& method, void* instance, T& value) const {
+        void* boxed = Call(runtime, method, instance, nullptr);
+        void* raw = boxed ? runtime.Unbox(boxed) : nullptr;
+        if (!raw) return false;
+        std::memcpy(&value, raw, sizeof(T));
+        return true;
+    }
+
+    bool ReadPose(Il2CppRuntime& runtime, eflink::proto::PlayerState& pose) {
+        if (!main_character_.entry || !position_.entry || !rotation_.entry) return false;
+        void* character = Call(runtime, main_character_, nullptr, nullptr);
+        void* component = character ? Call(runtime, model_component_, character, nullptr) : nullptr;
+        void* object = component ? Call(runtime, model_object_, component, nullptr) : nullptr;
+        void* transform = object ? Call(runtime, object_transform_, object, nullptr) : nullptr;
+        if (!transform) return false;
+        Vec3 position{};
+        Quat rotation{};
+        if (!Read(runtime, position_, transform, position) || !Read(runtime, rotation_, transform, rotation)) return false;
+        if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) return false;
+        pose.flags = eflink::proto::StateValid | eflink::proto::StateAlive;
+        pose.position[0] = position.x;
+        pose.position[1] = position.y;
+        pose.position[2] = position.z;
+        pose.rotation[0] = rotation.x;
+        pose.rotation[1] = rotation.y;
+        pose.rotation[2] = rotation.z;
+        pose.rotation[3] = rotation.w;
+        pose.timeMs = static_cast<std::uint32_t>(eflink::nowMs());
+        CollectBones(runtime, character, transform, pose);
+        pose.skeleton = skeleton_;
+        return true;
+    }
+
+    void DropBones() {
+        bone_transforms_.clear();
+        bone_names_.clear();
+        bone_character_ = nullptr;
+        bone_root_ = nullptr;
+    }
+
+    void CollectBones(Il2CppRuntime& runtime, void* character, void* root, eflink::proto::PlayerState& pose) {
+        if (!child_.entry || !child_count_.entry || !local_rotation_.entry || !object_name_.entry) return;
+        const auto now = std::chrono::steady_clock::now();
+        const bool changed = character != bone_character_ || root != bone_root_;
+        if (changed || bone_transforms_.empty() || now - last_bone_scan_ > std::chrono::seconds(2)) {
+            const auto previous = bone_names_;
+            bone_transforms_.clear();
+            bone_names_.clear();
+            bone_character_ = character;
+            bone_root_ = root;
+            int visited = 0;
+            Walk(runtime, root, 0, visited);
+            if (bone_names_ != previous) skeleton_ = static_cast<std::uint16_t>(skeleton_ + 1);
+            last_bone_scan_ = now;
+            if (void* named = Call(runtime, object_name_, root, nullptr)) model_path_ = runtime.CopyString(named);
+        }
+        for (std::size_t index = 0; index < bone_transforms_.size() && pose.bones.size() / 4 < eflink::proto::kMaxBones; ++index) {
+            Quat local{};
+            if (!Read(runtime, local_rotation_, bone_transforms_[index], local)) {
+                DropBones();
+                return;
+            }
+            for (float value : {local.x, local.y, local.z, local.w})
+                pose.bones.push_back(eflink::proto::quantize(value));
+            if (index == 0 && local_position_.entry) {
+                Vec3 hips{};
+                if (Read(runtime, local_position_, bone_transforms_[index], hips)) {
+                    pose.rootOffset[0] = hips.x;
+                    pose.rootOffset[1] = hips.y;
+                    pose.rootOffset[2] = hips.z;
+                }
+            }
+        }
+    }
+
+    void Walk(Il2CppRuntime& runtime, void* transform, int depth, int& visited) {
+        if (!transform || depth > 12 || visited > 256 || bone_transforms_.size() >= eflink::proto::kMaxBones) return;
+        ++visited;
+        if (void* named = Call(runtime, object_name_, transform, nullptr)) {
+            const auto name = runtime.CopyString(named);
+            if (name.rfind("Bip001", 0) == 0 && !name.ends_with("Nub")) {
+                bone_transforms_.push_back(transform);
+                bone_names_.push_back(name);
+            }
+        }
+        int children = 0;
+        if (!Read(runtime, child_count_, transform, children) || children <= 0 || children > 64) return;
+        for (int index = 0; index < children && bone_transforms_.size() < eflink::proto::kMaxBones; ++index) {
+            void* parameters[]{&index};
+            Walk(runtime, Call(runtime, child_, transform, parameters), depth + 1, visited);
+        }
+    }
+
+    void Pump() {
+        std::lock_guard lock(session_mutex_);
+        try { session_.update(net_); }
+        catch (const std::exception& error) { LogError("eflink.core", error.what()); }
+        catch (...) {}
+    }
+
+    void Loop() {
+        while (running_.load()) {
+            try {
+                Poll();
+                if (!hooked_.load()) Pump();
+                Publish();
+            } catch (const std::exception& error) {
+                LogError("eflink.core", error.what());
+            } catch (...) {
+                LogError("eflink.core", "room loop failed");
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+    }
+
+    void Poll() {
+        const auto path = std::filesystem::path(directory_) / "command.json";
+        std::error_code ignored;
+        if (!std::filesystem::is_regular_file(path, ignored)) return;
+        std::string text;
+        {
+            std::ifstream input(path);
+            text.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        }
+        std::filesystem::remove(path, ignored);
+        auto command = Json::parse(text, nullptr, false);
+        if (!command.is_object()) return;
+        const auto sequence = command.value("seq", static_cast<std::uint64_t>(0));
+        if (!sequence || sequence <= command_sequence_) return;
+        command_sequence_ = sequence;
+        const auto op = command.value("op", std::string{});
+        if (op == "host") {
+            eflink::HostOptions options;
+            options.roomName = command.value("room_name", room_name_);
+            options.password = command.value("password", std::string{});
+            options.maxPlayers = static_cast<unsigned>(std::clamp(command.value("max_players", static_cast<int>(max_players_)), 2, 16));
+            auto port = command.value("port", static_cast<int>(port_));
+            if (port < 1024 || port > 65535 || port == 47616) port = port_;
+            options.port = static_cast<std::uint16_t>(port);
+            if (command.contains("player_name") && command["player_name"].is_string()) {
+                auto name = command["player_name"].get<std::string>().substr(0, 64);
+                if (name.empty()) name = "玩家";
+                {
+                    std::lock_guard lock(mutex_);
+                    player_name_ = name;
+                }
+                net_.setName(name);
+            }
+            net_.host(std::move(options));
+        } else if (op == "join") {
+            net_.join(command.value("address", std::string{}), command.value("password", std::string{}));
+        } else if (op == "leave") {
+            net_.leave();
+        } else if (op == "refresh") {
+            net_.refresh();
+        } else if (op == "chat") {
+            auto line = command.value("text", std::string{});
+            if (!line.empty() && line.size() <= 1024) net_.chat(std::move(line));
+        } else if (op == "name") {
+            auto name = command.value("player_name", std::string{});
+            if (name.empty()) {
+                std::lock_guard lock(mutex_);
+                name = player_name_;
+            }
+            name = name.substr(0, 64);
+            if (name.empty()) name = "玩家";
+            {
+                std::lock_guard lock(mutex_);
+                player_name_ = name;
+            }
+            net_.setName(name);
+        }
+    }
+
+    void Publish() {
+        const auto snapshot = net_.snapshot();
+        Json players = Json::array();
+        const eflink::PeerView* self = nullptr;
+        for (const auto& peer : snapshot.peers) if (peer.local) self = &peer;
+        for (const auto& peer : snapshot.peers) {
+            Json item{{"id", peer.id}, {"name", peer.hasInfo ? peer.info.name : ""},
+                {"local", peer.local}, {"host", peer.host}, {"map", peer.hasInfo ? peer.info.mapId : ""}};
+            if (!peer.states.empty()) {
+                const auto& pose = peer.states.back().state;
+                item["x"] = pose.position[0];
+                item["y"] = pose.position[1];
+                item["z"] = pose.position[2];
+                item["yaw"] = YawDegrees(pose.rotation);
+                item["bones"] = pose.bones.size() / 4;
+                if (self && !self->states.empty() && !peer.local) {
+                    const auto& origin = self->states.back().state.position;
+                    const float dx = pose.position[0] - origin[0];
+                    const float dy = pose.position[1] - origin[1];
+                    const float dz = pose.position[2] - origin[2];
+                    item["distance"] = std::sqrt(dx * dx + dy * dy + dz * dz);
+                }
+            }
+            players.push_back(std::move(item));
+        }
+        Json rooms = Json::array();
+        for (const auto& room : snapshot.rooms) {
+            rooms.push_back({{"name", room.beacon.roomName}, {"host", room.beacon.hostName},
+                {"address", room.address}, {"players", room.beacon.players},
+                {"max", room.beacon.maxPlayers}, {"password", room.beacon.password},
+                {"version", room.beacon.version}});
+        }
+        Json chat = Json::array();
+        const auto lines = net_.chatSince(0);
+        const auto begin = lines.size() > 20 ? lines.end() - 20 : lines.begin();
+        for (auto it = begin; it != lines.end(); ++it) {
+            chat.push_back({{"name", it->name}, {"text", it->text}, {"system", it->system}});
+        }
+        const char* role = "offline";
+        if (snapshot.role == eflink::Role::Connecting) role = "connecting";
+        else if (snapshot.role == eflink::Role::Host) role = "host";
+        else if (snapshot.role == eflink::Role::Client) role = "client";
+        Json body{{"role", role}, {"room_name", snapshot.roomName}, {"local_id", snapshot.localId},
+            {"error", snapshot.lastError}, {"players", std::move(players)}, {"rooms", std::move(rooms)},
+            {"chat", std::move(chat)}, {"pose_ready", pose_ready_.load()},
+            {"udp", snapshot.udpLinks}, {"tcp_only", snapshot.tcpOnlyLinks},
+            {"version", EFLINK_VERSION}};
+        const auto text = body.dump();
+        const auto path = std::filesystem::path(directory_) / "status.json";
+        const auto temporary = std::filesystem::path(directory_) / "status.json.tmp";
+        {
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            output << text;
+        }
+        std::error_code ignored;
+        std::filesystem::rename(temporary, path, ignored);
+    }
+
+    std::mutex mutex_;
+    std::mutex session_mutex_;
+    std::atomic<Il2CppRuntime*> game_runtime_{nullptr};
+    eflink::Net net_;
+    eflink::Session session_;
+    std::string directory_, player_name_ = "玩家", room_name_, model_path_;
+    std::uint16_t port_ = 47615;
+    unsigned max_players_ = 8;
+    std::uint64_t command_sequence_ = 0;
+    std::uint16_t skeleton_ = 1;
+    std::vector<void*> bone_transforms_;
+    std::vector<std::string> bone_names_;
+    void* bone_character_ = nullptr;
+    void* bone_root_ = nullptr;
+    std::chrono::steady_clock::time_point last_sample_{};
+    std::chrono::steady_clock::time_point last_bone_scan_{};
+    std::atomic<bool> running_{false}, started_{false}, hooked_{false}, pose_ready_{false};
+    std::thread worker_;
+    ResolvedMethod main_character_{}, model_component_{}, model_object_{}, object_transform_{};
+    ResolvedMethod position_{}, rotation_{}, local_rotation_{}, local_position_{};
+    ResolvedMethod child_count_{}, child_{}, object_name_{}, tail_tick_{};
+    HookBroker hooks_;
+    void* hook_stub_ = nullptr;
+
+    friend class betterendfieldnext::EflinkModule;
+    friend void OnTailLateTick(void*, float, void*);
+};
+
+LinkRuntime& Runtime() {
+    static auto* runtime = new LinkRuntime;
+    return *runtime;
+}
+
+void OnTailLateTick(void* instance, float delta, void* method) {
+    if (g_next_tick) g_next_tick(instance, delta, method);
+    if (g_module == nullptr) return;
+    auto* runtime = Runtime().game_runtime_.load();
+    if (runtime != nullptr) Runtime().Sample(*runtime);
+}
+
+}  // namespace
+
+const char* EflinkModule::Id() const { return "eflink.core"; }
+
+ModuleResult EflinkModule::Start(Il2CppRuntime& runtime) {
+    const char* config = std::getenv("BETTER_ENDFIELD_NEXT_EFLINK_CONFIG");
+    const char* directory = std::getenv("BETTER_ENDFIELD_NEXT_EFLINK_DIR");
+    if (config == nullptr || config[0] == '\0' || directory == nullptr || directory[0] == '\0') {
+        return {false, "EF Link configuration was not published"};
+    }
+    g_module = this;
+    if (!Runtime().Start(runtime, config, directory)) {
+        return {false, "EF Link network did not start"};
+    }
+    auto& link = Runtime();
+    if (link.tail_tick_.entry) {
+        std::string error;
+        if (link.hooks_.Initialize(error) &&
+            link.hooks_.Install("eflink.core", link.tail_tick_.entry, reinterpret_cast<void*>(&OnTailLateTick),
+                reinterpret_cast<void**>(&g_next_tick), link.hook_stub_, error)) {
+            link.MarkHooked();
+            LogInfo("eflink.core", "CameraManager.TailLateTick chained for pose sampling");
+        } else {
+            LogError("eflink.core", error.empty() ? "pose hook was not installed" : error.c_str());
+        }
+    }
+    return {true, "EF Link protocol ready (rooms, direct connect, pose sample)"};
+}
+
+}  // namespace betterendfieldnext

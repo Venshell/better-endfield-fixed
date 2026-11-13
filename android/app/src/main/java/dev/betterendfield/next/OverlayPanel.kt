@@ -208,6 +208,7 @@ internal fun OverlayPanel(
                             color = Be.Colors.textSecondary, fontSize = 12.sp)
                     }
                 }
+                if (features.link()) item { EflinkOverlay(preview) }
                 if (features.models()) {
                     item {
                         OverlaySection("模型") {

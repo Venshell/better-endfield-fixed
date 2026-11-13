@@ -3,6 +3,9 @@ package dev.betterendfield.next;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.Locale;
 
 final class ModuleSettings {
@@ -160,6 +163,11 @@ final class ModuleSettings {
     private static final String LEGACY_DISABLE_DITHER = "enhancement_disable_dither";
 
     static final String OVERLAY_ENABLED = "overlay_enabled";
+    static final String EFLINK_ENABLED = "eflink_enabled";
+    private static final String EFLINK_NAME = "eflink_player_name";
+    private static final String EFLINK_ROOM = "eflink_room_name";
+    private static final String EFLINK_PORT = "eflink_port";
+    private static final String EFLINK_MAX = "eflink_max_players";
     private static final String OVERLAY_TRANSPARENCY = "overlay_transparency";
     private static final String OVERLAY_AUTO_SNAP = "overlay_auto_snap";
     private static final String OVERLAY_LOG_VISIBLE = "overlay_log_visible";
@@ -179,6 +187,81 @@ final class ModuleSettings {
 
     static void setOverlayEnabled(Context context, boolean enabled) {
         preferences(context).edit().putBoolean(OVERLAY_ENABLED, enabled).commit();
+    }
+
+    static boolean isEflinkEnabled(Context context) {
+        return preferences(context).getBoolean(EFLINK_ENABLED, false);
+    }
+
+    static void setEflinkEnabled(Context context, boolean enabled) {
+        preferences(context).edit().putBoolean(EFLINK_ENABLED, enabled).commit();
+    }
+
+    static String getEflinkPlayerName(Context context) {
+        return text(preferences(context), EFLINK_NAME, 64);
+    }
+
+    static void setEflinkPlayerName(Context context, String name) {
+        preferences(context).edit().putString(EFLINK_NAME, clip(name, 64)).commit();
+    }
+
+    static String getEflinkRoomName(Context context) {
+        return text(preferences(context), EFLINK_ROOM, 64);
+    }
+
+    static void setEflinkRoomName(Context context, String name) {
+        preferences(context).edit().putString(EFLINK_ROOM, clip(name, 64)).commit();
+    }
+
+    static int getEflinkPort(Context context) {
+        return port(preferences(context).getInt(EFLINK_PORT, 47615));
+    }
+
+    static void setEflinkPort(Context context, int port) {
+        int value = port(port);
+        if (value == port) preferences(context).edit().putInt(EFLINK_PORT, value).commit();
+    }
+
+    static int getEflinkMaxPlayers(Context context) {
+        return players(preferences(context).getInt(EFLINK_MAX, 8));
+    }
+
+    static void setEflinkMaxPlayers(Context context, int count) {
+        int value = players(count);
+        if (value == count) preferences(context).edit().putInt(EFLINK_MAX, value).commit();
+    }
+
+    /** Empty when the feature is off, so the native loader does not start it. */
+    static String eflinkConfiguration(SharedPreferences settings) {
+        if (!settings.getBoolean(EFLINK_ENABLED, false)) return "";
+        try {
+            return new JSONObject()
+                    .put("player_name", text(settings, EFLINK_NAME, 64))
+                    .put("room_name", text(settings, EFLINK_ROOM, 64))
+                    .put("port", port(settings.getInt(EFLINK_PORT, 47615)))
+                    .put("max_players", players(settings.getInt(EFLINK_MAX, 8)))
+                    .toString();
+        } catch (JSONException error) {
+            return "";
+        }
+    }
+
+    private static String text(SharedPreferences settings, String key, int limit) {
+        return clip(settings.getString(key, ""), limit);
+    }
+
+    private static String clip(String value, int limit) {
+        if (value == null) return "";
+        String trimmed = value.trim();
+        return trimmed.length() <= limit ? trimmed : trimmed.substring(0, limit);
+    }
+
+    private static int port(int value) {
+        return value >= 1024 && value <= 65535 && value != 47616 ? value : 47615;
+    }
+
+    private static int players(int value) {
+        return value >= 2 && value <= 16 ? value : 8;
     }
 
     record OverlayAppearance(float transparency, boolean autoSnap) {

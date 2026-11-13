@@ -10,6 +10,7 @@
 | [2026-11-07 上游合并](ANDROID_UPSTREAM_MERGE_20261107.md) | 本轮合并合同、冲突取舍与实际验收证据；旧对账仍保留原时点范围 |
 | [按模块浏览上游技术资料](INDEX.md) | 模块规范与来源导航，包含上游双端历史，不改变本分支产品边界 |
 | [产品边界](PRODUCT_BOUNDARY.md) | Android 唯一目标平台及历史 Windows 代码的处理边界 |
+| [EF Link 协议移植](EFLINK_PORT_PLAN.md) | 把 EF Link 局域网房间协议接到 Android 的清单、阶段和本轮已落地范围 |
 | [技术实现与配置参考](TECHNICAL_DETAILS.md) | Android 实现与历史桌面实现细节 |
 | [BEM 创作者指南](custom_model/BEM_CREATOR_GUIDE.md) | 外观包制作、转换和验证 |
 | [Android 第三方模块创作者指南](THIRD_PARTY_MODULE_CREATOR_GUIDE.md) | 第三方 ZIP、Native ABI、网页桥及 Android 验证边界 |

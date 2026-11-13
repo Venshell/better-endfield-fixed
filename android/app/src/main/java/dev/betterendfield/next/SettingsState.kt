@@ -810,6 +810,16 @@ class SettingsState(private val context: Context) {
         private set
     var overlayLogVisible by mutableStateOf(true)
         private set
+    var eflinkEnabled by mutableStateOf(false)
+        private set
+    var eflinkName by mutableStateOf("")
+        private set
+    var eflinkRoom by mutableStateOf("")
+        private set
+    var eflinkPort by mutableStateOf(47615)
+        private set
+    var eflinkMaxPlayers by mutableStateOf(8)
+        private set
 
     private fun loadEnhancement() {
         hideUid = ModuleSettings.isHideUidEnabled(context)
@@ -900,6 +910,11 @@ class SettingsState(private val context: Context) {
         overlayTransparency = ModuleSettings.getOverlayTransparency(context)
         overlayAutoSnap = ModuleSettings.isOverlayAutoSnap(context)
         overlayLogVisible = ModuleSettings.isOverlayLogVisible(context)
+        eflinkEnabled = ModuleSettings.isEflinkEnabled(context)
+        eflinkName = ModuleSettings.getEflinkPlayerName(context)
+        eflinkRoom = ModuleSettings.getEflinkRoomName(context)
+        eflinkPort = ModuleSettings.getEflinkPort(context)
+        eflinkMaxPlayers = ModuleSettings.getEflinkMaxPlayers(context)
     }
 
     /** Re-reads the panel switch, which the settings Activity can leave and re-enter. */
@@ -908,6 +923,33 @@ class SettingsState(private val context: Context) {
         overlayTransparency = ModuleSettings.getOverlayTransparency(context)
         overlayAutoSnap = ModuleSettings.isOverlayAutoSnap(context)
         overlayLogVisible = ModuleSettings.isOverlayLogVisible(context)
+    }
+
+    fun updateEflinkEnabled(value: Boolean) {
+        eflinkEnabled = value
+        ModuleSettings.setEflinkEnabled(context, value)
+    }
+
+    fun updateEflinkName(value: String) {
+        eflinkName = value.trim().take(64)
+        ModuleSettings.setEflinkPlayerName(context, eflinkName)
+    }
+
+    fun updateEflinkRoom(value: String) {
+        eflinkRoom = value.trim().take(64)
+        ModuleSettings.setEflinkRoomName(context, eflinkRoom)
+    }
+
+    fun updateEflinkPort(value: Int) {
+        if (value < 1024 || value > 65535 || value == 47616) return
+        eflinkPort = value
+        ModuleSettings.setEflinkPort(context, value)
+    }
+
+    fun updateEflinkMaxPlayers(value: Int) {
+        if (value < 2 || value > 16) return
+        eflinkMaxPlayers = value
+        ModuleSettings.setEflinkMaxPlayers(context, value)
     }
 
     fun updateHideUid(value: Boolean) {
