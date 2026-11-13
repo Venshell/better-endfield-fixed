@@ -7,6 +7,7 @@
 // game dependencies, so it can be exercised by a plain test program.
 #include "eflink_platform.h"
 #include "link_protocol.h"
+#include <poll.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -674,16 +675,25 @@ private:
             std::vector<std::function<void()>> work;
             {std::lock_guard lock(commandMutex);work.swap(commands);}
             for(auto& command:work) {try {command();} catch(const std::exception& e) {notice(e.what(),true);}}
-            fd_set reads,writes,errors;FD_ZERO(&reads);FD_ZERO(&writes);FD_ZERO(&errors);
-            int maxFd=-1;
-            auto watch=[&](SOCKET s,bool write){if(s==INVALID_SOCKET) return;FD_SET(s,&reads);FD_SET(s,&errors);if(write) FD_SET(s,&writes);if(s>maxFd) maxFd=s;};
+            std::vector<pollfd> polled;
+            auto watch=[&](SOCKET s,bool write){
+                if(s==INVALID_SOCKET) return;
+                short events=POLLIN;
+                if(write) events=static_cast<short>(events|POLLOUT);
+                polled.push_back(pollfd{s,events,0});
+            };
             watch(discovery,false);watch(udp,false);watch(listener,false);
             for(auto& [id,m]:members) watch(m.tcp.socket,!m.tcp.out.empty());
             for(auto& p:pending) watch(p->tcp.socket,!p->tcp.out.empty());
             watch(server.socket,!server.out.empty());
-            timeval timeout{0,10000};
-            const int ready=maxFd>=0?select(maxFd+1,&reads,&writes,&errors,&timeout):(platform::SleepMs(10),0);
-            if(ready>0) service(reads,writes,errors);
+            int ready=0;
+            if(polled.empty()) platform::SleepMs(10);
+            else ready=::poll(polled.data(),static_cast<nfds_t>(polled.size()),10);
+            if(ready>0) {
+                IoReady io;
+                for(const auto& item:polled) if(item.revents) io.events.emplace(item.fd,item.revents);
+                service(io);
+            }
             timers();
             sendLocal();
         }
@@ -719,15 +729,34 @@ private:
             } catch(const std::exception&) {}
         }
     }
-    void service(fd_set& reads,fd_set& writes,fd_set& errors) {
-        if(discovery!=INVALID_SOCKET&&FD_ISSET(discovery,&reads)) readDatagrams(discovery,true);
-        if(udp!=INVALID_SOCKET&&FD_ISSET(udp,&reads)) readDatagrams(udp,false);
-        if(listener!=INVALID_SOCKET&&FD_ISSET(listener,&reads)) hostAccept();
+    // poll(2) instead of select(2): a game process can hand out descriptors past
+    // FD_SETSIZE, and FD_SET would then write past the fd_set bitmap.
+    struct IoReady {
+        std::map<SOCKET,short> events;
+        bool test(SOCKET socket,short flags) const {
+            if(socket==INVALID_SOCKET) return false;
+            auto found=events.find(socket);
+            return found!=events.end()&&(found->second&flags)!=0;
+        }
+        bool readable(SOCKET socket) const {return test(socket,POLLIN);}
+        bool writable(SOCKET socket) const {return test(socket,POLLOUT);}
+        bool failed(SOCKET socket) const {
+            auto found=events.find(socket);
+            if(socket==INVALID_SOCKET||found==events.end()) return false;
+            const short bits=found->second;
+            if((bits&POLLIN)!=0) return false;
+            return (bits&(POLLERR|POLLNVAL|POLLHUP))!=0;
+        }
+    };
+    void service(const IoReady& io) {
+        if(io.readable(discovery)) readDatagrams(discovery,true);
+        if(io.readable(udp)) readDatagrams(udp,false);
+        if(io.readable(listener)) hostAccept();
         // Pending connections: wait for HELLO.
         for(std::size_t i=0;i<pending.size();) {
             auto& m=*pending[i];bool keep=true;
-            if(FD_ISSET(m.tcp.socket,&errors)) keep=false;
-            else if(FD_ISSET(m.tcp.socket,&reads)) keep=receive(m.tcp,[&](proto::Tcp type,proto::Reader& r){if(type==proto::Tcp::Hello&&!m.welcomed) hostHello(m,r);},4096);
+            if(io.failed(m.tcp.socket)) keep=false;
+            else if(io.readable(m.tcp.socket)) keep=receive(m.tcp,[&](proto::Tcp type,proto::Reader& r){if(type==proto::Tcp::Hello&&!m.welcomed) hostHello(m,r);},4096);
             if(keep&&!m.tcp.out.empty()) keep=flush(m.tcp);
             if(m.welcomed) {auto id=m.id;members[id]=std::move(m);pending.erase(pending.begin()+i);continue;}
             if(!keep||nowMs()-m.tcp.lastHeard>8000) {
@@ -739,19 +768,19 @@ private:
         std::vector<std::uint16_t> dead;
         for(auto& [id,m]:members) {
             bool ok=true;
-            if(FD_ISSET(m.tcp.socket,&errors)) ok=false;
-            if(ok&&FD_ISSET(m.tcp.socket,&reads)) ok=receive(m.tcp,[&,id=id](proto::Tcp type,proto::Reader& r){auto f=members.find(id);if(f!=members.end()) hostFrame(f->second,type,r);});
+            if(io.failed(m.tcp.socket)) ok=false;
+            if(ok&&io.readable(m.tcp.socket)) ok=receive(m.tcp,[&,id=id](proto::Tcp type,proto::Reader& r){auto f=members.find(id);if(f!=members.end()) hostFrame(f->second,type,r);});
             if(!members.contains(id)) continue;
-            if(ok&&FD_ISSET(m.tcp.socket,&writes)) ok=flush(m.tcp);
+            if(ok&&io.writable(m.tcp.socket)) ok=flush(m.tcp);
             if(!ok) dead.push_back(id);
         }
         for(auto id:dead) dropMember(id,"连接断开");
         for(auto& [id,reason]:departing) dropMember(id,reason);
         departing.clear();
         if(server.socket!=INVALID_SOCKET) {
-            if(FD_ISSET(server.socket,&errors)) {closeSession(role.load()==Role::Connecting?"无法连接到房间（对方未开房或被防火墙阻止）":"与房主的连接中断",false,true);return;}
-            if(FD_ISSET(server.socket,&writes)&&!flush(server)) {closeSession("与房主的连接中断",false,true);return;}
-            if(FD_ISSET(server.socket,&reads)&&!receive(server,[&](proto::Tcp type,proto::Reader& r){clientFrame(type,r);})) {
+            if(io.failed(server.socket)) {closeSession(role.load()==Role::Connecting?"无法连接到房间（对方未开房或被防火墙阻止）":"与房主的连接中断",false,true);return;}
+            if(io.writable(server.socket)&&!flush(server)) {closeSession("与房主的连接中断",false,true);return;}
+            if(io.readable(server.socket)&&!receive(server,[&](proto::Tcp type,proto::Reader& r){clientFrame(type,r);})) {
                 if(role.load()!=Role::Offline) closeSession(role.load()==Role::Connecting?"连接被关闭（版本不兼容或对方拒绝）":"与房主的连接中断",false,true);
             }
         }

@@ -183,30 +183,38 @@ private:
         pose.rotation[2] = rotation.z;
         pose.rotation[3] = rotation.w;
         pose.timeMs = static_cast<std::uint32_t>(eflink::nowMs());
-        CollectBones(runtime, transform, pose);
+        CollectBones(runtime, character, transform, pose);
         pose.skeleton = skeleton_;
         return true;
     }
 
-    void CollectBones(Il2CppRuntime& runtime, void* root, eflink::proto::PlayerState& pose) {
+    void DropBones() {
+        bone_transforms_.clear();
+        bone_names_.clear();
+        bone_character_ = nullptr;
+        bone_root_ = nullptr;
+    }
+
+    void CollectBones(Il2CppRuntime& runtime, void* character, void* root, eflink::proto::PlayerState& pose) {
         if (!child_.entry || !child_count_.entry || !local_rotation_.entry || !object_name_.entry) return;
         const auto now = std::chrono::steady_clock::now();
-        if (bone_transforms_.empty() || now - last_bone_scan_ > std::chrono::seconds(2)) {
+        const bool changed = character != bone_character_ || root != bone_root_;
+        if (changed || bone_transforms_.empty() || now - last_bone_scan_ > std::chrono::seconds(2)) {
             const auto previous = bone_names_;
             bone_transforms_.clear();
             bone_names_.clear();
+            bone_character_ = character;
+            bone_root_ = root;
             int visited = 0;
             Walk(runtime, root, 0, visited);
             if (bone_names_ != previous) skeleton_ = static_cast<std::uint16_t>(skeleton_ + 1);
             last_bone_scan_ = now;
-            if (!model_path_.empty() || object_name_.entry) {
-                if (void* named = Call(runtime, object_name_, root, nullptr)) model_path_ = runtime.CopyString(named);
-            }
+            if (void* named = Call(runtime, object_name_, root, nullptr)) model_path_ = runtime.CopyString(named);
         }
         for (std::size_t index = 0; index < bone_transforms_.size() && pose.bones.size() / 4 < eflink::proto::kMaxBones; ++index) {
             Quat local{};
             if (!Read(runtime, local_rotation_, bone_transforms_[index], local)) {
-                bone_transforms_.clear();
+                DropBones();
                 return;
             }
             for (float value : {local.x, local.y, local.z, local.w})
@@ -391,6 +399,8 @@ private:
     std::uint16_t skeleton_ = 1;
     std::vector<void*> bone_transforms_;
     std::vector<std::string> bone_names_;
+    void* bone_character_ = nullptr;
+    void* bone_root_ = nullptr;
     std::chrono::steady_clock::time_point last_sample_{};
     std::chrono::steady_clock::time_point last_bone_scan_{};
     std::atomic<bool> running_{false}, started_{false}, hooked_{false}, pose_ready_{false};
