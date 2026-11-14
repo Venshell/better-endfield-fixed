@@ -13,6 +13,7 @@
                 <Button x:Name="ComposeButton" Content="组合已安装包" Click="Compose_Click" />
                 <Button x:Name="RefreshButton" Content="刷新" Click="Refresh_Click" />
                 <Button x:Name="PackageFolderButton" Content="打开模型文件夹" Click="OpenFolder_Click" />
+                <Button x:Name="DownloadModelsButton" Content="前往下载" Click="ModelSource_Click" Tag="https://discord.gg/F49akXaxy8" />
             </StackPanel>
             <Border x:Name="ModelDropArea" AllowDrop="True" Padding="20" CornerRadius="8"
                     BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -63,6 +64,7 @@
             <controls:WrapPanel HorizontalSpacing="12" VerticalSpacing="8">
                 <ComboBox x:Name="CharacterFilter" Header="按角色筛选" MinWidth="220" SelectionChanged="CharacterFilter_SelectionChanged" />
                 <Button x:Name="DisableAllButton" Content="关闭全部模型" VerticalAlignment="Bottom" Click="DisableAll_Click" />
+                <Button x:Name="BackfillBaselineButton" Content="补全版本信息" VerticalAlignment="Bottom" Click="BackfillBaseline_Click" />
             </controls:WrapPanel>
             <TextBlock x:Name="EmptyHint" Text="尚未导入模型包。已有其他格式？打开转换窗口查看支持范围与缺少的资料。" TextWrapping="Wrap" />
             <StackPanel x:Name="PackageCards" Spacing="12" />

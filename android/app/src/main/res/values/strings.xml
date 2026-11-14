@@ -211,6 +211,8 @@
     <string name="bem_keep_local_copies_hint">关闭后会移除应用内的副本；游戏仍从框架中的模型包读取。若框架副本缺失，将保留本地文件。</string>
     <string name="bem_storage_setting_failed">存储选项保存失败。</string>
     <string name="bem_operation_busy">请等待当前操作完成。</string>
+    <string name="bem_backfill_confirm_message">将为缺少版本信息的模型包补记创建时的游戏版本，不会修改模型内容。来源版本无法识别的包会跳过。</string>
+    <string name="bem_backfill_confirm">补全</string>
     <string name="overlay_preview">预览悬浮窗</string>
     <string name="overlay_preview_hint">在本机直接查看面板外观与布局，不需要注入游戏。</string>
 
