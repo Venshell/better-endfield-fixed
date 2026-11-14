@@ -35,6 +35,9 @@ const link = (value, label, required = false) => {
 const emailAddress = value => {
   const email = text(value, 254, '邮箱', true).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u.test(email)) fail(400, '邮箱地址格式不正确。');
+  // The mailbox that sends the code is configured on the server later.
+  // The address the user registers with must be a QQ mailbox.
+  if (email.slice(email.lastIndexOf('@') + 1) !== 'qq.com') fail(400, '目前仅支持 QQ 邮箱。');
   return email;
 };
 export function validateDraft(body) {

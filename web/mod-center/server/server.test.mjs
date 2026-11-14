@@ -304,8 +304,8 @@ test('email codes create a session and can only be used once', async () => {
   try {
     const status = await app.call('api/session', { anonymous: true });
     assert.equal(status.data.emailEnabled, true);
-    const requested = await app.call('auth/email/request', { method: 'POST', body: { email: 'Author@example.com' }, anonymous: true });
-    assert.equal(requested.status, 202); assert.equal(sent.length, 1); assert.match(sent[0].to, /^author@example\.com$/);
+    const requested = await app.call('auth/email/request', { method: 'POST', body: { email: 'Author@QQ.com' }, anonymous: true });
+    assert.equal(requested.status, 202); assert.equal(sent.length, 1); assert.match(sent[0].to, /^author@qq\.com$/);
     assert.match(sent[0].text, /\b\d{6}\b/);
     const code = sent[0].text.match(/\b(\d{6})\b/)[1];
     const emailCookie = requested.headers.getSetCookie().find(value => value.startsWith('be_email=')).split(';')[0];
@@ -314,7 +314,16 @@ test('email codes create a session and can only be used once', async () => {
     const sessionCookie = verified.headers.getSetCookie().find(value => value.startsWith('be_session=')).split(';')[0];
     const session = await app.call('api/session', { anonymous: true, headers: { Cookie: sessionCookie } });
     assert.match(session.data.user.login, /^creator-[a-f0-9]{8}$/);
-    assert.equal(app.db.prepare('SELECT email FROM users WHERE id=?').get(session.data.user.id).email, 'author@example.com');
+    assert.equal(app.db.prepare('SELECT email FROM users WHERE id=?').get(session.data.user.id).email, 'author@qq.com');
+    for (const email of ['author@example.com', 'author@qq.com.example.com', 'author@vip.qq.com']) {
+      const rejected = await app.call('auth/email/request', { method: 'POST', body: { email }, anonymous: true });
+      assert.equal(rejected.status, 400);
+      assert.equal(rejected.data.error, '目前仅支持 QQ 邮箱。');
+    }
+    const malformed = await app.call('auth/email/request', { method: 'POST', body: { email: 'not-an-email' }, anonymous: true });
+    assert.equal(malformed.status, 400);
+    assert.equal(malformed.data.error, '邮箱地址格式不正确。');
+    assert.equal(sent.length, 1);
     const reused = await app.call('auth/email/verify', { method: 'POST', body: { code }, anonymous: true, headers: { Cookie: emailCookie } });
     assert.equal(reused.status, 400);
   } finally { await app.close(); }

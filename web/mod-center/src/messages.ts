@@ -39,6 +39,7 @@ const messages: Record<string, string> = {
   "请先登录。": "Please sign in first.",
   "邮箱登录暂未配置。": "Email sign-in is not configured yet.",
   "邮箱地址格式不正确。": "The email address is invalid.",
+  "目前仅支持 QQ 邮箱。": "Only a QQ Mail address (@qq.com) can be used.",
   "登录邮件发送失败，请稍后重试。": "The sign-in email could not be sent. Please try again later.",
   "登录暂未开放。你可以先浏览作品和预览发布表单。": "Sign-in is not available yet. You can browse works and preview the publishing form.",
   "账号已绑定邮箱。": "This account already has a linked email.",
