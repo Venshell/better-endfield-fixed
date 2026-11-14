@@ -166,6 +166,12 @@ final class RuntimeBootstrap {
             Os.setenv("BETTER_ENDFIELD_NEXT_MEDIA_SCREEN_CONFIG", MediaScreenFiles.configuration, true);
             Os.setenv("BETTER_ENDFIELD_NEXT_APPEARANCE_CONFIG", configs.appearance(), true);
             Os.setenv("BETTER_ENDFIELD_NEXT_EFLINK_CONFIG", configs.link(), true);
+            boolean glideEnabled = ModuleSettings.isGlideEnabled(context);
+            Os.setenv("BETTER_ENDFIELD_GLIDE_ENABLED", glideEnabled ? "1" : "0", true);
+            if (glideEnabled) {
+                Os.setenv("BETTER_ENDFIELD_GLIDE_DESCENT_SPEED",
+                        Float.toString(ModuleSettings.readGlideDescentSpeed(context)), true);
+            }
             File eflinkDirectory = new File(context.getFilesDir(), "eflink");
             if (!configs.link().isEmpty()) {
                 //noinspection ResultOfMethodCallIgnored

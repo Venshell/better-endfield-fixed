@@ -200,6 +200,14 @@
     <string name="motion_vmd_cleared_unlinked">已停止引用该文件；框架服务未能删除它。</string>
     <string name="motion_vmd_unnamed">所选文件</string>
 
+    <string name="glide_card_eyebrow">MOVEMENT</string>
+    <string name="glide_card_title">缓降</string>
+    <string name="glide_enable">启用缓降</string>
+    <string name="glide_enable_hint">空中再次按跳跃键展开或收起。下次启动游戏时生效。</string>
+    <string name="glide_descent_speed">下降速度上限</string>
+    <string name="glide_speed_unit">米/秒</string>
+    <string name="glide_descent_speed_hint">默认 5 米/秒，可调 2–15 米/秒。只限制向下速度。</string>
+
     <!-- betterendfield.actions -->
     <string name="dash_card_eyebrow">SPRINT · betterendfield.actions</string>
     <string name="dash_card_title">冲刺持续</string>

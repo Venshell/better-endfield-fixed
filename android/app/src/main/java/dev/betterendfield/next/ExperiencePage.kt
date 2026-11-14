@@ -31,8 +31,37 @@ import androidx.compose.ui.unit.sp
 fun ExperiencePage(state: SettingsState) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
         InterfaceCard(state)
+        GlideCard(state)
         CameraCard(state)
         DashCard(state)
+    }
+}
+
+@Composable
+private fun GlideCard(state: SettingsState) {
+    SectionCard(
+        eyebrow = stringResource(R.string.glide_card_eyebrow),
+        title = stringResource(R.string.glide_card_title),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
+            SwitchRow(
+                title = stringResource(R.string.glide_enable),
+                description = stringResource(R.string.glide_enable_hint),
+                checked = state.glideEnabled,
+                onCheckedChange = state::updateGlideEnabled,
+            )
+            SliderRow(
+                label = stringResource(R.string.glide_descent_speed),
+                value = state.glideDescentSpeed,
+                onValueChange = state::updateGlideDescentSpeed,
+                valueRange = ModuleSettings.GLIDE_DESCENT_SPEED_MINIMUM..ModuleSettings.GLIDE_DESCENT_SPEED_MAXIMUM,
+                unit = stringResource(R.string.glide_speed_unit),
+                steps = 12,
+                decimals = 0,
+                enabled = state.glideEnabled,
+            )
+            BodyText(stringResource(R.string.glide_descent_speed_hint))
+        }
     }
 }
 

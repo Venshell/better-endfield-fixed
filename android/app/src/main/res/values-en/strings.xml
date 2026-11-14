@@ -135,6 +135,13 @@
     <string name="camera_group_values">Values</string>
     <string name="camera_speed_label">Movement speed</string>
     <string name="camera_fov_label">Field of view (FOV)</string>
+    <string name="glide_card_eyebrow">MOVEMENT</string>
+    <string name="glide_card_title">Glide</string>
+    <string name="glide_enable">Enable glide</string>
+    <string name="glide_enable_hint">Press jump again in the air to open or close it. Applies the next time the game starts.</string>
+    <string name="glide_descent_speed">Descent speed cap</string>
+    <string name="glide_speed_unit">m/s</string>
+    <string name="glide_descent_speed_hint">Default 5 m/s, adjustable from 2 to 15. Limits downward speed only.</string>
     <string name="dash_card_eyebrow">SPRINT · betterendfieldnext.actions</string>
     <string name="dash_card_title">Sustained Dash</string>
     <string name="dash_card_subtitle">Plays a character\'s special dash action continuously. The loop segment is driven by bone pose data shipped with the module; the desktop build uses no hotkey, so this page holds every setting.</string>

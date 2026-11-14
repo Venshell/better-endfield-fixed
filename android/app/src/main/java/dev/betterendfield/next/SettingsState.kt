@@ -572,6 +572,10 @@ class SettingsState(private val context: Context) {
         private set
     var pcUi by mutableStateOf(false)
         private set
+    var glideEnabled by mutableStateOf(false)
+        private set
+    var glideDescentSpeed by mutableStateOf(ModuleSettings.GLIDE_DESCENT_SPEED_DEFAULT)
+        private set
 
     // betterendfield.camera
     var disableDither by mutableStateOf(false)
@@ -839,6 +843,8 @@ class SettingsState(private val context: Context) {
         hideUid = ModuleSettings.isHideUidEnabled(context)
         hideHud = ModuleSettings.isHideHudEnabled(context)
         pcUi = ModuleSettings.isPcUiEnabled(context)
+        glideEnabled = ModuleSettings.isGlideEnabled(context)
+        glideDescentSpeed = ModuleSettings.readGlideDescentSpeed(context)
         disableDither = ModuleSettings.isDisableDitherEnabled(context)
         freeCamera = ModuleSettings.isFreeCameraEnabled(context)
         freeCameraFollowCharacter = ModuleSettings.isFreeCameraFollowCharacter(context)
@@ -1028,6 +1034,16 @@ class SettingsState(private val context: Context) {
         val trimmed = value.trim().take(128)
         eflinkServer = trimmed.ifEmpty { "127.0.0.1" }
         ModuleSettings.setEflinkServer(context, eflinkServer)
+    }
+
+    fun updateGlideEnabled(value: Boolean) {
+        glideEnabled = value
+        ModuleSettings.setGlideEnabled(context, value)
+    }
+
+    fun updateGlideDescentSpeed(value: Float) {
+        glideDescentSpeed = value
+        ModuleSettings.writeGlideDescentSpeed(context, value)
     }
 
     fun updateHideUid(value: Boolean) {

@@ -155,6 +155,10 @@ set_source_files_properties(
 
 add_library(betterendfieldnext_android SHARED
     native_bridge.cpp
+    modules/movement/glide_movement_module.cpp
+    modules/movement/glide_state.cpp
+    modules/movement/glide_stop_policy.cpp
+    "${BETTER_ENDFIELD_NEXT_ROOT}/native/shared/auto_glide_bridge.cpp"
     input_relay.cpp
     core/hook_broker.cpp
     core/log.cpp

@@ -163,6 +163,11 @@ final class ModuleSettings {
     private static final String LEGACY_DISABLE_DITHER = "enhancement_disable_dither";
 
     static final String OVERLAY_ENABLED = "overlay_enabled";
+    static final String GLIDE_ENABLED = "glide_enabled";
+    static final String GLIDE_DESCENT_SPEED = "glide_descent_speed";
+    static final float GLIDE_DESCENT_SPEED_DEFAULT = 5f;
+    static final float GLIDE_DESCENT_SPEED_MINIMUM = 2f;
+    static final float GLIDE_DESCENT_SPEED_MAXIMUM = 15f;
     static final String EFLINK_ENABLED = "eflink_enabled";
     private static final String EFLINK_LAN = "eflink_lan";
     private static final String EFLINK_INTERNET = "eflink_internet";
@@ -195,6 +200,29 @@ final class ModuleSettings {
 
     static void setOverlayEnabled(Context context, boolean enabled) {
         preferences(context).edit().putBoolean(OVERLAY_ENABLED, enabled).commit();
+    }
+
+    static boolean isGlideEnabled(Context context) {
+        return preferences(context).getBoolean(GLIDE_ENABLED, false);
+    }
+
+    static void setGlideEnabled(Context context, boolean enabled) {
+        preferences(context).edit().putBoolean(GLIDE_ENABLED, enabled).commit();
+    }
+
+    static float readGlideDescentSpeed(Context context) {
+        float speed = preferences(context).getFloat(GLIDE_DESCENT_SPEED, GLIDE_DESCENT_SPEED_DEFAULT);
+        if (!Float.isFinite(speed) || speed < GLIDE_DESCENT_SPEED_MINIMUM || speed > GLIDE_DESCENT_SPEED_MAXIMUM) {
+            return GLIDE_DESCENT_SPEED_DEFAULT;
+        }
+        return speed;
+    }
+
+    static void writeGlideDescentSpeed(Context context, float speed) {
+        float stored = speed;
+        if (!Float.isFinite(stored) || stored < GLIDE_DESCENT_SPEED_MINIMUM) stored = GLIDE_DESCENT_SPEED_MINIMUM;
+        if (stored > GLIDE_DESCENT_SPEED_MAXIMUM) stored = GLIDE_DESCENT_SPEED_MAXIMUM;
+        preferences(context).edit().putFloat(GLIDE_DESCENT_SPEED, stored).commit();
     }
 
     static boolean isEflinkEnabled(Context context) {

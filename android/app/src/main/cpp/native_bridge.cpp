@@ -20,6 +20,8 @@
 #include "modules/custom_model/resource_probe.h"
 #include "modules/custom_model/custom_model_module.h"
 #include "modules/camera/first_person_look_probe.h"
+#include "modules/movement/glide_movement_module.h"
+#include "modules/movement/glide_state.h"
 #include "modules/custom_model/android_mesh_builder.h"
 #include "../../../../../native/shared/third_party_modules/third_party_host.h"
 #include <dlfcn.h>
@@ -30,6 +32,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -85,6 +89,31 @@ Session& State() { static auto* state = new Session; return *state; }
 const char* Configured(const char* variable) {
     const char* value = std::getenv(variable);
     return value != nullptr && value[0] != '\0' ? value : nullptr;
+}
+
+bool ParseGlideDescentSpeed(const char* value, float& speed) {
+    if (value == nullptr || value[0] == '\0' || value[0] == ' ' ||
+            value[0] == '\t' || value[0] == '\n' || value[0] == '\r') {
+        return false;
+    }
+    for (const char* cursor = value; *cursor != '\0'; ++cursor) {
+        const char character = *cursor;
+        if ((character < '0' || character > '9') && character != '+' &&
+                character != '-' && character != '.' && character != 'e' &&
+                character != 'E') {
+            return false;
+        }
+    }
+    errno = 0;
+    char* end = nullptr;
+    const float parsed = std::strtof(value, &end);
+    if (errno == ERANGE || end == value || *end != '\0' || !std::isfinite(parsed) ||
+            parsed < BetterEndfield::Movement::kMinimumGlideDescentSpeed ||
+            parsed > BetterEndfield::Movement::kMaximumGlideDescentSpeed) {
+        return false;
+    }
+    speed = parsed;
+    return true;
 }
 
 void RunModules() {
@@ -183,6 +212,18 @@ void RunModules() {
     }
     if (Configured("BETTER_ENDFIELD_NEXT_EFLINK_CONFIG") != nullptr) {
         state.modules.emplace_back(std::make_unique<EflinkModule>());
+    }
+    if (const char* glide_enabled = std::getenv("BETTER_ENDFIELD_GLIDE_ENABLED");
+            glide_enabled != nullptr && std::strcmp(glide_enabled, "1") == 0) {
+        float descent_speed = 0.0f;
+        if (!ParseGlideDescentSpeed(std::getenv("BETTER_ENDFIELD_GLIDE_DESCENT_SPEED"), descent_speed)) {
+            LogError("runtime", "glide configuration rejected because descent speed is invalid");
+        } else {
+            BetterEndfield::Movement::GlideConfig config{};
+            config.enabled = true;
+            config.descent_speed = descent_speed;
+            state.modules.emplace_back(std::make_unique<GlideMovementModule>(config));
+        }
     }
 
     // Missing hot-update metadata delays only the affected module. The actual
