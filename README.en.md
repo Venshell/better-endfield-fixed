@@ -26,7 +26,7 @@ The Android settings app and in-game panel use this repository's Compose screens
 
 ## Features
 
-See the release notes for device validation details.
+The first four rows match stable [`main`](https://github.com/Venshell/better-endfield-fixed/tree/main). Glide and multiplayer exist only on this experimental branch. See the release notes for device validation details.
 
 | Feature | Android ARM64 |
 | --- | --- |
@@ -34,6 +34,8 @@ See the release notes for device validation details.
 | Camera | First person and gyroscope, free camera, global FOV, character following, time freeze and camera paths |
 | MMD and reception room display | Work import and slot confirmation, in-game playback, image and video casting |
 | Game settings | Home screen game management and feature summary, in-game control panel, UI settings, character voice and sustained dash |
+| Glide | On this branch, not in the stable release. Press jump again in the air to open or close it. See [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive) |
+| Multiplayer | On this branch, not in the stable release. LAN and internet rooms. See [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive) |
 
 Appearance packages use the standard BEMv1 `.bem` format. See the [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md) for format and conversion limits.
 
