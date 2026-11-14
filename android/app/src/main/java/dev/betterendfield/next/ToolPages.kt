@@ -76,18 +76,20 @@ fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
         }
 
         PanelCard {
-            SubPageRow(
-                title = stringResource(R.string.page_log),
-                hint = stringResource(R.string.log_caption),
-                state = state.journalText.isNotEmpty(),
-                onClick = { state.openPage(SettingsPage.LOG) },
-            )
-            SubPageRow(
-                title = stringResource(R.string.page_about),
-                hint = stringResource(R.string.about_license_value),
-                state = true,
-                onClick = { state.openPage(SettingsPage.ABOUT) },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
+                SubPageRow(
+                    title = stringResource(R.string.page_log),
+                    hint = stringResource(R.string.log_caption),
+                    state = state.journalText.isNotEmpty(),
+                    onClick = { state.openPage(SettingsPage.LOG) },
+                )
+                SubPageRow(
+                    title = stringResource(R.string.page_about),
+                    hint = stringResource(R.string.about_license_value),
+                    state = true,
+                    onClick = { state.openPage(SettingsPage.ABOUT) },
+                )
+            }
         }
     }
 }
@@ -97,40 +99,40 @@ private fun OverlayCard(state: SettingsState, onPreviewOverlay: () -> Unit) {
         eyebrow = stringResource(R.string.overlay_card_eyebrow),
         title = stringResource(R.string.overlay_card_title),
     ) {
-        SwitchRow(
-            title = stringResource(R.string.overlay_enable),
-            description = stringResource(R.string.overlay_enable_hint),
-            checked = state.overlayEnabled,
-            onCheckedChange = state::updateOverlayEnabled,
-        )
-        SwitchRow(
-            title = stringResource(R.string.overlay_auto_snap),
-            description = stringResource(R.string.overlay_auto_snap_hint),
-            checked = state.overlayAutoSnap,
-            onCheckedChange = state::updateOverlayAutoSnap,
-        )
-        SwitchRow(
-            title = stringResource(R.string.overlay_log_visible),
-            description = stringResource(R.string.overlay_log_visible_hint),
-            checked = state.overlayLogVisible,
-            onCheckedChange = state::updateOverlayLogVisible,
-        )
-        SliderRow(
-            label = stringResource(R.string.overlay_transparency),
-            value = state.overlayTransparency,
-            onValueChange = state::updateOverlayTransparency,
-            valueRange = 0f..ModuleSettings.OVERLAY_TRANSPARENCY_MAXIMUM,
-            unit = "%",
-            steps = 80,
-            decimals = 0,
-        )
-        GhostButton(
-            text = stringResource(R.string.overlay_preview),
-            onClick = onPreviewOverlay,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = Be.Space.m),
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
+            SwitchRow(
+                title = stringResource(R.string.overlay_enable),
+                description = stringResource(R.string.overlay_enable_hint),
+                checked = state.overlayEnabled,
+                onCheckedChange = state::updateOverlayEnabled,
+            )
+            SwitchRow(
+                title = stringResource(R.string.overlay_auto_snap),
+                description = stringResource(R.string.overlay_auto_snap_hint),
+                checked = state.overlayAutoSnap,
+                onCheckedChange = state::updateOverlayAutoSnap,
+            )
+            SwitchRow(
+                title = stringResource(R.string.overlay_log_visible),
+                description = stringResource(R.string.overlay_log_visible_hint),
+                checked = state.overlayLogVisible,
+                onCheckedChange = state::updateOverlayLogVisible,
+            )
+            SliderRow(
+                label = stringResource(R.string.overlay_transparency),
+                value = state.overlayTransparency,
+                onValueChange = state::updateOverlayTransparency,
+                valueRange = 0f..ModuleSettings.OVERLAY_TRANSPARENCY_MAXIMUM,
+                unit = "%",
+                steps = 80,
+                decimals = 0,
+            )
+            GhostButton(
+                text = stringResource(R.string.overlay_preview),
+                onClick = onPreviewOverlay,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

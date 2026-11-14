@@ -32,40 +32,40 @@ object Be {
     object Colors {
         /* --- the neutral ramp: page -> panel -> row -> field --- */
 
-        val background = Color(0xFF0A0A0A)
-        val panel = Color(0xFF121212)
-        val panelHigh = Color(0xFF1D1D1D)
+        val background = Color(0xFF0B0B0B)
+        val panel = Color(0xFF171717)
+        val panelHigh = Color(0xFF222222)
 
         /**
-         * The fourth step. The palette sheet only names three greys, but a row
-         * sits *on* a panel, so panel itself cannot serve as the row fill
-         * without flattening the card. #191919 keeps the step visible from the
-         * panel (#121212) and still readable against the field (#1D1D1D).
+         * The fourth step. A row sits *on* a panel, so panel itself cannot serve
+         * as the row fill without flattening the card. #222222 keeps the step
+         * visible from the panel (#171717) and still readable against the field
+         * (#292929).
          */
-        val row = Color(0xFF191919)
-        val rowHigh = Color(0xFF242424)
-        val field = Color(0xFF1D1D1D)
+        val row = Color(0xFF222222)
+        val rowHigh = Color(0xFF2E2E2E)
+        val field = Color(0xFF292929)
 
         /* --- the one accent --- */
 
-        val accent = Color(0xFFF4E900)
-        val accentPressed = Color(0xFFE8DC00)
+        val accent = Color(0xFFEDED00)
+        val accentPressed = Color(0xFFDEDE00)
 
         /** Pressed-but-not-primary and disabled accent, for borders and busy hints. */
-        val accentDim = Color(0xFFB9AE00)
-        val accentSoft = Color(0x1FF4E900)
-        val accentInk = Color(0xFF0A0A0A)
+        val accentDim = Color(0xFFB5B000)
+        val accentSoft = Color(0x1FEDED00)
+        val accentInk = Color(0xFF111111)
 
         /* --- text --- */
 
-        val textPrimary = Color(0xFFF2F2EE)
-        val textSecondary = Color(0xFFA8A8A8)
+        val textPrimary = Color(0xFFF5F5F5)
+        val textSecondary = Color(0xFF999999)
         val textMuted = Color(0xFF777777)
 
         /* --- dividers, only ever drawn as a 1dp rule --- */
 
-        val track = Color(0xFF303030)
-        val outline = Color(0xFF303030)
+        val track = Color(0xFF333333)
+        val outline = Color(0xFF333333)
         val outlineStrong = Color(0xFF3A3A3A)
 
         val switchTrackOff = Color(0xFF303030)
@@ -101,7 +101,7 @@ object Be {
 
         /** Palette presets offered for the login logo theme colour. */
         val logoPresets = listOf(
-            "#F4E900", "#35C8E8", "#F0645A", "#41C77A", "#D866B7", "#F2F2F2",
+            "#EDED00", "#35C8E8", "#F0645A", "#41C77A", "#D866B7", "#F2F2F2",
         )
     }
 
@@ -114,24 +114,36 @@ object Be {
         val l = 12.dp
         val xl = 14.dp
         val xxl = 16.dp
-        val gutter = 16.dp
-        val cardInner = 16.dp
+        val gutter = 22.dp
+        val cardInner = 21.dp
+        /** Gap between the profile-frame cards. */
+        val stack = 15.dp
         val section = 22.dp
         val page = 20.dp
         val footer = 32.dp
     }
 
+    /**
+     * One radius scale, read off the 390-wide profile frame. Every language
+     * uses these same values; they are mirrored in `res/values/dimens.xml` and
+     * are not overridden per locale.
+     *
+     * 23 cards and the dock, 19 a full row, 17 a compact row and the active
+     * dock item, 12 buttons and fields, 11 and 8 the two badges, 3 the meter.
+     */
     object Radius {
-        val chip = 7.dp
+        val progress = 3.dp
+        val chip = 8.dp
         val inner = 8.dp
+        val badge = 11.dp
         val input = 12.dp
-        val row = 13.dp
-        val status = 13.dp
-        val button = 14.dp
-        val tabs = 18.dp
-        val card = 20.dp
-        val badge = 20.dp
-        val header = 22.dp
+        val button = 12.dp
+        val compact = 17.dp
+        val row = 19.dp
+        val status = 19.dp
+        val tabs = 23.dp
+        val card = 23.dp
+        val header = 23.dp
         val pill = 999.dp
     }
 
@@ -142,6 +154,8 @@ object Be {
         val buttonHeight = 54.dp
         val tabHeight = 44.dp
         val tabHeightBottom = 56.dp
+        val dockHeight = 72.dp
+        val dockItemHeight = 62.dp
         val sliderHeight = 40.dp
         val swatch = 42.dp
         val avatar = 68.dp
@@ -165,6 +179,7 @@ object Be {
         val rowTitle = 15.sp
         val tab = 14.sp
         val tabCompact = 13.sp
+        val dock = 10.sp
         val appName = 24.sp
         val mono = 11.sp
         val monoSmall = 9.sp

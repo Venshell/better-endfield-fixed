@@ -5,7 +5,7 @@
     <string name="media_screen_open">管理媒体屏</string>
     <string name="third_party_eyebrow">THIRD-PARTY MODULES</string>
     <string name="third_party_title">第三方模块</string>
-    <string name="third_party_hint">安装 ZIP 后可启用、排序并打开模块界面。游戏内运行状态以运行日志为准。</string>
+    <string name="third_party_hint">安装 ZIP 后可启用、排序并打开模块界面。</string>
     <string name="third_party_manage">安装 / 管理第三方模块</string>
     <string name="third_party_import">选择模块 ZIP</string>
     <string name="third_party_empty">尚未安装第三方模块。</string>
@@ -15,7 +15,7 @@
     <string name="third_party_up">上移</string>
     <string name="third_party_down">下移</string>
     <string name="third_party_remove">移除</string>
-    <string name="third_party_saved">模块选择已保存；运行中的游戏可能需要重新启动。</string>
+    <string name="third_party_saved">模块选择已保存。请重新启动游戏。</string>
     <string name="third_party_error">第三方模块操作失败：%1$s</string>
     <string name="app_name">Better Endfield</string>
     <string name="xposed_description">Modular Endfield model replacement and per-character voice routing</string>
@@ -27,7 +27,7 @@
     <string name="bem_install_restart_hint">保存选择后，下次启动游戏生效。</string>
     <string name="overlay_model_restart_hint">模型选择保存后，请重新启动游戏使其生效。</string>
     <string name="overlay_model_restart_detail">更改后需重启游戏</string>
-    <string name="overlay_fov_delivery_hint">改动会尝试送达当前游戏；实际生效以运行日志为准</string>
+    <string name="overlay_fov_delivery_hint">改动会送达当前游戏</string>
     <string name="diagnostics_eyebrow">DIAGNOSTICS</string>
     <string name="diagnostics_title">运行状态</string>
     <string name="diagnostics_framework">框架入口：libxposed API 102</string>
@@ -48,6 +48,11 @@
     <string name="model_group_logo">Logo / 主题色</string>
     <string name="model_theme_section">登录界面主题</string>
     <string name="model_character">替换角色</string>
+    <string name="search_character">搜索角色</string>
+    <string name="search_action">搜索动作</string>
+    <string name="search_voice">搜索角色</string>
+    <string name="search_empty">没有匹配项</string>
+    <string name="search_features">搜索功能</string>
     <string name="model_action">最终循环动作</string>
     <string name="model_final_loop">原生循环（遵循 LoopTime）</string>
     <string name="model_force_loop">强制循环（覆盖非循环动画）</string>
@@ -68,7 +73,7 @@
     <string name="voice_table_ready">桌面端旧表已加载：%1$d 名角色，%2$d 个角色/语言目录。</string>
     <string name="voice_table_failed">旧表加载失败：%1$s</string>
     <string name="voice_table_unavailable">无法读取预存语气词对照表，设置未保存。</string>
-    <string name="restart_required">设置已保存。请强制停止并重新启动游戏；首次使用新的配音规则时会自动生成手机专用 catalog。</string>
+    <string name="restart_required">设置已保存。请强制停止并重新启动游戏。</string>
     <string name="model_restart_required">模型设置已保存。请强制停止并重新启动游戏。</string>
 
     <!-- betterendfield.ui -->
@@ -77,7 +82,7 @@
     <string name="ui_hide_uid">隐藏 UID 水印</string>
     <string name="ui_hide_uid_hint">隐藏画面中的账号 UID。</string>
     <string name="ui_hide_hud">启用隐藏全部 HUD</string>
-    <string name="ui_hide_hud_hint">在悬浮窗中切换，不影响菜单。</string>
+    <string name="ui_hide_hud_hint">在悬浮窗中切换。</string>
     <string name="ui_pc">使用 PC 界面布局</string>
     <string name="ui_pc_hint">切换键盘输入对应的界面布局，建议连接键鼠或手柄。触屏按钮可能消失；关闭后恢复此前的输入类型，不更改平台身份。重启游戏后装载此设置。</string>
 
@@ -169,15 +174,15 @@
     <string name="motion_vmd_import_working">正在读取所选文件…</string>
     <string name="motion_vmd_imported">已导入 %1$s（%2$s）。游戏运行中会立即生效。</string>
     <string name="camera_settings_live">相机设置已保存，正在运行的游戏会立即采用。</string>
-    <string name="camera_settings_not_delivered">相机设置已保存，但没有送达游戏进程（游戏未运行、模块未激活或框架服务未连接）。下次启动游戏时生效。</string>
+    <string name="camera_settings_not_delivered">相机设置已保存，但没有送达游戏进程。下次启动游戏时生效。</string>
     <string name="camera_settings_unchanged">相机设置没有变化。</string>
     <string name="motion_vmd_import_failed">导入失败：%1$s</string>
     <string name="motion_vmd_unreadable">无法读取所选文件</string>
     <string name="motion_vmd_too_large">文件超过 64 MiB，原生装载器不接收</string>
-    <string name="motion_vmd_not_a_motion">不是 VMD 动作文件（前 30 字节文件头不匹配）</string>
+    <string name="motion_vmd_not_a_motion">不是 VMD 动作文件</string>
     <string name="motion_vmd_publish_failed">无法写入框架服务，请确认 LSPosed 已激活并已启用本模块</string>
     <string name="motion_vmd_cleared">已清除导入，下次启动游戏时不再指向该文件。</string>
-    <string name="motion_vmd_cleared_unlinked">已停止引用该文件；框架服务未能删除它，但配置已不再指向它。</string>
+    <string name="motion_vmd_cleared_unlinked">已停止引用该文件；框架服务未能删除它。</string>
     <string name="motion_vmd_unnamed">所选文件</string>
 
     <!-- betterendfield.actions -->
@@ -216,7 +221,7 @@
     <string name="degree_suffix">°</string>
     <string name="module_will_load">会随游戏启动</string>
     <string name="module_will_not_load">不会装载</string>
-    <string name="overlay_turned_on">悬浮窗已启用。首次启用请重启游戏；面板随游戏页面显示和隐藏。</string>
+    <string name="overlay_turned_on">悬浮窗已启用。首次启用请重启游戏。</string>
     <string name="overlay_turned_off">悬浮窗已关闭。重新进入游戏页面后生效。</string>
 
     <!-- 导航树 -->
@@ -265,10 +270,10 @@
     <string name="game_shizuku_state_unavailable">Shizuku 未连接或版本过旧</string>
     <string name="game_choose_target">请先明确选择一个游戏。</string>
     <string name="game_launch_unavailable">此游戏没有可用的启动入口。</string>
-    <string name="game_launch_requested">已发起启动请求；请以系统实际打开结果为准。</string>
+    <string name="game_launch_requested">已发起启动请求。</string>
     <string name="game_launch_failed">无法发起启动请求。</string>
     <string name="game_scope_unavailable">LSPosed 服务尚未连接。</string>
-    <string name="game_scope_approved">LSPosed 已批准；当前作用域已重新读取。</string>
+    <string name="game_scope_approved">LSPosed 已批准。</string>
     <string name="game_scope_unverified">LSPosed 已回复，但复核时未发现所选游戏；请在 LSPosed 中检查作用域。</string>
     <string name="game_scope_failed">LSPosed 未批准或请求失败。</string>
     <string name="game_scope_waiting">已发起请求。请下拉通知栏批准 LSPosed 的作用域请求，再返回此页查看状态。</string>
@@ -280,7 +285,7 @@
     <string name="game_shizuku_need_permission">请先单独授予 Shizuku 权限。</string>
     <string name="game_force_stop_busy">正在处理上一次停止请求。</string>
     <string name="game_force_stop_starting">正在连接 Shizuku 服务。</string>
-    <string name="game_force_stop_sent">系统已接受停止请求；此状态不代表游戏界面已关闭。</string>
+    <string name="game_force_stop_sent">系统已接受停止请求。</string>
     <string name="game_force_stop_rejected">安全校验拒绝了这个目标。</string>
     <string name="game_force_stop_timeout">停止请求超时，服务已结束。</string>
     <string name="game_force_stop_failed">停止请求失败，请确认 Shizuku 运行状态和授权。</string>
@@ -294,7 +299,7 @@
     <string name="camera_group_free">自由镜头</string>
     <string name="camera_group_first_person">第一人称</string>
     <string name="camera_default_fov">默认视野（FOV）</string>
-    <string name="camera_default_fov_hint">自由视角进入或复位时使用，不影响游戏本体镜头。</string>
+    <string name="camera_default_fov_hint">自由视角进入或复位时使用。</string>
     <string name="camera_first_person_enter">进入第一人称设置</string>
     <string name="camera_first_person_hint_short">眼位、操控与场景行为</string>
 
@@ -319,7 +324,7 @@
 
     <string name="fp_group_diagnostics">诊断</string>
     <string name="camera_fp_look_probe">接口探针</string>
-    <string name="camera_fp_look_probe_hint">开启后下次启动游戏时，模块只读地枚举游戏的视角入口（类、方法、字段）并写进日志，不改任何状态、不影响游戏。改动需重启游戏才生效。</string>
+    <string name="camera_fp_look_probe_hint">开启后下次启动游戏时把视角入口写入日志。改动需重启游戏才生效。</string>
 
     <!-- 运行日志 -->
     <string name="log_eyebrow">RUNTIME JOURNAL</string>
@@ -430,7 +435,7 @@
 
 <string name="voice_list_caption">全角色语言规则</string>
 
-<string name="settings_description">为每名角色独立选择中文、英文、日文、韩文或跟随游戏。角色与语气词对照表直接复用桌面端内置旧表；所需 resident catalog 会在下次启动游戏时从手机本机语言包单独生成。</string>
+<string name="settings_description">为每名角色独立选择中文、英文、日文、韩文或跟随游戏。</string>
 
 <string name="current_setting_ready">修改自动保存；文本停止编辑后保存，离开页面时刷新。配置在强制停止并重新启动游戏后装载；运行中的动作由悬浮窗触发。</string>
 
@@ -517,7 +522,7 @@
 
 <string name="mmd_manage">MMD / 高级运镜 / 导入作品</string>
 
-<string name="mmd_description">选择包含 set.ini 及其引用文件的作品目录。文件复制到应用内部，发布成功后可供游戏读取。导入和设置自动保存，重启游戏后装载；播放结果以游戏悬浮窗状态为准。</string>
+<string name="mmd_description">选择包含 set.ini 及其引用文件的作品目录。文件复制到应用内部，发布成功后可供游戏读取。导入和设置自动保存，重启游戏后装载。</string>
 
 <string name="mmd_import">选择作品目录并导入</string>
 
@@ -553,13 +558,13 @@
 
 <string name="mmd_face">播放表情</string>
 
-<string name="mmd_face_hint">使用作品中的面部表情，默认开启。播放能力以游戏悬浮窗状态为准。</string>
+<string name="mmd_face_hint">使用作品中的面部表情，默认开启。</string>
 
 <string name="mmd_motion_scale">动作位移缩放（0.05–5）</string>
 
 <string name="mmd_terrain">地形跟随</string>
 
-<string name="mmd_terrain_hint">让身体动作跟随地面高度，默认关闭；需要可用的地形接口，实际能力以游戏状态为准。</string>
+<string name="mmd_terrain_hint">让身体动作跟随地面高度，默认关闭。</string>
 
 <string name="mmd_cloth_mode">布料模式</string>
 
@@ -569,7 +574,7 @@
 
 <string name="mmd_cloth_freeze">冻结模式</string>
 
-<string name="mmd_cloth_hint">游戏模式保留原有布料模拟，稳定模式优先稳定播放，冻结模式固定布料；以当前角色支持的能力为准。</string>
+<string name="mmd_cloth_hint">游戏模式保留原有布料模拟，稳定模式优先稳定播放，冻结模式固定布料。</string>
 
 <string name="camera_advanced_title">高级运镜与关键帧</string>
 
@@ -593,7 +598,7 @@
 
 <string name="camera_keyframe_loop_hint">关键帧路径播放到结尾后重新播放。</string>
 
-<string name="camera_keyframe_file_hint">关键帧文件保存在游戏内部存储的 betterendfieldnext/camera-path.becam。保存和加载由游戏悬浮窗执行，结果以悬浮窗状态为准。</string>
+<string name="camera_keyframe_file_hint">关键帧文件保存在游戏内部存储的 betterendfieldnext/camera-path.becam。保存和加载由游戏悬浮窗执行。</string>
 
 
 
@@ -694,7 +699,7 @@
     <string name="media_toggle_hotkey">启停快捷键</string>
     <string name="media_pause_hotkey">暂停／继续快捷键</string>
     <string name="media_save">保存设置</string>
-    <string name="media_saved">媒体屏设置已保存，冷重启游戏后生效</string>
+    <string name="media_saved">媒体屏设置已保存，重启游戏后生效</string>
     <string name="media_save_failed">设置未保存：%1$s</string>
     <string name="media_importing">导入中…</string>
     <string name="media_imported">媒体导入完成并已保存</string>

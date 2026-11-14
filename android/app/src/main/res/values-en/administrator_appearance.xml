@@ -3,7 +3,7 @@
     <string name="admin_appearance_eyebrow">ADMINISTRATOR</string>
     <string name="admin_appearance_next_launch">Saved settings load the next time the game starts.</string>
     <string name="admin_appearance_save_failed">Could not save settings. Please retry.</string>
-    <string name="home_feature_snapshot_hint">These are saved enabled settings. They do not confirm the current game process has applied them.</string>
+    <string name="home_feature_snapshot_hint">These are saved enabled settings.</string>
     <string name="home_feature_empty">No enhancements are enabled.</string>
     <string name="home_dash_no_characters">No characters selected.</string>
 </resources>
