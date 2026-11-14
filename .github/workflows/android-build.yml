@@ -5,6 +5,7 @@ on:
     branches:
       - fix/android-camera-compat
       - main
+      - experimental/eflink
     paths:
       - '.github/workflows/android-build.yml'
       - 'android/**'
