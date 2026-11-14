@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """EF Link lobby for game.venshell.top/endfield.
 
-Players dial TCP game.venshell.top:47617. Each line is JSON and carries
-"game":"endfield". This process lists rooms and splices the guest TCP stream
-to the host. Bytes after "bridged" are the unchanged EF Link frames.
-
-Internet pose and chat ride that TCP splice. UDP stays on the LAN between
-phones and is not opened here.
+Players dial TCP and UDP on the same port. Each TCP line is JSON and carries
+"game":"endfield". This process lists rooms, splices each guest's TCP stream
+to the host, and relays UDP the same way. Phones only talk to this server, so
+symmetric NAT does not matter. Bytes after the handshake are EF Link frames.
+A UDP datagram is an 8-byte channel token plus one EF Link datagram.
 
     python3 server.py --bind 0.0.0.0 --port 47617
 """
@@ -37,6 +36,9 @@ class Room:
         self.write_lock = threading.Lock()
         self.pending = {}
         self.lock = threading.Lock()
+        self.udp_token = secrets.token_hex(8)
+        self.host_udp = None
+        self.relays = []
 
     def public(self):
         return {
@@ -69,7 +71,9 @@ class Lobby:
             room = self.by_control.pop(control, None)
             if room is not None:
                 self.rooms.pop(room.id, None)
-            return room
+        if room is not None:
+            forget_room(room)
+        return room
 
     def get(self, room_id):
         with self.lock:
@@ -81,6 +85,9 @@ class Lobby:
 
 
 LOBBY = Lobby()
+RELAY_LOCK = threading.Lock()
+HOST_TOKENS = {}
+RELAYS = {}
 
 
 def send_line(conn, payload, lock=None):
@@ -133,6 +140,53 @@ def splice(left, right):
             conn.close()
         except OSError:
             pass
+
+
+def forget_relay(room, token):
+    with RELAY_LOCK:
+        RELAYS.pop(token, None)
+        try:
+            room.relays.remove(token)
+        except ValueError:
+            pass
+
+
+def forget_room(room):
+    with RELAY_LOCK:
+        HOST_TOKENS.pop(bytes.fromhex(room.udp_token), None)
+        for token in room.relays:
+            RELAYS.pop(token, None)
+        room.host_udp = None
+
+
+def relay_udp(sock):
+    while True:
+        try:
+            data, addr = sock.recvfrom(2048)
+        except OSError:
+            return
+        if len(data) < 8:
+            continue
+        token, payload = data[:8], data[8:]
+        with RELAY_LOCK:
+            room = HOST_TOKENS.get(token)
+            if room is not None:
+                room.host_udp = addr
+                continue
+            channel = RELAYS.get(token)
+            if channel is None:
+                continue
+            host = channel["room"].host_udp
+            if host is not None and addr == host:
+                target = channel["guest"]
+            else:
+                channel["guest"] = addr
+                target = host
+        if target is not None and payload:
+            try:
+                sock.sendto(data, target)
+            except OSError:
+                pass
 
 
 def fail(conn, error):
@@ -199,7 +253,9 @@ def host(conn, peer, message):
         fail(conn, "full")
         return
     try:
-        send_line(conn, {"op": "hosted", "room_id": room.id}, room.write_lock)
+        with RELAY_LOCK:
+            HOST_TOKENS[bytes.fromhex(room.udp_token)] = room
+        send_line(conn, {"op": "hosted", "room_id": room.id, "udp": room.udp_token}, room.write_lock)
         conn.settimeout(30)
         while True:
             try:
@@ -238,26 +294,33 @@ def join(conn, message):
     if room.players >= room.max_players:
         fail(conn, "full")
         return
-    token = secrets.token_hex(8)
+    token = secrets.token_hex(16)
+    relay = secrets.token_hex(8)
     pending = {"event": threading.Event(), "socket": None}
+    relay_key = bytes.fromhex(relay)
+    with RELAY_LOCK:
+        room.relays.append(relay_key)
+        RELAYS[relay_key] = {"room": room, "guest": None}
     with room.lock:
         room.pending[token] = pending
     try:
-        send_line(room.control, {"op": "guest", "token": token, "from": room.peer[0]}, room.write_lock)
+        send_line(room.control, {"op": "guest", "token": token, "from": room.peer[0], "relay": relay}, room.write_lock)
     except OSError:
         with room.lock:
             room.pending.pop(token, None)
+        forget_relay(room, relay_key)
         fail(conn, "host-offline")
         return
     if not pending["event"].wait(JOIN_WAIT) or pending["socket"] is None:
         with room.lock:
             room.pending.pop(token, None)
+        forget_relay(room, relay_key)
         fail(conn, "host-offline")
         return
     other = pending["socket"]
     try:
-        send_line(conn, {"op": "bridged"})
-        send_line(other, {"op": "bridged"})
+        send_line(conn, {"op": "bridged", "relay": relay})
+        send_line(other, {"op": "bridged", "relay": relay})
     except OSError:
         conn.close()
         other.close()
@@ -269,7 +332,7 @@ def join(conn, message):
 
 def accept(conn, message):
     token = message.get("token")
-    if not isinstance(token, str) or len(token) != 16:
+    if not isinstance(token, str) or len(token) != 32:
         fail(conn, "bad-token")
         return
     with LOBBY.lock:
@@ -297,7 +360,11 @@ def serve(bind, port):
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind((bind, port))
     listener.listen(64)
-    print(f"EF Link lobby on {bind}:{port}", flush=True)
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    udp.bind((bind, port))
+    threading.Thread(target=relay_udp, args=(udp,), daemon=True).start()
+    print(f"EF Link lobby on {bind}:{port} tcp+udp", flush=True)
     while True:
         conn, peer = listener.accept()
         threading.Thread(target=handle, args=(conn, peer), daemon=True).start()

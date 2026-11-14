@@ -274,6 +274,20 @@ private:
         }
     }
 
+    static bool splitLobby(const std::string& endpoint, std::string& host, std::uint16_t& port) {
+        const auto colon = endpoint.rfind(':');
+        if (colon == std::string::npos || colon == 0) return false;
+        try {
+            const auto value = std::stoul(endpoint.substr(colon + 1));
+            if (value == 0 || value > 65535) return false;
+            host = endpoint.substr(0, colon);
+            port = static_cast<std::uint16_t>(value);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
     void Poll() {
         const auto path = std::filesystem::path(directory_) / "command.json";
         std::error_code ignored;
@@ -321,14 +335,18 @@ private:
             net_.join(command.value("address", std::string{}), command.value("password", std::string{}));
         } else if (op == "join_lobby") {
             std::uint32_t roomId = command.value("room_id", 0u);
-            std::string failure;
-            const int bridged = lobby_endpoint_.empty() ? -1 : eflink::lobby::join(lobby_endpoint_, roomId, failure);
+            std::string failure, relay;
+            const int bridged = lobby_endpoint_.empty() ? -1 : eflink::lobby::join(lobby_endpoint_, roomId, relay, failure);
             if (bridged < 0) {
                 std::lock_guard lock(mutex_);
                 lobby_error_ = failure.empty() ? "未设置大厅地址" : failure;
             } else {
                 internet_room_.store(true);
-                net_.adoptServer(bridged, command.value("password", std::string{}), "lobby");
+                std::string host;
+                std::uint16_t relayPort = 0;
+                splitLobby(lobby_endpoint_, host, relayPort);
+                net_.adoptServer(bridged, command.value("password", std::string{}), "lobby",
+                    eflink::lobby::relayBytes(relay), host, relayPort);
             }
         } else if (op == "leave") {
             internet_room_.store(false);
@@ -388,6 +406,11 @@ private:
                     std::lock_guard lock(mutex_);
                     lobby_error_ = failure;
                 } else {
+                    std::string relayHost;
+                    std::uint16_t relayPort = 0;
+                    if (splitLobby(lobby_endpoint_, relayHost, relayPort)) {
+                        net_.setUdpRelay(relayHost, relayPort, eflink::lobby::relayBytes(host->udpToken()));
+                    }
                     lobby_host_ = std::move(host);
                     std::lock_guard lock(mutex_);
                     lobby_error_.clear();
@@ -397,22 +420,23 @@ private:
                 lobby_host_->beat(static_cast<int>(std::max<std::size_t>(1, snapshot.peers.size())));
                 std::string failure;
                 for (;;) {
-                    const int guest = lobby_host_->pollGuest(failure);
-                    if (guest < 0) {
-                        if (lobby_host_->roomId() == 0) {
-                            lobby_host_.reset();
-                            if (!failure.empty()) {
-                                std::lock_guard lock(mutex_);
-                                lobby_error_ = failure;
-                            }
+                    const auto guest = lobby_host_->pollGuest(failure);
+                    if (guest.lost || lobby_host_->roomId() == 0) {
+                        lobby_host_.reset();
+                        net_.clearUdpRelay();
+                        if (!failure.empty()) {
+                            std::lock_guard lock(mutex_);
+                            lobby_error_ = failure;
                         }
                         break;
                     }
-                    net_.adoptIncoming(guest, "lobby");
+                    if (guest.socket < 0) break;
+                    net_.adoptIncoming(guest.socket, "lobby", eflink::lobby::relayBytes(guest.relay));
                 }
             }
         } else if (lobby_host_) {
             lobby_host_.reset();
+            net_.clearUdpRelay();
         }
     }
 

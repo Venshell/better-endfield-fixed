@@ -138,8 +138,35 @@ inline std::vector<Room> list(const std::string& endpoint, std::string& error) {
     return rooms;
 }
 
+// 16 hex chars, the UDP relay channel. Empty when the lobby has no relay.
+inline std::string relayBytes(const std::string& hex) {
+    if (hex.size() != 16) return {};
+    std::string out(8, '\0');
+    auto nibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for (int index = 0; index < 8; ++index) {
+        const int hi = nibble(hex[static_cast<std::size_t>(index * 2)]);
+        const int lo = nibble(hex[static_cast<std::size_t>(index * 2 + 1)]);
+        if (hi < 0 || lo < 0) return {};
+        out[static_cast<std::size_t>(index)] = static_cast<char>((hi << 4) | lo);
+    }
+    return out;
+}
+
+struct GuestLink {
+    int socket = -1;
+    std::string relay;
+    bool lost = false;
+};
+
 // Returns the bridged game socket. The caller owns it. -1 on failure.
-inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& error) {
+// relay receives the guest's UDP channel token when the lobby provides one.
+inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& relay, std::string& error) {
+    relay.clear();
     const int socketFd = dial(endpoint, 4000, error);
     if (socketFd < 0) return -1;
     std::string line;
@@ -154,6 +181,7 @@ inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& 
         error = parsed.is_object() ? parsed.value("error", std::string{"大厅拒绝加入"}) : "大厅拒绝加入";
         return -1;
     }
+    relay = parsed.value("relay", std::string{});
     return socketFd;
 }
 
@@ -185,6 +213,7 @@ public:
             return false;
         }
         roomId_ = parsed.value("room_id", 0u);
+        udpToken_ = parsed.value("udp", std::string{});
         error.clear();
         return roomId_ != 0;
     }
@@ -192,46 +221,55 @@ public:
         if (control_ < 0) return;
         writeLine(control_, {{"op", "beat"}, {"players", players}});
     }
-    // -1 when no guest is waiting. A returned socket is already bridged.
-    int pollGuest(std::string& error) {
-        if (control_ < 0) return -1;
+    // No guest waiting: socket stays -1 and lost stays false.
+    GuestLink pollGuest(std::string& error) {
+        GuestLink result;
+        if (control_ < 0) {
+            result.lost = true;
+            return result;
+        }
         pollfd wait{control_, POLLIN, 0};
-        if (::poll(&wait, 1, 0) <= 0) return -1;
+        if (::poll(&wait, 1, 0) <= 0) return result;
         std::string line;
         if (!readLine(control_, line)) {
             error = "大厅断开了";
             close();
-            return -1;
+            result.lost = true;
+            return result;
         }
         const auto parsed = nlohmann::json::parse(line, nullptr, false);
-        if (!parsed.is_object() || parsed.value("op", std::string{}) != "guest") return -1;
+        if (!parsed.is_object() || parsed.value("op", std::string{}) != "guest") return result;
         const auto token = parsed.value("token", std::string{});
+        result.relay = parsed.value("relay", std::string{});
         const int socketFd = dial(endpoint_, 4000, error);
-        if (socketFd < 0) return -1;
+        if (socketFd < 0) return result;
         std::string answer;
         if (!writeLine(socketFd, {{"op", "accept"}, {"game", kGame}, {"token", token}}) || !readLine(socketFd, answer)) {
             ::close(socketFd);
             error = "无法接上大厅里的客人";
-            return -1;
+            return result;
         }
         const auto bridged = nlohmann::json::parse(answer, nullptr, false);
         if (!bridged.is_object() || bridged.value("op", std::string{}) != "bridged") {
             ::close(socketFd);
             error = "大厅没有把客人接进来";
-            return -1;
+            return result;
         }
         error.clear();
-        return socketFd;
+        result.socket = socketFd;
+        return result;
     }
     std::uint32_t roomId() const { return roomId_; }
+    const std::string& udpToken() const { return udpToken_; }
     void close() {
         if (control_ >= 0) ::close(control_);
         control_ = -1;
         roomId_ = 0;
+        udpToken_.clear();
     }
 private:
     int control_ = -1;
     std::uint32_t roomId_ = 0;
-    std::string endpoint_;
+    std::string endpoint_, udpToken_;
 };
 }  // namespace eflink::lobby

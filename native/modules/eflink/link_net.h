@@ -7,6 +7,7 @@
 // game dependencies, so it can be exercised by a plain test program.
 #include "eflink_platform.h"
 #include "link_protocol.h"
+#include <netdb.h>
 #include <poll.h>
 #include <algorithm>
 #include <atomic>
@@ -95,32 +96,46 @@ public:
     void host(HostOptions value) {post([this,value]{startHost(value);});}
     void join(std::string address,std::string password) {post([this,address,password]{startJoin(address,password);});}
     // A TCP socket already bridged by the lobby. The network thread owns it after this call.
-    void adoptIncoming(int connected,std::string address) {
-        post([this,connected,address]{
+    void adoptIncoming(int connected,std::string address,std::string relayToken={}) {
+        post([this,connected,address,relayToken]{
             if(role.load()!=Role::Host||connected<0) {if(connected>=0) closesocket(connected);return;}
             nonBlocking(connected);int on=1;setsockopt(connected,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&on),sizeof on);
             if(pending.size()>=16) {closesocket(connected);return;}
             auto member=std::make_unique<Member>();member->tcp.socket=connected;member->tcp.lastHeard=nowMs();member->address=std::move(address);
+            member->relayToken=relayToken;
             pending.push_back(std::move(member));
         });
     }
-    void adoptServer(int connected,std::string password,std::string label) {
-        post([this,connected,password,label]{
+    // Internet client. relayToken is the 8-byte UDP channel; empty keeps the TCP fallback only.
+    void adoptServer(int connected,std::string password,std::string label,std::string relayToken,std::string relayHost,std::uint16_t relayPort) {
+        post([this,connected,password,label,relayToken,relayHost,relayPort]{
             if(connected<0) {notice("大厅连接失败",true);return;}
             closeSession("left the room",true);
+            relay_=false;guestRelayToken_.clear();selfRelayToken_.clear();
             server.socket=connected;nonBlocking(server.socket);
             int on=1;setsockopt(server.socket,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&on),sizeof on);
             joinPassword=password;joinStarted=nowMs();joinAddress=label;
             role.store(Role::Connecting);udpWelcomed=false;udpNoticed=false;
+            if(relayToken.size()==8&&rememberRelay(relayHost,relayPort)) {relay_=true;guestRelayToken_=relayToken;udp=udpSocket(0,false);}
             {std::lock_guard lock(viewMutex);view.lastError.clear();}
             resetView();publishPeers();
-            notice("正在通过大厅连接…");
+            notice(relay_?"正在通过服务器连接…":"正在通过大厅连接…");
             proto::Writer hello;
-            hello.u32(proto::kMagic).u16(proto::kProtocol).str(version,32).str(name(),64).u64(proto::passwordProof(0,password)).u16(0);
+            std::uint16_t localPort=0;
+            if(udp!=INVALID_SOCKET) {sockaddr_in local{};socklen_t length=sizeof local;getsockname(udp,reinterpret_cast<sockaddr*>(&local),&length);localPort=ntohs(local.sin_port);}
+            hello.u32(proto::kMagic).u16(proto::kProtocol).str(version,32).str(name(),64).u64(proto::passwordProof(0,password)).u16(localPort);
             auto bytes=proto::frame(proto::Tcp::Hello,hello);server.out.insert(server.out.end(),bytes.begin(),bytes.end());
             server.lastHeard=nowMs();
         });
     }
+    // Host tells the lobby its public UDP mapping. selfToken is 8 raw bytes.
+    void setUdpRelay(std::string host,std::uint16_t port,std::string selfToken) {
+        post([this,host,port,selfToken]{
+            if(selfToken.size()!=8||!rememberRelay(host,port)) return;
+            relay_=true;selfRelayToken_=selfToken;
+        });
+    }
+    void clearUdpRelay() {post([this]{relay_=false;selfRelayToken_.clear();});}
     void leave() {post([this]{closeSession("left the room",true);});}
     void refresh() {post([this]{sendDiscover();});}
     void kick(std::uint16_t id) {post([this,id]{kickPeer(id);});}
@@ -175,6 +190,7 @@ private:
         Connection tcp;
         sockaddr_in udp{};bool udpKnown=false;std::uint64_t joinedAt=0;
         std::uint32_t token=0;
+        std::string relayToken;
         bool welcomed=false,tcpNoticed=false;
         std::string address;
     };
@@ -204,6 +220,8 @@ private:
     std::vector<std::unique_ptr<Member>> pending;     // host: accepted, no HELLO yet
     std::map<std::uint16_t,PeerView> peers;           // everyone but the local player
     Connection server;sockaddr_in serverUdp{};        // client: link to the host
+    bool relay_=false;sockaddr_in relayAddr_{};std::string selfRelayToken_,guestRelayToken_;
+    std::uint64_t lastRelay_=0;
     bool udpWelcomed=false;std::string joinPassword;std::uint64_t joinStarted=0;
     // Without a UDP path (TCP-only port forwarding) player states travel over TCP.
     static constexpr std::uint64_t kUdpGraceMs=3000;
@@ -226,7 +244,7 @@ private:
         proto::Writer frame;frame.u16(from).u16(to).u32(channel).u32(std::uint32_t(size)).raw(bytes,size);
         for(auto& [id,other]:members) {
             if(id==from||(to!=proto::kEveryone&&to!=id))continue;
-            if(other.udpKnown)sendTo(udp,other.udp,datagram.bytes);
+            if(other.udpKnown)sendMemberUdp(other,datagram.bytes);
             else if(tcpFallback(other))queueUnreliable(other.tcp,frame);
         }
     }
@@ -285,6 +303,32 @@ private:
         if(s==INVALID_SOCKET||bytes.size()>proto::kMaxDatagram) return;
         if(tcpOnlyForTest.load()&&s==udp) return;
         if(sendto(s,reinterpret_cast<const char*>(bytes.data()),int(bytes.size()),0,reinterpret_cast<const sockaddr*>(&to),sizeof to)>0) bytesOut+=bytes.size();
+    }
+    bool rememberRelay(const std::string& host,std::uint16_t port) {
+        if(host.empty()||port==0) return false;
+        addrinfo hints{};hints.ai_family=AF_INET;hints.ai_socktype=SOCK_DGRAM;addrinfo* found=nullptr;
+        if(getaddrinfo(host.c_str(),nullptr,&hints,&found)!=0||!found) return false;
+        relayAddr_=*reinterpret_cast<sockaddr_in*>(found->ai_addr);freeaddrinfo(found);relayAddr_.sin_port=htons(port);return true;
+    }
+    void sendRelay(const std::string& token,const std::vector<unsigned char>& bytes) {
+        if(token.size()!=8||udp==INVALID_SOCKET||bytes.size()>proto::kMaxDatagram||tcpOnlyForTest.load()) return;
+        std::vector<unsigned char> packet;
+        packet.reserve(8+bytes.size());
+        packet.insert(packet.end(),token.begin(),token.end());
+        packet.insert(packet.end(),bytes.begin(),bytes.end());
+        if(sendto(udp,reinterpret_cast<const char*>(packet.data()),int(packet.size()),0,reinterpret_cast<const sockaddr*>(&relayAddr_),sizeof relayAddr_)>0) bytesOut+=packet.size();
+    }
+    void sendMemberUdp(Member& member,const std::vector<unsigned char>& bytes) {
+        if(!member.relayToken.empty()) {sendRelay(member.relayToken,bytes);return;}
+        if(member.udpKnown) sendTo(udp,member.udp,bytes);
+    }
+    void sendClientUdp(const std::vector<unsigned char>& bytes) {
+        if(relay_&&guestRelayToken_.size()==8) {sendRelay(guestRelayToken_,bytes);return;}
+        sendTo(udp,serverUdp,bytes);
+    }
+    Member* memberByRelay(const std::string& token) {
+        for(auto& [id,member]:members) if(member.relayToken==token) return &member;
+        return nullptr;
     }
     void broadcast(const std::vector<unsigned char>& bytes) {
         if(nowMs()-broadcastsAt>10000||broadcasts.empty()) {refreshBroadcasts();broadcastsAt=nowMs();}
@@ -358,6 +402,7 @@ private:
         closeSocket(server.socket);server=Connection{};
         closeSocket(udp);closeSocket(listener);
         auto departed=peers;peers.clear();
+        relay_=false;selfRelayToken_.clear();guestRelayToken_.clear();
         role.store(Role::Offline);localId=0;roomId=0;token=0;udpWelcomed=false;rtt=0;
         resetView();publishPeers();
         for(const auto& [id,peer]:departed) if(onPeer) onPeer(id,false);
@@ -456,7 +501,8 @@ private:
         if(proof!=proto::passwordProof(0,options.password)) {reject(m.tcp,"password");return;}
         if(members.size()+1>=options.maxPlayers) {reject(m.tcp,"full");return;}
         std::uint16_t id=2;while(members.contains(id)) ++id;
-        m.id=id;m.token=random();m.welcomed=true;m.udp.sin_port=htons(udpPort);m.udpKnown=false;m.joinedAt=nowMs();
+        m.id=id;m.token=random();m.welcomed=true;m.udpKnown=false;m.joinedAt=nowMs();
+        if(m.relayToken.empty()) m.udp.sin_port=htons(udpPort);
         proto::Writer welcome;welcome.u16(id).u32(roomId).u32(m.token).str(options.roomName,64).u8(std::uint8_t(options.maxPlayers)).u16(proto::kHostId);
         queue(m.tcp,proto::Tcp::Welcome,welcome);
         // Bring the newcomer up to date with everyone already in the room.
@@ -476,7 +522,7 @@ private:
         proto::Writer frame;proto::write(frame,state);
         for(auto& [id,other]:members) {
             if(id==from)continue;
-            if(other.udpKnown)sendTo(udp,other.udp,datagram.bytes);
+            if(other.udpKnown)sendMemberUdp(other,datagram.bytes);
             else if(other.welcomed&&nowMs()-other.joinedAt>kUdpGraceMs)queue(other.tcp,proto::Tcp::State,frame);
         }
     }
@@ -516,20 +562,23 @@ private:
         default: break;
         }
     }
-    void hostDatagram(const sockaddr_in& from,proto::Reader& r,proto::Udp type) {
+    void hostDatagram(const sockaddr_in& from,proto::Reader& r,proto::Udp type,Member* forced=nullptr) {
         auto sender=[&]()->Member* {
+            if(forced&&forced->udpKnown) return forced;
             for(auto& [id,m]:members) if(m.udpKnown&&m.udp.sin_addr.s_addr==from.sin_addr.s_addr&&m.udp.sin_port==from.sin_port) return &m;
             return nullptr;
         };
         if(type==proto::Udp::Hello) {
             const auto id=r.u16();const auto value=r.u32();
             auto found=members.find(id);if(found==members.end()||found->second.token!=value) return;
-            found->second.udp=from;found->second.udpKnown=true;
-            sendTo(udp,from,proto::udpHeader(proto::Udp::Welcome,roomId).bytes);return;
+            if(forced&&forced!=&found->second) return;
+            if(found->second.relayToken.empty()) found->second.udp=from;
+            found->second.udpKnown=true;
+            sendMemberUdp(found->second,proto::udpHeader(proto::Udp::Welcome,roomId).bytes);return;
         }
         auto* m=sender();if(!m) return;
         if(type==proto::Udp::Ping) {
-            auto pong=proto::udpHeader(proto::Udp::Pong,roomId);pong.u64(r.u64());sendTo(udp,from,pong.bytes);return;
+            auto pong=proto::udpHeader(proto::Udp::Pong,roomId);pong.u64(r.u64());sendMemberUdp(*m,pong.bytes);return;
         }
         m->tcp.lastHeard=nowMs();
         if(type==proto::Udp::State) {
@@ -649,7 +698,7 @@ private:
             if(role.load()==Role::Host) {relayUnreliable(localId,to,channel,data.data(),data.size());return;}
             if(udpWelcomed) {
                 auto w=proto::udpHeader(proto::Udp::Data,roomId);w.u16(localId).u16(to).u32(channel).u16(std::uint16_t(data.size())).raw(data.data(),data.size());
-                sendTo(udp,serverUdp,w.bytes);
+                sendClientUdp(w.bytes);
             } else if(tcpStates()) {
                 proto::Writer frame;frame.u16(kUnreliableMark).u16(to).u32(channel).u32(std::uint32_t(data.size())).raw(data.data(),data.size());
                 queueUnreliable(server,frame);
@@ -683,7 +732,7 @@ private:
             auto w=proto::udpHeader(proto::Udp::State,roomId);proto::write(w,state);
             if(w.bytes.size()>proto::kMaxDatagram) return;
             if(role.load()==Role::Host) {relayState(localId,state);++statesOut;}
-            else if(role.load()==Role::Client&&udpWelcomed) {sendTo(udp,serverUdp,w.bytes);++statesOut;}
+            else if(role.load()==Role::Client&&udpWelcomed) {sendClientUdp(w.bytes);++statesOut;}
             else if(tcpStates()) {proto::Writer frame;proto::write(frame,state);queue(server,proto::Tcp::State,frame);++statesOut;}
             std::lock_guard lock(viewMutex);
             if(!view.peers.empty()&&view.peers.front().local) {
@@ -735,6 +784,16 @@ private:
             const int n=recvfrom(s,reinterpret_cast<char*>(buffer),sizeof buffer,0,reinterpret_cast<sockaddr*>(&from),&length);
             if(n<=0) break;
             bytesIn+=n;
+            if(!discoverySocket&&relay_&&from.sin_addr.s_addr==relayAddr_.sin_addr.s_addr&&from.sin_port==relayAddr_.sin_port) {
+                if(n<=8) continue;
+                const std::string token(reinterpret_cast<const char*>(buffer),8);
+                try {
+                    proto::Reader relayed(buffer+8,std::size_t(n-8));const auto header=proto::readUdpHeader(relayed);
+                    if(role.load()==Role::Host&&header.session==roomId) {if(auto* member=memberByRelay(token)) hostDatagram(from,relayed,header.type,member);}
+                    else if(role.load()==Role::Client||role.load()==Role::Connecting) {if(token==guestRelayToken_) clientDatagram(from,relayed,header.type,header.session);}
+                } catch(const std::exception&) {}
+                continue;
+            }
             try {
                 proto::Reader r(buffer,std::size_t(n));const auto header=proto::readUdpHeader(r);
                 if(discoverySocket) {
@@ -814,13 +873,16 @@ private:
     }
     void timers() {
         const auto now=nowMs();
+        if(relay_&&selfRelayToken_.size()==8&&udp!=INVALID_SOCKET&&now-lastRelay_>1000) {lastRelay_=now;sendRelay(selfRelayToken_,{});}
         if(role.load()==Role::Host) {
             if(now-lastBeacon>1000) {lastBeacon=now;broadcast(proto::encode(beacon()));}
             std::vector<std::uint16_t> silent;
             for(auto& [id,m]:members) {
                 if(!m.tcpNoticed&&tcpFallback(m)) {
                     m.tcpNoticed=true;
-                    notice("玩家 "+(peers.contains(id)?peers[id].info.name:std::to_string(id))+" 的 UDP 未连通，动作与队伍同步改走 TCP（延迟更高）。请同时转发 UDP 端口 "+std::to_string(options.port));
+                    notice(m.relayToken.empty()
+                        ?"玩家 "+(peers.contains(id)?peers[id].info.name:std::to_string(id))+" 的 UDP 未连通，动作与队伍同步改走 TCP（延迟更高）。请同时转发 UDP 端口 "+std::to_string(options.port)
+                        :"玩家 "+(peers.contains(id)?peers[id].info.name:std::to_string(id))+" 的 UDP 中继未接通，动作改走 TCP。请在服务器放行 UDP "+std::to_string(ntohs(relayAddr_.sin_port)));
                 }
                 if(now-m.tcp.lastSent>2000) queue(m.tcp,proto::Tcp::KeepAlive,{});
                 if(now-m.tcp.lastHeard>10000) silent.push_back(id);
@@ -830,10 +892,10 @@ private:
             if(now-joinStarted>8000) closeSession("连接超时：确认对方已开房、地址端口正确，且防火墙允许终末地联网",false,true);
         } else if(role.load()==Role::Client) {
             if(!udpWelcomed&&now-lastUdpHello>500) {
-                lastUdpHello=now;auto w=proto::udpHeader(proto::Udp::Hello,roomId);w.u16(localId).u32(token);sendTo(udp,serverUdp,w.bytes);
+                lastUdpHello=now;auto w=proto::udpHeader(proto::Udp::Hello,roomId);w.u16(localId).u32(token);sendClientUdp(w.bytes);
             }
-            if(udpWelcomed&&now-lastPing>1000) {lastPing=now;auto w=proto::udpHeader(proto::Udp::Ping,roomId);w.u64(now);sendTo(udp,serverUdp,w.bytes);}
-            if(!udpNoticed&&tcpStates()) {udpNoticed=true;notice("与房主的 UDP 未连通，动作与队伍同步改走 TCP（延迟更高）。请让房主同时转发 UDP 端口");}
+            if(udpWelcomed&&now-lastPing>1000) {lastPing=now;auto w=proto::udpHeader(proto::Udp::Ping,roomId);w.u64(now);sendClientUdp(w.bytes);}
+            if(!udpNoticed&&tcpStates()) {udpNoticed=true;notice(relay_?"与房主的 UDP 中继未接通，动作改走 TCP。请在服务器放行 UDP "+std::to_string(ntohs(relayAddr_.sin_port)):"与房主的 UDP 未连通，动作与队伍同步改走 TCP（延迟更高）。请让房主同时转发 UDP 端口");}
             if(now-server.lastSent>2000) queue(server,proto::Tcp::KeepAlive,{});
             if(now-server.lastHeard>10000) closeSession("房主无响应（超时）",false,true);
         }

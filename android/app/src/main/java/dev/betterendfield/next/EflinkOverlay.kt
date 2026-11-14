@@ -185,7 +185,13 @@ private fun RoomScreen(status: EflinkSnapshot, chat: String, onChat: (String) ->
         "connecting" -> "连接中"
         else -> "已加入"
     }
-    Text("${status.room.ifBlank { "房间" }}  ·  $kind  ·  $role",
+    val path = when {
+        status.network == "internet" && status.udp > 0 -> "UDP 经服务器"
+        status.udp > 0 -> "UDP"
+        status.tcpOnly > 0 -> "TCP"
+        else -> "正在连接"
+    }
+    Text("${status.room.ifBlank { "房间" }}  ·  $kind  ·  $role  ·  $path",
         color = Be.Colors.textPrimary, fontSize = 13.sp)
     Text(if (status.poseReady) "位置已同步" else "正在同步位置",
         color = Be.Colors.textSecondary, fontSize = 11.sp)
@@ -206,7 +212,7 @@ private fun RoomScreen(status: EflinkSnapshot, chat: String, onChat: (String) ->
 private fun NetworkChoice(scope: String, onScope: (String) -> Unit) {
     Segmented(scope == "lan", "局域网", "互联网", { onScope("lan") }, { onScope("internet") })
     Text(
-        if (scope == "lan") "同一 Wi-Fi 下的房间" else "game.venshell.top/endfield",
+        if (scope == "lan") "同一 Wi-Fi 下的房间" else "经 game.venshell.top 转发",
         color = Be.Colors.textSecondary, fontSize = 11.sp,
     )
 }
