@@ -67,8 +67,7 @@ public:
         port_ = static_cast<std::uint16_t>(std::clamp(config.value("port", 47615), 1024, 65535));
         if (port_ == 47616) port_ = 47615;
         max_players_ = static_cast<unsigned>(std::clamp(config.value("max_players", 8), 2, 16));
-        lobby_endpoint_ = config.value("lobby", std::string{});
-        if (lobby_endpoint_.find(':') == std::string::npos) lobby_endpoint_.clear();
+        lobby_endpoint_ = eflink::lobby::kEndpoint;
         net_.version = EFLINK_VERSION;
         net_.setName(player_name_);
         net_.onData = [this](std::uint16_t from, std::uint32_t channel, const unsigned char* data, std::size_t size) {

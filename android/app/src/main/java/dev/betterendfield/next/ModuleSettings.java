@@ -168,7 +168,6 @@ final class ModuleSettings {
     private static final String EFLINK_ROOM = "eflink_room_name";
     private static final String EFLINK_PORT = "eflink_port";
     private static final String EFLINK_MAX = "eflink_max_players";
-    private static final String EFLINK_LOBBY = "eflink_lobby";
     private static final String OVERLAY_TRANSPARENCY = "overlay_transparency";
     private static final String OVERLAY_AUTO_SNAP = "overlay_auto_snap";
     private static final String OVERLAY_LOG_VISIBLE = "overlay_log_visible";
@@ -232,14 +231,6 @@ final class ModuleSettings {
         if (value == count) preferences(context).edit().putInt(EFLINK_MAX, value).commit();
     }
 
-    static String getEflinkLobby(Context context) {
-        return text(preferences(context), EFLINK_LOBBY, 128);
-    }
-
-    static void setEflinkLobby(Context context, String lobby) {
-        preferences(context).edit().putString(EFLINK_LOBBY, clip(lobby, 128)).commit();
-    }
-
     /** Empty when the feature is off, so the native loader does not start it. */
     static String eflinkConfiguration(SharedPreferences settings) {
         if (!settings.getBoolean(EFLINK_ENABLED, false)) return "";
@@ -249,7 +240,8 @@ final class ModuleSettings {
                     .put("room_name", text(settings, EFLINK_ROOM, 64))
                     .put("port", port(settings.getInt(EFLINK_PORT, 47615)))
                     .put("max_players", players(settings.getInt(EFLINK_MAX, 8)))
-                    .put("lobby", text(settings, EFLINK_LOBBY, 128))
+                    .put("lobby", "game.venshell.top:47617")
+                    .put("game", "endfield")
                     .toString();
         } catch (JSONException error) {
             return "";

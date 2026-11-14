@@ -18,6 +18,10 @@
 #include <vector>
 
 namespace eflink::lobby {
+// Baked-in internet lobby. "endfield" is the game id on that host, not an HTTP path.
+inline constexpr const char* kEndpoint = "game.venshell.top:47617";
+inline constexpr const char* kGame = "endfield";
+
 struct Room {
     std::uint32_t id = 0;
     std::string name, host, version;
@@ -107,7 +111,7 @@ inline std::vector<Room> list(const std::string& endpoint, std::string& error) {
     if (socketFd < 0) return {};
     std::vector<Room> rooms;
     std::string line;
-    if (!writeLine(socketFd, {{"op", "list"}}) || !readLine(socketFd, line)) {
+    if (!writeLine(socketFd, {{"op", "list"}, {"game", kGame}}) || !readLine(socketFd, line)) {
         ::close(socketFd);
         error = "大厅没有返回房间";
         return {};
@@ -139,7 +143,7 @@ inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& 
     const int socketFd = dial(endpoint, 4000, error);
     if (socketFd < 0) return -1;
     std::string line;
-    if (!writeLine(socketFd, {{"op", "join"}, {"room_id", roomId}}) || !readLine(socketFd, line)) {
+    if (!writeLine(socketFd, {{"op", "join"}, {"game", kGame}, {"room_id", roomId}}) || !readLine(socketFd, line)) {
         ::close(socketFd);
         error = "大厅没有接上房间";
         return -1;
@@ -162,7 +166,7 @@ public:
         control_ = dial(endpoint, 4000, error);
         if (control_ < 0) return false;
         endpoint_ = endpoint;
-        if (!writeLine(control_, {{"op", "host"}, {"name", name}, {"room_name", roomName},
+        if (!writeLine(control_, {{"op", "host"}, {"game", kGame}, {"name", name}, {"room_name", roomName},
                 {"max_players", maxPlayers}, {"password", password}, {"version", version}})) {
             error = "无法向大厅登记房间";
             close();
@@ -205,7 +209,7 @@ public:
         const int socketFd = dial(endpoint_, 4000, error);
         if (socketFd < 0) return -1;
         std::string answer;
-        if (!writeLine(socketFd, {{"op", "accept"}, {"token", token}}) || !readLine(socketFd, answer)) {
+        if (!writeLine(socketFd, {{"op", "accept"}, {"game", kGame}, {"token", token}}) || !readLine(socketFd, answer)) {
             ::close(socketFd);
             error = "无法接上大厅里的客人";
             return -1;

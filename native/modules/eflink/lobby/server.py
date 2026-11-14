@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""EF Link lobby.
+"""EF Link lobby for game.venshell.top/endfield.
 
-Players dial out to this process. It lists rooms and splices each guest's TCP
-connection to the host, so two NATs do not have to see each other. The bytes
-after the lobby handshake are the unchanged EF Link frames. UDP is not
-relayed; the client already moves pose over TCP when UDP never comes up.
+Players dial TCP game.venshell.top:47617. Each line is JSON and carries
+"game":"endfield". This process lists rooms and splices the guest TCP stream
+to the host. Bytes after "bridged" are the unchanged EF Link frames.
+
+Internet pose and chat ride that TCP splice. UDP stays on the LAN between
+phones and is not opened here.
 
     python3 server.py --bind 0.0.0.0 --port 47617
 """
@@ -15,6 +17,7 @@ import secrets
 import socket
 import threading
 
+GAME = "endfield"
 MAX_LINE = 8192
 MAX_ROOMS = 64
 JOIN_WAIT = 8
@@ -151,6 +154,9 @@ def handle(conn, peer):
             conn.close()
             return
         message = json.loads(raw)
+        if message.get("game") != GAME:
+            fail(conn, "wrong-game")
+            return
         op = message.get("op")
         if op == "list":
             send_line(conn, {"op": "rooms", "rooms": LOBBY.snapshot()})

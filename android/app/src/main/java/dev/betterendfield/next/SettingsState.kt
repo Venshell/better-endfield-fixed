@@ -820,8 +820,6 @@ class SettingsState(private val context: Context) {
         private set
     var eflinkMaxPlayers by mutableStateOf(8)
         private set
-    var eflinkLobby by mutableStateOf("")
-        private set
 
     private fun loadEnhancement() {
         hideUid = ModuleSettings.isHideUidEnabled(context)
@@ -917,7 +915,6 @@ class SettingsState(private val context: Context) {
         eflinkRoom = ModuleSettings.getEflinkRoomName(context)
         eflinkPort = ModuleSettings.getEflinkPort(context)
         eflinkMaxPlayers = ModuleSettings.getEflinkMaxPlayers(context)
-        eflinkLobby = ModuleSettings.getEflinkLobby(context)
     }
 
     /** Re-reads the panel switch, which the settings Activity can leave and re-enter. */
@@ -953,11 +950,6 @@ class SettingsState(private val context: Context) {
         if (value < 2 || value > 16) return
         eflinkMaxPlayers = value
         ModuleSettings.setEflinkMaxPlayers(context, value)
-    }
-
-    fun updateEflinkLobby(value: String) {
-        eflinkLobby = value.trim().take(128)
-        ModuleSettings.setEflinkLobby(context, eflinkLobby)
     }
 
     fun updateHideUid(value: Boolean) {

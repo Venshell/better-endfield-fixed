@@ -117,7 +117,7 @@ internal fun EflinkOverlay(preview: Boolean) {
 
 @Composable
 private fun HomeScreen(status: EflinkSnapshot, onCreate: () -> Unit, onJoin: () -> Unit) {
-    Text(if (status.lobbyReady) "局域网或互联网" else "当前可创建局域网房间",
+    Text("局域网，或互联网 game.venshell.top",
         color = Be.Colors.textSecondary, fontSize = 11.sp)
     OverlayAction("创建房间", onClick = onCreate)
     OverlayAction("加入房间", onClick = onJoin)
@@ -133,16 +133,11 @@ private fun CreateScreen(
     onCreate: () -> Unit,
 ) {
     Text("创建房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
-    NetworkChoice(scope, onScope, status.lobbyReady)
+    NetworkChoice(scope, onScope)
     OverlayField(room, onRoom, "房间名", 64)
     OverlayField(password, onPassword, "密码，可留空", 64)
     Segmented(players == 4, "4 人", "8 人", { onPlayers(4) }, { onPlayers(8) })
-    val internetBlocked = scope == "internet" && !status.lobbyReady
-    if (internetBlocked) {
-        Text("互联网需要先在工具页填写大厅地址，保存后重启游戏。",
-            color = Be.Colors.textSecondary, fontSize = 11.sp)
-    }
-    OverlayAction("创建", enabled = !internetBlocked) { onCreate() }
+    OverlayAction("创建") { onCreate() }
 }
 
 @Composable
@@ -156,7 +151,7 @@ private fun BrowseScreen(
     val context = LocalContext.current
     var sequence by remember { mutableLongStateOf(0L) }
     Text("加入房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
-    NetworkChoice(scope, onScope, status.lobbyReady)
+    NetworkChoice(scope, onScope)
     val rooms = status.rooms.filter { if (scope == "internet") it.roomId != 0L else it.roomId == 0L }
     if (rooms.isEmpty()) {
         Text(if (scope == "internet") "互联网上还没有房间。" else "附近还没有局域网房间。",
@@ -208,10 +203,10 @@ private fun RoomScreen(status: EflinkSnapshot, chat: String, onChat: (String) ->
 }
 
 @Composable
-private fun NetworkChoice(scope: String, onScope: (String) -> Unit, internetReady: Boolean) {
+private fun NetworkChoice(scope: String, onScope: (String) -> Unit) {
     Segmented(scope == "lan", "局域网", "互联网", { onScope("lan") }, { onScope("internet") })
     Text(
-        if (scope == "lan") "同一 Wi-Fi 下的房间" else if (internetReady) "通过你的服务器匹配" else "尚未配置服务器",
+        if (scope == "lan") "同一 Wi-Fi 下的房间" else "game.venshell.top/endfield",
         color = Be.Colors.textSecondary, fontSize = 11.sp,
     )
 }
