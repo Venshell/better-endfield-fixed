@@ -65,9 +65,14 @@ class Lobby:
         with self.lock:
             if len(self.rooms) >= MAX_ROOMS:
                 return False
-            self.rooms[room.id] = room
-            self.by_control[room.control] = room
-            return True
+            for _ in range(32):
+                room_id = secrets.randbelow(900000) + 100000
+                if room_id not in self.rooms:
+                    room.id = room_id
+                    self.rooms[room_id] = room
+                    self.by_control[room.control] = room
+                    return True
+            return False
 
     def drop_control(self, control):
         with self.lock:
@@ -237,8 +242,8 @@ def handle(conn, peer):
             return
         op = message.get("op")
         ip = peer[0]
-        if op == "code":
-            reason = gate().request_code(message.get("email"), ip)
+        if op == "register":
+            reason = gate().register(message.get("username"), message.get("password"), message.get("email"), ip)
             if reason:
                 fail(conn, reason)
                 return
@@ -246,11 +251,19 @@ def handle(conn, peer):
             conn.close()
             return
         if op == "verify":
-            token, reason = gate().verify(message.get("email"), message.get("code"), ip)
+            token, username, email, reason = gate().verify(message.get("username"), message.get("code"), ip)
             if reason:
                 fail(conn, reason)
                 return
-            send_line(conn, {"op": "session", "token": token, "email": str(message.get("email", "")).strip().lower()})
+            send_line(conn, {"op": "session", "token": token, "username": username, "email": email})
+            conn.close()
+            return
+        if op == "login":
+            token, username, email, reason = gate().login(message.get("username"), message.get("password"), ip)
+            if reason:
+                fail(conn, reason)
+                return
+            send_line(conn, {"op": "session", "token": token, "username": username, "email": email})
             conn.close()
             return
         if op in ("list", "host", "join", "accept") and gate().session(message.get("account"), ip) is None:
@@ -291,7 +304,7 @@ def host(conn, peer, message):
     except (TypeError, ValueError):
         max_players = 8
     max_players = min(16, max(2, max_players))
-    room = Room(secrets.randbits(31) or 1, name, host_name, version, max_players,
+    room = Room(0, name, host_name, version, max_players,
                 bool(message.get("password")), conn, peer)
     if not LOBBY.add(room):
         fail(conn, "full")

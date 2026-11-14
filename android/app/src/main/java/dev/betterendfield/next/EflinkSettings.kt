@@ -17,63 +17,58 @@ fun EflinkSettingsCard(state: SettingsState) {
     var room by remember(state.eflinkRoom) { mutableStateOf(state.eflinkRoom) }
     var port by remember(state.eflinkPort) { mutableStateOf(state.eflinkPort.toString()) }
     var players by remember(state.eflinkMaxPlayers) { mutableStateOf(state.eflinkMaxPlayers.toString()) }
-    var server by remember(state.eflinkServer) { mutableStateOf(state.eflinkServer) }
     PanelCard {
         CardTitle(stringResource(R.string.eflink_title))
         BodyText(stringResource(R.string.eflink_hint), modifier = Modifier.padding(top = Be.Space.m))
         SwitchRow(
-            title = stringResource(R.string.eflink_enable),
-            description = stringResource(R.string.eflink_enable_hint),
-            checked = state.eflinkEnabled,
-            onCheckedChange = state::updateEflinkEnabled,
+            title = stringResource(R.string.eflink_lan),
+            description = stringResource(R.string.eflink_lan_hint),
+            checked = state.eflinkLan,
+            onCheckedChange = state::updateEflinkLan,
         )
-        TextFieldRow(
-            value = server,
-            onValueChange = { server = it },
-            hint = stringResource(R.string.eflink_server),
-            keyboardType = KeyboardType.Uri,
-            maxLength = 128,
-            enabled = state.eflinkEnabled,
-            onCommit = { state.updateEflinkServer(server) },
-        )
-        TextFieldRow(
-            value = name,
-            onValueChange = { name = it },
-            hint = stringResource(R.string.eflink_name),
-            keyboardType = KeyboardType.Text,
-            maxLength = 64,
-            enabled = state.eflinkEnabled,
-            onCommit = { state.updateEflinkName(name) },
-        )
-        TextFieldRow(
-            value = room,
-            onValueChange = { room = it },
-            hint = stringResource(R.string.eflink_room),
-            keyboardType = KeyboardType.Text,
-            maxLength = 64,
-            enabled = state.eflinkEnabled,
-            onCommit = { state.updateEflinkRoom(room) },
-        )
-        TextFieldRow(
-            value = port,
-            onValueChange = { port = it.filter { ch -> ch.isDigit() }.take(5) },
-            hint = stringResource(R.string.eflink_port),
-            keyboardType = KeyboardType.Number,
-            maxLength = 5,
-            enabled = state.eflinkEnabled,
-            onCommit = { port.toIntOrNull()?.let(state::updateEflinkPort) },
-        )
-        TextFieldRow(
-            value = players,
-            onValueChange = { players = it.filter { ch -> ch.isDigit() }.take(2) },
-            hint = stringResource(R.string.eflink_players),
-            keyboardType = KeyboardType.Number,
-            maxLength = 2,
-            enabled = state.eflinkEnabled,
-            onCommit = { players.toIntOrNull()?.let(state::updateEflinkMaxPlayers) },
+        if (state.eflinkLan) {
+            TextFieldRow(
+                value = name,
+                onValueChange = { name = it },
+                hint = stringResource(R.string.eflink_name),
+                keyboardType = KeyboardType.Text,
+                maxLength = 64,
+                onCommit = { state.updateEflinkName(name) },
+            )
+            TextFieldRow(
+                value = room,
+                onValueChange = { room = it },
+                hint = stringResource(R.string.eflink_room),
+                keyboardType = KeyboardType.Text,
+                maxLength = 64,
+                onCommit = { state.updateEflinkRoom(room) },
+            )
+            TextFieldRow(
+                value = port,
+                onValueChange = { port = it.filter { ch -> ch.isDigit() }.take(5) },
+                hint = stringResource(R.string.eflink_port),
+                keyboardType = KeyboardType.Number,
+                maxLength = 5,
+                onCommit = { port.toIntOrNull()?.let(state::updateEflinkPort) },
+            )
+            TextFieldRow(
+                value = players,
+                onValueChange = { players = it.filter { ch -> ch.isDigit() }.take(2) },
+                hint = stringResource(R.string.eflink_players),
+                keyboardType = KeyboardType.Number,
+                maxLength = 2,
+                onCommit = { players.toIntOrNull()?.let(state::updateEflinkMaxPlayers) },
+            )
+        }
+        SwitchRow(
+            title = stringResource(R.string.eflink_internet),
+            description = stringResource(R.string.eflink_internet_hint),
+            checked = state.eflinkInternet,
+            onCheckedChange = state::updateEflinkInternet,
         )
         BodyText(
-            stringResource(R.string.eflink_restart),
+            if (state.accountUsername.isEmpty()) stringResource(R.string.eflink_internet_signed_out)
+            else state.accountUsername,
             modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
         )
     }

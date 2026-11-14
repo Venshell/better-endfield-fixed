@@ -60,6 +60,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -605,6 +606,7 @@ fun TextFieldRow(
     modifier: Modifier = Modifier,
     hint: String = "",
     keyboardType: KeyboardType = KeyboardType.Decimal,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     maxLength: Int = Int.MAX_VALUE,
     enabled: Boolean = true,
     onCommit: () -> Unit = {},
@@ -617,6 +619,7 @@ fun TextFieldRow(
         singleLine = true,
         textStyle = TextStyle(color = Be.Colors.textPrimary, fontSize = Be.Type.rowTitle),
         cursorBrush = SolidColor(Be.Colors.accent),
+        visualTransformation = visualTransformation,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = modifier
             .fillMaxWidth()

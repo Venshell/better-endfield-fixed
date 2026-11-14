@@ -157,6 +157,7 @@ private fun SettingsBody(
                 SettingsPage.EXPERIENCE -> ExperiencePage(state)
                 SettingsPage.CHARACTERS -> CharacterPage(state, onInstallBem)
                 SettingsPage.TOOLS -> ToolsPage(state, onPreviewOverlay)
+                SettingsPage.USER -> AccountPage(state)
                 SettingsPage.FIRST_PERSON -> FirstPersonPage(state)
                 SettingsPage.CAMERA_MOTION -> CameraMotionPage(state)
                 SettingsPage.MMD -> MmdPage(state)

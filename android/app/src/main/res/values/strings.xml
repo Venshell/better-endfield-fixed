@@ -4,9 +4,14 @@
     <string name="media_screen_hint">选择会客室屏幕播放的图片或视频，保存后重启游戏生效。</string>
     <string name="media_screen_open">管理媒体屏</string>
     <string name="eflink_title">联机</string>
-    <string name="eflink_hint">开启后在游戏悬浮窗里创建房间。局域网给同一 Wi-Fi。互联网要先用 QQ 邮箱注册，才能使用下面的服务器。密码不会保存。</string>
+    <string name="eflink_hint">局域网和互联网分开启用。保存后重启游戏生效。</string>
     <string name="eflink_enable">启用联机</string>
     <string name="eflink_enable_hint">下次启动游戏时加载房间网络。默认关闭，不影响现有功能。</string>
+    <string name="eflink_lan">启用局域网联机</string>
+    <string name="eflink_lan_hint">同一 Wi-Fi 下的房间。</string>
+    <string name="eflink_internet">启用互联网联机</string>
+    <string name="eflink_internet_hint">使用用户页登录的账号。</string>
+    <string name="eflink_internet_signed_out">未登录</string>
     <string name="eflink_server">服务器地址，默认 game.venshell.top</string>
     <string name="eflink_name">显示名称</string>
     <string name="eflink_room">默认房间名</string>
@@ -234,6 +239,7 @@
     <string name="page_experience">体验</string>
     <string name="page_characters">角色</string>
     <string name="page_tools">工具</string>
+    <string name="page_user">用户</string>
     <string name="page_first_person">第一人称</string>
     <string name="page_camera_motion">运镜与镜头</string>
     <string name="page_appearance">角色外观</string>

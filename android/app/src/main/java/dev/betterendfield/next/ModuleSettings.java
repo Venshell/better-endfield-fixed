@@ -164,6 +164,11 @@ final class ModuleSettings {
 
     static final String OVERLAY_ENABLED = "overlay_enabled";
     static final String EFLINK_ENABLED = "eflink_enabled";
+    private static final String EFLINK_LAN = "eflink_lan";
+    private static final String EFLINK_INTERNET = "eflink_internet";
+    private static final String ACCOUNT_TOKEN = "account_token";
+    private static final String ACCOUNT_USERNAME = "account_username";
+    private static final String ACCOUNT_EMAIL = "account_email";
     private static final String EFLINK_NAME = "eflink_player_name";
     private static final String EFLINK_ROOM = "eflink_room_name";
     private static final String EFLINK_PORT = "eflink_port";
@@ -197,6 +202,60 @@ final class ModuleSettings {
 
     static void setEflinkEnabled(Context context, boolean enabled) {
         preferences(context).edit().putBoolean(EFLINK_ENABLED, enabled).commit();
+    }
+
+    /** Older installs had one switch. That choice stays on the LAN side. */
+    static boolean isEflinkLanEnabled(Context context) {
+        SharedPreferences settings = preferences(context);
+        if (!settings.contains(EFLINK_LAN)) return settings.getBoolean(EFLINK_ENABLED, false);
+        return settings.getBoolean(EFLINK_LAN, false);
+    }
+
+    static void setEflinkLanEnabled(Context context, boolean enabled) {
+        SharedPreferences settings = preferences(context);
+        boolean internet = settings.getBoolean(EFLINK_INTERNET, false);
+        settings.edit()
+                .putBoolean(EFLINK_LAN, enabled)
+                .putBoolean(EFLINK_ENABLED, enabled || internet)
+                .commit();
+    }
+
+    static boolean isEflinkInternetEnabled(Context context) {
+        return preferences(context).getBoolean(EFLINK_INTERNET, false);
+    }
+
+    static void setEflinkInternetEnabled(Context context, boolean enabled) {
+        SharedPreferences settings = preferences(context);
+        boolean lan = isEflinkLanEnabled(context);
+        settings.edit()
+                .putBoolean(EFLINK_LAN, lan)
+                .putBoolean(EFLINK_INTERNET, enabled)
+                .putBoolean(EFLINK_ENABLED, lan || enabled)
+                .commit();
+    }
+
+    static String getAccountUsername(Context context) {
+        return text(preferences(context), ACCOUNT_USERNAME, 32);
+    }
+
+    static String getAccountEmail(Context context) {
+        return text(preferences(context), ACCOUNT_EMAIL, 254);
+    }
+
+    static void setAccount(Context context, String token, String username, String email) {
+        preferences(context).edit()
+                .putString(ACCOUNT_TOKEN, clip(token, 128))
+                .putString(ACCOUNT_USERNAME, clip(username, 32))
+                .putString(ACCOUNT_EMAIL, clip(email, 254))
+                .commit();
+    }
+
+    static void clearAccount(Context context) {
+        preferences(context).edit()
+                .remove(ACCOUNT_TOKEN)
+                .remove(ACCOUNT_USERNAME)
+                .remove(ACCOUNT_EMAIL)
+                .commit();
     }
 
     static String getEflinkPlayerName(Context context) {
@@ -246,14 +305,23 @@ final class ModuleSettings {
 
     /** Empty when the feature is off, so the native loader does not start it. */
     static String eflinkConfiguration(SharedPreferences settings) {
-        if (!settings.getBoolean(EFLINK_ENABLED, false)) return "";
+        boolean lan = settings.contains(EFLINK_LAN)
+                ? settings.getBoolean(EFLINK_LAN, false)
+                : settings.getBoolean(EFLINK_ENABLED, false);
+        boolean internet = settings.getBoolean(EFLINK_INTERNET, false);
+        if (!lan && !internet) return "";
         try {
             return new JSONObject()
+                    .put("lan", lan)
+                    .put("internet", internet)
                     .put("player_name", text(settings, EFLINK_NAME, 64))
                     .put("room_name", text(settings, EFLINK_ROOM, 64))
                     .put("port", port(settings.getInt(EFLINK_PORT, 47615)))
                     .put("max_players", players(settings.getInt(EFLINK_MAX, 8)))
-                    .put("lobby", lobbyEndpoint(text(settings, EFLINK_SERVER, 128)))
+                    .put("lobby", EFLINK_DEFAULT_SERVER + ":47617")
+                    .put("account", text(settings, ACCOUNT_TOKEN, 128))
+                    .put("username", text(settings, ACCOUNT_USERNAME, 32))
+                    .put("email", text(settings, ACCOUNT_EMAIL, 254))
                     .put("game", "endfield")
                     .toString();
         } catch (JSONException error) {

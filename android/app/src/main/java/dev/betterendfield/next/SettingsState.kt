@@ -57,14 +57,16 @@ object SettingsPage {
     const val EXPERIENCE = 1
     const val CHARACTERS = 2
     const val TOOLS = 3
+    const val USER = 4
 
-    val TAB_ORDER = intArrayOf(HOME, EXPERIENCE, CHARACTERS, TOOLS)
+    val TAB_ORDER = intArrayOf(HOME, EXPERIENCE, CHARACTERS, TOOLS, USER)
 
     val TAB_LABELS = intArrayOf(
         R.string.page_home,
         R.string.page_experience,
         R.string.page_characters,
         R.string.page_tools,
+        R.string.page_user,
     )
 
     /* --- sub-pages, reached from a card --- */
@@ -812,6 +814,16 @@ class SettingsState(private val context: Context) {
         private set
     var eflinkEnabled by mutableStateOf(false)
         private set
+    var eflinkLan by mutableStateOf(false)
+        private set
+    var eflinkInternet by mutableStateOf(false)
+        private set
+    var accountUsername by mutableStateOf("")
+        private set
+    var accountEmail by mutableStateOf("")
+        private set
+    var accountStatus by mutableStateOf("")
+        private set
     var eflinkName by mutableStateOf("")
         private set
     var eflinkRoom by mutableStateOf("")
@@ -913,6 +925,10 @@ class SettingsState(private val context: Context) {
         overlayAutoSnap = ModuleSettings.isOverlayAutoSnap(context)
         overlayLogVisible = ModuleSettings.isOverlayLogVisible(context)
         eflinkEnabled = ModuleSettings.isEflinkEnabled(context)
+        eflinkLan = ModuleSettings.isEflinkLanEnabled(context)
+        eflinkInternet = ModuleSettings.isEflinkInternetEnabled(context)
+        accountUsername = ModuleSettings.getAccountUsername(context)
+        accountEmail = ModuleSettings.getAccountEmail(context)
         eflinkName = ModuleSettings.getEflinkPlayerName(context)
         eflinkRoom = ModuleSettings.getEflinkRoomName(context)
         eflinkPort = ModuleSettings.getEflinkPort(context)
@@ -931,6 +947,36 @@ class SettingsState(private val context: Context) {
     fun updateEflinkEnabled(value: Boolean) {
         eflinkEnabled = value
         ModuleSettings.setEflinkEnabled(context, value)
+    }
+
+    fun updateEflinkLan(value: Boolean) {
+        eflinkLan = value
+        eflinkEnabled = value || eflinkInternet
+        ModuleSettings.setEflinkLanEnabled(context, value)
+    }
+
+    fun updateEflinkInternet(value: Boolean) {
+        eflinkInternet = value
+        eflinkEnabled = eflinkLan || value
+        ModuleSettings.setEflinkInternetEnabled(context, value)
+    }
+
+    fun applyAccount(token: String, username: String, email: String) {
+        ModuleSettings.setAccount(context, token, username, email)
+        accountUsername = username
+        accountEmail = email
+        accountStatus = ""
+    }
+
+    fun clearAccount() {
+        ModuleSettings.clearAccount(context)
+        accountUsername = ""
+        accountEmail = ""
+        accountStatus = ""
+    }
+
+    fun showAccountStatus(message: String) {
+        accountStatus = message
     }
 
     fun updateEflinkName(value: String) {
