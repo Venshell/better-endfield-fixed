@@ -6,13 +6,13 @@ Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed �
 
 > 本仓库独立维护，派生自 [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield)，并非原项目或游戏发行商的官方版本。
 
-[![Android Release 4.1.8](https://img.shields.io/badge/Android%20Release-4.1.8-26CDCB)](https://github.com/Venshell/better-endfield-fixed/releases/latest)
-[![Experimental Glide](https://img.shields.io/badge/Glide-Experimental-E85327)](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467)
+[![Android Release 4.2.0](https://img.shields.io/badge/Android%20Release-4.2.0-26CDCB)](https://github.com/Venshell/better-endfield-fixed/releases/latest)
+[![Experimental](https://img.shields.io/badge/Experimental-glide%20%2B%20link-E85327)](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive)
 [![Changelog](https://img.shields.io/badge/Docs-Changelog-1C4A9C)](CHANGELOG.md)
 [![Android Guide](https://img.shields.io/badge/Android-Guide-1C4A9C)](android/README.md)
 [![BEM Creator Guide](https://img.shields.io/badge/BEM-Creator%20Guide-1C4A9C)](docs/custom_model/BEM_CREATOR_GUIDE.md)
 
-当前 Android 版本为 **4.1.8**（`dev.betterendfield.next`）。Next 与 3.x 独立安装，安装后需重新启用模块和设置作用域。内置 898 份头饰资源面向原生 Android 游戏 1.6.4（versionCode 61）。手动和自动缓降由独立实验分支提供，APK 可在 Actions 对应运行的 Artifacts 下载。
+当前 Android 版本为 **4.2.0**（`dev.betterendfield.next`）。Next 与 3.x 独立安装，安装后需重新启用模块和设置作用域。内置 898 份头饰资源面向原生 Android 游戏 1.6.4（versionCode 61）。本分支在正式版之外提供缓降和联机。
 
 ## 与上游 Next 的差异
 
@@ -20,7 +20,7 @@ Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed �
 
 - **第一人称陀螺仪**：第一人称视角可使用手机陀螺仪控制方向，相关开关和灵敏度在 Android 设置应用中。
 - **内置头饰资源**：APK 随包提供 898 份 v3/v61 头饰资源，供第一人称隐藏或替换遮挡视野的网格。资源对应游戏 versionCode 61，逐角色效果以实机验收为准。
-- **缓降实验分支**：手动和自动缓降保存在 [`experimental/android-glide`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/android-glide)，从 [Actions 下载实验 APK](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fandroid-glide)。正式版 `main` 保留原有持续冲刺。
+- **本分支**：`experimental/destructive` 提供缓降和联机。正式版 [`main`](https://github.com/Venshell/better-endfield-fixed/tree/main) 不含这两项，并保留原有持续冲刺。实验 APK 从 [本分支的 Actions](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fdestructive) 下载。
 
 Android 设置应用和游戏内悬浮面板沿用本仓库的 Compose 入口，保留第一人称、BEM 管理、MMD 导入和会客室媒体屏操作。具体入口见 [Android 使用说明](android/README.md)，版本变更见 [更新日志](CHANGELOG.md)。
 
