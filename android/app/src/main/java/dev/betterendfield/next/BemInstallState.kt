@@ -365,6 +365,10 @@ class BemInstallState(private val context: Context) {
         if (!BemInstaller.cleanUnused(context)) status = context.getString(R.string.bem_operation_busy)
     }
 
+    fun backfillBaselines() {
+        if (!BemInstaller.backfillAllBaselines(context)) status = context.getString(R.string.bem_operation_busy)
+    }
+
     fun changeLocalCopies(keep: Boolean) {
         if (busy) return
         val settings = FrameworkSettings.open(context)

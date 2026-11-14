@@ -70,3 +70,13 @@ AOSP [`shell.te`](https://android.googlesource.com/platform/system/sepolicy/+/re
 4. 完整路线必须验证 BE UI 与游戏内模块同启停、BEM 导入/启用/热切换、模型与语音、第三方 SO、相机/PCUI，以及重签安装/更新/登录。未完成前维持“研究中”，不进入正式 APK 的承诺功能。
 
 若只以“不 root、不修改正式游戏包、不使用可控制游戏加载的容器”为条件，目前没有从 Shizuku 官方机制和 BE 现有架构推导出的全功能路径。
+
+## 2026-11-10 追加：app_process 引导框架（2026-11-11 实机核实）
+
+上面的结论限定在 **Shizuku 本体**。另有一类免 root 框架不做 Binder 权限代理，而是用 Shizuku 以 shell 身份起 `app_process`、再 `setuid` 到目标 UID、手动 `handleBindApplication`。代表实现 ShizuPosed（`Sharif-bot-cmd/ShizuPosed`）的实测结论：
+
+- **零售机上第一道闸门就过不去。** shell 进程 `CapPrm/CapEff` 为 0（`CapBnd=0x8000c0` 里的 SETUID 是留给 setuid-root 的 `run-as` 的），`setuid(10400)` 返回 `EPERM`，进程停在 `u:r:shell:s0`：读不了游戏私有目录，也 attach 不上经 zygote 起的真游戏进程。`run-as` 对非 debuggable 的正式游戏同样不可用。
+- **root 设备上它自己也没跑通。** 在 KernelSU + Shizuku root 环境里，它 spawn 后 135 ms 就被 `SIGABRT` 打死（`Check failed: !location.empty() BOOTCLASSPATH ... must not be empty`），根因是它自己命令行里的 `unset BOOTCLASSPATH`。而它的日志仍报 `Launch succeeded`——成功判据只有"进程存在 + UI 打开"，没有"hook 装上了"这一项。
+- **判断注入是否发生只看三条**：`/proc/<pid>/cmdline` 是否带 `XposedHook.dex`、`ppid` 是 1 还是 zygote、`hooked/<包名>` 标记是否存在。实测终末地 `ppid=zygote64`、`cmdline` 只有包名、SELinux 为 `u:r:untrusted_app_34:s0`，`hooked/` 始终为空——标准普通启动，注入从未发生；"游戏能起来"不能作为证据。
+
+即：注入原语在原理上成立，但前提是拿到有效的 `CAP_SETUID`，这个前提在量产机上不成立、在 root 设备上又失去意义。加上 BE 现行代码还缺 `getRemotePreferences`/`openRemoteFile` 与 `io.github.libxposed.service` 两项契约，这条路不作为选项。量产机免 root 只剩自修包（重签，游戏以自己的 uid 跑）与虚拟容器两条，Shizuku 只承担启动、日志、外部文件这类辅助（见上文第 1 条建议）。

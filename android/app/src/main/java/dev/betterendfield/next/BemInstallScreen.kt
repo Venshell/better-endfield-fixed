@@ -59,6 +59,7 @@ fun BemInstallScreen(state: BemInstallState) {
     var discardDraft by remember { mutableStateOf(false) }
     var astcTarget by remember { mutableStateOf<BemPackage?>(null) }
     var repairNormals by remember { mutableStateOf(false) }
+    var backfillBaseline by remember { mutableStateOf(false) }
 
     Surface(
         color = Be.Colors.background,
@@ -171,6 +172,12 @@ fun BemInstallScreen(state: BemInstallState) {
                         enabled = !state.busy && state.indexBroken == null,
                         modifier = Modifier.fillMaxWidth().padding(top = Be.Space.l),
                     )
+                    GhostButton(
+                        text = stringResource(R.string.bem_backfill_baseline),
+                        onClick = { backfillBaseline = true },
+                        enabled = !state.busy && state.indexBroken == null,
+                        modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
+                    )
                 }
 
                 PanelCard {
@@ -267,6 +274,27 @@ fun BemInstallScreen(state: BemInstallState) {
                 repairNormals = false
             }) { Text(stringResource(android.R.string.ok)) } },
             dismissButton = { TextButton(onClick = { repairNormals = false }) { Text(stringResource(android.R.string.cancel)) } },
+        )
+    }
+    if (backfillBaseline) {
+        AlertDialog(
+            onDismissRequest = { backfillBaseline = false },
+            containerColor = Be.Colors.panelHigh,
+            titleContentColor = Be.Colors.textPrimary,
+            textContentColor = Be.Colors.textSecondary,
+            title = { Text(stringResource(R.string.bem_backfill_baseline)) },
+            text = { Text(stringResource(R.string.bem_backfill_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.backfillBaselines()
+                    backfillBaseline = false
+                }) { Text(stringResource(R.string.bem_backfill_confirm), color = Be.Colors.accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { backfillBaseline = false }) {
+                    Text(stringResource(android.R.string.cancel), color = Be.Colors.textSecondary)
+                }
+            },
         )
     }
     val target = pendingRemoval

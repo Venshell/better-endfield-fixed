@@ -245,6 +245,7 @@
     <string name="camera_keyframe_loop_hint">Replays the keyframe path after it reaches the end.</string>
     <string name="camera_keyframe_file_hint">Keyframes are stored in the game\'s internal storage at betterendfieldnext/camera-path.becam. Saving and loading run from the in-game overlay.</string>
     <string name="bem_import">Import BEM / ZIP</string>
+    <string name="bem_download_models">Download models</string>
     <string name="bem_hot_switch">Experimental: model hot switch</string>
     <string name="bem_skip_validation">Experimental: skip model validation</string>
     <string name="bem_models_title">Get models</string>
@@ -255,6 +256,8 @@
     <string name="bem_incoming_dismiss">Ignore this open</string>
     <string name="bem_status_ready">Ready</string>
     <string name="bem_cancel">Cancel current operation</string>
+    <string name="bem_backfill_confirm_message">Records the game version a package was built against. Model contents stay unchanged. Packages whose source version cannot be identified are skipped.</string>
+    <string name="bem_backfill_confirm">Backfill</string>
     <string name="mmd_import_label">Import MMD work</string>
     <string name="next_language">Language / 语言</string>
     <string name="next_language_system">Follow system</string>
