@@ -106,12 +106,12 @@ inline bool readLine(int socketFd, std::string& line) {
     return false;
 }
 
-inline std::vector<Room> list(const std::string& endpoint, std::string& error) {
+inline std::vector<Room> list(const std::string& endpoint, std::string& error, const std::string& token = {}) {
     const int socketFd = dial(endpoint, 4000, error);
     if (socketFd < 0) return {};
     std::vector<Room> rooms;
     std::string line;
-    if (!writeLine(socketFd, {{"op", "list"}, {"game", kGame}}) || !readLine(socketFd, line)) {
+    if (!writeLine(socketFd, {{"op", "list"}, {"game", kGame}, {"account", token}}) || !readLine(socketFd, line)) {
         ::close(socketFd);
         error = "大厅没有返回房间";
         return {};
@@ -119,7 +119,7 @@ inline std::vector<Room> list(const std::string& endpoint, std::string& error) {
     ::close(socketFd);
     const auto parsed = nlohmann::json::parse(line, nullptr, false);
     if (!parsed.is_object() || !parsed.contains("rooms") || !parsed["rooms"].is_array()) {
-        error = "大厅房间列表无效";
+        error = parsed.is_object() ? parsed.value("error", std::string{"大厅房间列表无效"}) : "大厅房间列表无效";
         return {};
     }
     for (const auto& item : parsed["rooms"]) {
@@ -165,12 +165,13 @@ struct GuestLink {
 
 // Returns the bridged game socket. The caller owns it. -1 on failure.
 // relay receives the guest's UDP channel token when the lobby provides one.
-inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& relay, std::string& error) {
+inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& relay, std::string& error,
+               const std::string& token = {}) {
     relay.clear();
     const int socketFd = dial(endpoint, 4000, error);
     if (socketFd < 0) return -1;
     std::string line;
-    if (!writeLine(socketFd, {{"op", "join"}, {"game", kGame}, {"room_id", roomId}}) || !readLine(socketFd, line)) {
+    if (!writeLine(socketFd, {{"op", "join"}, {"game", kGame}, {"room_id", roomId}, {"account", token}}) || !readLine(socketFd, line)) {
         ::close(socketFd);
         error = "大厅没有接上房间";
         return -1;
@@ -189,12 +190,14 @@ class Host {
 public:
     ~Host() { close(); }
     bool start(const std::string& endpoint, const std::string& name, const std::string& roomName,
-               int maxPlayers, bool password, const std::string& version, std::string& error) {
+               int maxPlayers, bool password, const std::string& version, std::string& error,
+               const std::string& token = {}) {
         close();
         control_ = dial(endpoint, 4000, error);
         if (control_ < 0) return false;
         endpoint_ = endpoint;
-        if (!writeLine(control_, {{"op", "host"}, {"game", kGame}, {"name", name}, {"room_name", roomName},
+        token_ = token;
+        if (!writeLine(control_, {{"op", "host"}, {"game", kGame}, {"account", token}, {"name", name}, {"room_name", roomName},
                 {"max_players", maxPlayers}, {"password", password}, {"version", version}})) {
             error = "无法向大厅登记房间";
             close();
@@ -208,7 +211,7 @@ public:
         }
         const auto parsed = nlohmann::json::parse(line, nullptr, false);
         if (!parsed.is_object() || parsed.value("op", std::string{}) != "hosted") {
-            error = "大厅拒绝开房";
+            error = parsed.is_object() ? parsed.value("error", std::string{"大厅拒绝开房"}) : "大厅拒绝开房";
             close();
             return false;
         }
@@ -244,7 +247,7 @@ public:
         const int socketFd = dial(endpoint_, 4000, error);
         if (socketFd < 0) return result;
         std::string answer;
-        if (!writeLine(socketFd, {{"op", "accept"}, {"game", kGame}, {"token", token}}) || !readLine(socketFd, answer)) {
+        if (!writeLine(socketFd, {{"op", "accept"}, {"game", kGame}, {"token", token}, {"account", token_}}) || !readLine(socketFd, answer)) {
             ::close(socketFd);
             error = "无法接上大厅里的客人";
             return result;
@@ -252,7 +255,7 @@ public:
         const auto bridged = nlohmann::json::parse(answer, nullptr, false);
         if (!bridged.is_object() || bridged.value("op", std::string{}) != "bridged") {
             ::close(socketFd);
-            error = "大厅没有把客人接进来";
+            error = bridged.is_object() ? bridged.value("error", std::string{"大厅没有把客人接进来"}) : "大厅没有把客人接进来";
             return result;
         }
         error.clear();
@@ -266,9 +269,11 @@ public:
         control_ = -1;
         roomId_ = 0;
         udpToken_.clear();
+        token_.clear();
     }
 private:
     int control_ = -1;
+    std::string token_;
     std::uint32_t roomId_ = 0;
     std::string endpoint_, udpToken_;
 };

@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up the EF Link account database every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+Persistent=true
+RandomizedDelaySec=20min
+Unit=eflink-account-backup.service
+
+[Install]
+WantedBy=timers.target

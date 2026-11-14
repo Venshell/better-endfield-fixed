@@ -232,5 +232,6 @@ UDP 类型：`Beacon=1` `Discover=2` `Hello=3` `Welcome=4` `State=5` `Data=6` `P
 - `native/modules/eflink/`：协议、房间、领域身份、世界频道状态机，以及 POSIX 垫片。
 - `native/modules/eflink/tests/eflink_tests.cpp`：UTF-8、信标、世界 JSON 校验、密码、满员、踢人、聊天、可靠/不可靠通道、UDP 姿态、TCP 回退。用独立 CMake 在主机上构建，不进入 APK。
 - Android 产品：工具页开关和名称/房间/端口/人数；悬浮窗开房、刷新局域网、直接连接、玩家列表（坐标、朝向、骨骼数、距离）、聊天。默认关闭。
+- 互联网大厅要求 QQ 邮箱注册后才能使用这台服务器。局域网直连不经过大厅。规则和备份见 `native/modules/eflink/lobby/README.md`。
 - 游戏线程采样：链式挂上 `TailLateTick`，读取主控角色的位置、旋转和 `Bip001` 骨骼。
 - 没有改 `native/CMakeLists.txt`，没有改遗留 Windows 源码，没有把 ImGui 或 `link_world.h` 放进构建。

@@ -50,6 +50,8 @@ internal fun EflinkOverlay(preview: Boolean) {
     var address by remember { mutableStateOf("") }
     var chat by remember { mutableStateOf("") }
     var players by remember { mutableStateOf(8) }
+    var email by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
     var sequence by remember { mutableLongStateOf(0L) }
     fun nextSequence(): Long {
         val now = System.currentTimeMillis()
@@ -83,7 +85,9 @@ internal fun EflinkOverlay(preview: Boolean) {
             } else when (page) {
                 "create" -> CreateScreen(
                     room, { room = it }, password, { password = it }, scope, { scope = it },
-                    players, { players = it }, status,
+                    players, { players = it }, status, email, { email = it }, code, { code = it },
+                    { send(context, nextSequence(), JSONObject().put("op", "auth_request").put("email", email.trim())) },
+                    { send(context, nextSequence(), JSONObject().put("op", "auth_verify").put("code", code.trim())) },
                 ) {
                     send(context, nextSequence(), JSONObject()
                         .put("op", "host")
@@ -93,7 +97,11 @@ internal fun EflinkOverlay(preview: Boolean) {
                         .put("max_players", players))
                     password = ""
                 }
-                "browse" -> BrowseScreen(status, scope, { scope = it }, password, { password = it }, address, { address = it }) { found ->
+                "browse" -> BrowseScreen(status, scope, { scope = it }, password, { password = it }, address, { address = it },
+                    email, { email = it }, code, { code = it },
+                    { send(context, nextSequence(), JSONObject().put("op", "auth_request").put("email", email.trim())) },
+                    { send(context, nextSequence(), JSONObject().put("op", "auth_verify").put("code", code.trim())) },
+                ) { found ->
                     if (found.roomId != 0L) {
                         send(context, nextSequence(), JSONObject()
                             .put("op", "join_lobby").put("room_id", found.roomId).put("password", password))
@@ -117,8 +125,19 @@ internal fun EflinkOverlay(preview: Boolean) {
 
 @Composable
 private fun HomeScreen(status: EflinkSnapshot, onCreate: () -> Unit, onJoin: () -> Unit) {
+    val context = LocalContext.current
+    var sequence by remember { mutableLongStateOf(0L) }
     Text("局域网，或互联网 ${status.server}",
         color = Be.Colors.textSecondary, fontSize = 11.sp)
+    Text(if (status.account.isEmpty()) "互联网需要先注册 QQ 邮箱" else "已注册 ${status.account}",
+        color = Be.Colors.textSecondary, fontSize = 11.sp)
+    if (status.account.isNotEmpty()) {
+        OverlayAction("退出账号") {
+            val now = System.currentTimeMillis()
+            sequence = if (now > sequence) now else sequence + 1
+            send(context, sequence, JSONObject().put("op", "auth_logout"))
+        }
+    }
     OverlayAction("创建房间", onClick = onCreate)
     OverlayAction("加入房间", onClick = onJoin)
 }
@@ -130,10 +149,17 @@ private fun CreateScreen(
     scope: String, onScope: (String) -> Unit,
     players: Int, onPlayers: (Int) -> Unit,
     status: EflinkSnapshot,
+    email: String, onEmail: (String) -> Unit,
+    code: String, onCode: (String) -> Unit,
+    onSendCode: () -> Unit, onVerify: () -> Unit,
     onCreate: () -> Unit,
 ) {
     Text("创建房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
     NetworkChoice(scope, onScope, status.server)
+    if (scope == "internet" && status.account.isEmpty()) {
+        AccountForm(status, email, onEmail, code, onCode, onSendCode, onVerify)
+        return
+    }
     OverlayField(room, onRoom, "房间名", 64)
     OverlayField(password, onPassword, "密码，可留空", 64)
     Segmented(players == 4, "4 人", "8 人", { onPlayers(4) }, { onPlayers(8) })
@@ -146,12 +172,19 @@ private fun BrowseScreen(
     scope: String, onScope: (String) -> Unit,
     password: String, onPassword: (String) -> Unit,
     address: String, onAddress: (String) -> Unit,
+    email: String, onEmail: (String) -> Unit,
+    code: String, onCode: (String) -> Unit,
+    onSendCode: () -> Unit, onVerify: () -> Unit,
     onJoin: (EflinkRoom) -> Unit,
 ) {
     val context = LocalContext.current
     var sequence by remember { mutableLongStateOf(0L) }
     Text("加入房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
     NetworkChoice(scope, onScope, status.server)
+    if (scope == "internet" && status.account.isEmpty()) {
+        AccountForm(status, email, onEmail, code, onCode, onSendCode, onVerify)
+        return
+    }
     val rooms = status.rooms.filter { if (scope == "internet") it.roomId != 0L else it.roomId == 0L }
     if (rooms.isEmpty()) {
         Text(if (scope == "internet") "互联网上还没有房间。" else "附近还没有局域网房间。",
@@ -206,6 +239,23 @@ private fun RoomScreen(status: EflinkSnapshot, chat: String, onChat: (String) ->
     }
     OverlayField(chat, onChat, "说点什么", 200)
     OverlayAction("发送", onClick = onSend)
+}
+
+@Composable
+private fun AccountForm(
+    status: EflinkSnapshot,
+    email: String, onEmail: (String) -> Unit,
+    code: String, onCode: (String) -> Unit,
+    onSendCode: () -> Unit, onVerify: () -> Unit,
+) {
+    val qq = email.trim().lowercase().matches(Regex("^[^\\s@]+@qq\\.com$"))
+    OverlayField(email, onEmail, "QQ 邮箱", 254, KeyboardType.Email)
+    OverlayAction("发送验证码", enabled = qq, onClick = onSendCode)
+    OverlayField(code, { onCode(it.filter { ch -> ch.isDigit() }.take(6)) }, "六位验证码", 6, KeyboardType.Number)
+    OverlayAction("注册并登录", enabled = qq && code.length == 6, onClick = onVerify)
+    if (status.accountNotice.isNotEmpty()) {
+        Text(status.accountNotice, color = Be.Colors.textSecondary, fontSize = 11.sp)
+    }
 }
 
 @Composable
@@ -318,12 +368,14 @@ private data class EflinkSnapshot(
     val network: String,
     val lobbyReady: Boolean,
     val server: String,
+    val account: String,
+    val accountNotice: String,
     val players: List<EflinkPlayer>,
     val rooms: List<EflinkRoom>,
     val chat: List<String>,
 ) {
     companion object {
-        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, "", false, "game.venshell.top", emptyList(), emptyList(), emptyList())
+        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, "", false, "game.venshell.top", "", "", emptyList(), emptyList(), emptyList())
 
         fun read(file: File): EflinkSnapshot {
             if (!file.isFile) return missing()
@@ -363,7 +415,8 @@ private data class EflinkSnapshot(
                 EflinkSnapshot(true, json.optString("role"), json.optString("room_name"), json.optString("error"),
                     json.optBoolean("pose_ready"), json.optInt("udp"), json.optInt("tcp_only"),
                     json.optString("network"), json.optBoolean("lobby_ready"),
-                    json.optString("server").ifBlank { "game.venshell.top" }, players, rooms, chat)
+                    json.optString("server").ifBlank { "game.venshell.top" },
+                    json.optString("account"), json.optString("account_notice"), players, rooms, chat)
             } catch (_: Throwable) {
                 missing()
             }

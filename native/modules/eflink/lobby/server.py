@@ -12,9 +12,12 @@ A UDP datagram is an 8-byte channel token plus one EF Link datagram.
 
 import argparse
 import json
+import os
 import secrets
 import socket
 import threading
+
+from auth import AccountGate
 
 GAME = "endfield"
 MAX_LINE = 8192
@@ -88,6 +91,13 @@ LOBBY = Lobby()
 RELAY_LOCK = threading.Lock()
 HOST_TOKENS = {}
 RELAYS = {}
+GATE = None
+
+
+def gate():
+    if GATE is None:
+        raise RuntimeError("account gate is not open")
+    return GATE
 
 
 def send_line(conn, payload, lock=None):
@@ -226,6 +236,26 @@ def handle(conn, peer):
             fail(conn, "wrong-game")
             return
         op = message.get("op")
+        ip = peer[0]
+        if op == "code":
+            reason = gate().request_code(message.get("email"), ip)
+            if reason:
+                fail(conn, reason)
+                return
+            send_line(conn, {"op": "sent"})
+            conn.close()
+            return
+        if op == "verify":
+            token, reason = gate().verify(message.get("email"), message.get("code"), ip)
+            if reason:
+                fail(conn, reason)
+                return
+            send_line(conn, {"op": "session", "token": token, "email": str(message.get("email", "")).strip().lower()})
+            conn.close()
+            return
+        if op in ("list", "host", "join", "accept") and gate().session(message.get("account"), ip) is None:
+            fail(conn, "login-required")
+            return
         if op == "list":
             send_line(conn, {"op": "rooms", "rooms": LOBBY.snapshot()})
             conn.close()
@@ -369,7 +399,9 @@ def accept(conn, message):
     del owner
 
 
-def serve(bind, port):
+def serve(bind, port, database=None):
+    global GATE
+    GATE = AccountGate(database or os.environ.get("EFLINK_AUTH_DB", "accounts.sqlite"))
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind((bind, port))
@@ -388,10 +420,11 @@ def main():
     parser = argparse.ArgumentParser(description="EF Link room lobby and TCP relay")
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=47617)
+    parser.add_argument("--auth-db", default=os.environ.get("EFLINK_AUTH_DB", "accounts.sqlite"))
     args = parser.parse_args()
     if args.port < 1 or args.port > 65535:
         raise SystemExit("port must be 1-65535")
-    serve(args.bind, args.port)
+    serve(args.bind, args.port, args.auth_db)
 
 
 if __name__ == "__main__":

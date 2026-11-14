@@ -47,6 +47,20 @@ float YawDegrees(const float rotation[4]) {
     return std::atan2(2.f * (w * y + x * z), 1.f - 2.f * (y * y + z * z)) * 57.2957795f;
 }
 
+std::string explainLobby(std::string code) {
+    if (code == "login-required") return "请先用 QQ 邮箱注册后再使用这个服务器";
+    if (code == "not-mainland") return "目前仅限中国大陆网络";
+    if (code == "qq-mail-only") return "目前仅支持 QQ 邮箱";
+    if (code == "slow-down") return "同一网络 60 秒内只能发送一次验证码";
+    if (code == "mail-busy") return "该邮箱发送过于频繁，请稍后再试";
+    if (code == "mail-daily") return "今日验证码发送已达上限";
+    if (code == "verify-limit") return "当前网络验证次数过多，请稍后再试";
+    if (code == "same-network") return "请在申请验证码的同一网络下完成验证";
+    if (code == "bad-code" || code == "code-expired") return "验证码无效或已过期";
+    if (code == "mail-failed") return "验证码邮件发送失败";
+    return code;
+}
+
 std::string normalizeLobby(std::string value) {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) value.erase(value.begin());
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
@@ -87,6 +101,7 @@ public:
         if (port_ == 47616) port_ = 47615;
         max_players_ = static_cast<unsigned>(std::clamp(config.value("max_players", 8), 2, 16));
         lobby_endpoint_ = normalizeLobby(config.value("lobby", std::string{}));
+        LoadAccount();
         net_.version = EFLINK_VERSION;
         net_.setName(player_name_);
         net_.onData = [this](std::uint16_t from, std::uint32_t channel, const unsigned char* data, std::size_t size) {
@@ -339,6 +354,12 @@ private:
                 internet_room_.store(false);
                 return;
             }
+            if (network == "internet" && account_token_.empty()) {
+                std::lock_guard lock(mutex_);
+                lobby_error_ = "请先用 QQ 邮箱注册后再使用这个服务器";
+                internet_room_.store(false);
+                return;
+            }
             internet_room_.store(network == "internet");
             if (command.contains("player_name") && command["player_name"].is_string()) {
                 auto name = command["player_name"].get<std::string>().substr(0, 64);
@@ -353,13 +374,20 @@ private:
         } else if (op == "join") {
             internet_room_.store(false);
             net_.join(command.value("address", std::string{}), command.value("password", std::string{}));
+        } else if (op == "auth_request" || op == "auth_verify" || op == "auth_logout") {
+            Account(op, command);
         } else if (op == "join_lobby") {
+            if (account_token_.empty()) {
+                std::lock_guard lock(mutex_);
+                lobby_error_ = "请先用 QQ 邮箱注册后再使用这个服务器";
+                return;
+            }
             std::uint32_t roomId = command.value("room_id", 0u);
             std::string failure, relay;
-            const int bridged = lobby_endpoint_.empty() ? -1 : eflink::lobby::join(lobby_endpoint_, roomId, relay, failure);
+            const int bridged = lobby_endpoint_.empty() ? -1 : eflink::lobby::join(lobby_endpoint_, roomId, relay, failure, account_token_);
             if (bridged < 0) {
                 std::lock_guard lock(mutex_);
-                lobby_error_ = failure.empty() ? "连不上联机服务器" : failure;
+                lobby_error_ = failure.empty() ? "连不上联机服务器" : explainLobby(failure);
             } else {
                 internet_room_.store(true);
                 std::string host;
@@ -397,18 +425,20 @@ private:
         const auto now = std::chrono::steady_clock::now();
         if (now - last_lobby_list_ > std::chrono::seconds(2)) {
             last_lobby_list_ = now;
-            std::string failure;
-            const auto listed = eflink::lobby::list(lobby_endpoint_, failure);
-            Json rooms = Json::array();
-            for (const auto& room : listed) {
-                if (lobby_host_ && room.id == lobby_host_->roomId()) continue;
-                rooms.push_back({{"name", room.name}, {"host", room.host}, {"room_id", room.id},
-                    {"players", room.players}, {"max", room.maxPlayers}, {"password", room.password},
-                    {"version", room.version}, {"lobby", true}, {"address", ""}});
+            if (!account_token_.empty()) {
+                std::string failure;
+                const auto listed = eflink::lobby::list(lobby_endpoint_, failure, account_token_);
+                Json rooms = Json::array();
+                for (const auto& room : listed) {
+                    if (lobby_host_ && room.id == lobby_host_->roomId()) continue;
+                    rooms.push_back({{"name", room.name}, {"host", room.host}, {"room_id", room.id},
+                        {"players", room.players}, {"max", room.maxPlayers}, {"password", room.password},
+                        {"version", room.version}, {"lobby", true}, {"address", ""}});
+                }
+                std::lock_guard lock(mutex_);
+                lobby_rooms_ = std::move(rooms);
+                lobby_error_ = failure.empty() ? std::string{} : explainLobby(failure);
             }
-            std::lock_guard lock(mutex_);
-            lobby_rooms_ = std::move(rooms);
-            lobby_error_ = failure;
         }
         const auto snapshot = net_.snapshot();
         if (snapshot.role == eflink::Role::Host && internet_room_.load()) {
@@ -421,10 +451,10 @@ private:
                     name = player_name_;
                 }
                 const auto roomName = snapshot.roomName.empty() ? room_name_ : snapshot.roomName;
-                if (!host->start(lobby_endpoint_, name, roomName, static_cast<int>(snapshot.maxPlayers),
-                        snapshot.password, net_.version, failure)) {
+                if (account_token_.empty() || !host->start(lobby_endpoint_, name, roomName, static_cast<int>(snapshot.maxPlayers),
+                        snapshot.password, net_.version, failure, account_token_)) {
                     std::lock_guard lock(mutex_);
-                    lobby_error_ = failure;
+                    lobby_error_ = explainLobby(failure.empty() ? "login-required" : failure);
                 } else {
                     std::string relayHost;
                     std::uint16_t relayPort = 0;
@@ -446,7 +476,7 @@ private:
                         net_.clearUdpRelay();
                         if (!failure.empty()) {
                             std::lock_guard lock(mutex_);
-                            lobby_error_ = failure;
+                            lobby_error_ = explainLobby(failure);
                         }
                         break;
                     }
@@ -518,6 +548,7 @@ private:
             {"network", internet_room_.load() ? "internet" : (std::string(role) == "offline" ? "" : "lan")},
             {"lobby_ready", !lobby_endpoint_.empty()},
             {"server", lobby_endpoint_.substr(0, lobby_endpoint_.rfind(':'))},
+            {"account", account_email_}, {"account_notice", account_notice_},
             {"version", EFLINK_VERSION}};
         const auto text = body.dump();
         const auto path = std::filesystem::path(directory_) / "status.json";
@@ -535,7 +566,94 @@ private:
     std::atomic<Il2CppRuntime*> game_runtime_{nullptr};
     eflink::Net net_;
     eflink::Session session_;
+    void LoadAccount() {
+        const auto path = std::filesystem::path(directory_) / "account.json";
+        std::ifstream input(path);
+        if (!input) return;
+        std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        const auto saved = Json::parse(text, nullptr, false);
+        if (!saved.is_object()) return;
+        account_token_ = saved.value("token", std::string{});
+        account_email_ = saved.value("email", std::string{});
+    }
+
+    void SaveAccount() const {
+        const auto path = std::filesystem::path(directory_) / "account.json";
+        const auto temporary = std::filesystem::path(directory_) / "account.json.tmp";
+        {
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            output << Json{{"token", account_token_}, {"email", account_email_}}.dump();
+        }
+        std::error_code ignored;
+        std::filesystem::rename(temporary, path, ignored);
+    }
+
+    bool LobbyOnce(const Json& request, Json& response, std::string& failure) {
+        const int socketFd = eflink::lobby::dial(lobby_endpoint_, 4000, failure);
+        if (socketFd < 0) return false;
+        std::string line;
+        const bool ok = eflink::lobby::writeLine(socketFd, request) && eflink::lobby::readLine(socketFd, line);
+        ::close(socketFd);
+        if (!ok) {
+            failure = "连不上联机服务器";
+            return false;
+        }
+        response = Json::parse(line, nullptr, false);
+        if (!response.is_object()) {
+            failure = "大厅没有返回结果";
+            return false;
+        }
+        if (response.value("op", std::string{}) == "error") {
+            failure = explainLobby(response.value("error", std::string{"大厅拒绝了"}));
+            return false;
+        }
+        return true;
+    }
+
+    void Account(const std::string& op, const Json& command) {
+        if (op == "auth_logout") {
+            account_token_.clear();
+            account_email_.clear();
+            account_notice_.clear();
+            std::error_code ignored;
+            std::filesystem::remove(std::filesystem::path(directory_) / "account.json", ignored);
+            std::lock_guard lock(mutex_);
+            lobby_error_.clear();
+            lobby_rooms_ = Json::array();
+            return;
+        }
+        const auto email = command.value("email", account_email_);
+        Json response;
+        std::string failure;
+        if (op == "auth_request") {
+            account_email_ = email;
+            if (!LobbyOnce({{"op", "code"}, {"game", eflink::lobby::kGame}, {"email", email}}, response, failure)) {
+                std::lock_guard lock(mutex_);
+                lobby_error_ = failure;
+                account_notice_.clear();
+                return;
+            }
+            std::lock_guard lock(mutex_);
+            lobby_error_.clear();
+            account_notice_ = "验证码已发送";
+            return;
+        }
+        if (!LobbyOnce({{"op", "verify"}, {"game", eflink::lobby::kGame}, {"email", account_email_},
+                {"code", command.value("code", std::string{})}}, response, failure)) {
+            std::lock_guard lock(mutex_);
+            lobby_error_ = failure;
+            return;
+        }
+        account_token_ = response.value("token", std::string{});
+        account_email_ = response.value("email", account_email_);
+        account_notice_.clear();
+        SaveAccount();
+        std::lock_guard lock(mutex_);
+        lobby_error_.clear();
+    }
+
     std::string directory_, player_name_ = "玩家", room_name_, model_path_, lobby_endpoint_, lobby_error_;
+    std::string account_token_, account_email_, account_notice_;
     Json lobby_rooms_ = Json::array();
     std::unique_ptr<eflink::lobby::Host> lobby_host_;
     std::atomic<bool> internet_room_{false};
