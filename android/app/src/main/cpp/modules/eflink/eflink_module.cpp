@@ -325,6 +325,19 @@ private:
         }
     }
 
+    // Internet rooms are addressed by the account the player registered.
+    // A LAN room keeps the name typed on the LAN settings row.
+    std::string displayedName(bool internet) {
+        std::lock_guard lock(mutex_);
+        if (internet && !account_name_.empty()) return account_name_.substr(0, 64);
+        auto name = player_name_.substr(0, 64);
+        return name.empty() ? std::string("玩家") : name;
+    }
+
+    void applyDisplayedName(bool internet) {
+        net_.setName(displayedName(internet));
+    }
+
     void Poll() {
         const auto path = std::filesystem::path(directory_) / "command.json";
         std::error_code ignored;
@@ -372,16 +385,16 @@ private:
             internet_room_.store(network == "internet");
             if (command.contains("player_name") && command["player_name"].is_string()) {
                 auto name = command["player_name"].get<std::string>().substr(0, 64);
-                if (name.empty()) name = "玩家";
-                {
+                if (!name.empty()) {
                     std::lock_guard lock(mutex_);
                     player_name_ = name;
                 }
-                net_.setName(name);
             }
+            applyDisplayedName(network == "internet");
             net_.host(std::move(options));
         } else if (op == "join") {
             internet_room_.store(false);
+            applyDisplayedName(false);
             net_.join(command.value("address", std::string{}), command.value("password", std::string{}));
         } else if (op == "join_lobby") {
             if (!internet_enabled_ || account_token_.empty()) {
@@ -398,6 +411,7 @@ private:
             } else {
                 internet_room_.store(true);
                 internet_room_id_ = roomId;
+                applyDisplayedName(true);
                 std::string host;
                 std::uint16_t relayPort = 0;
                 splitLobby(lobby_endpoint_, host, relayPort);
@@ -425,7 +439,7 @@ private:
                 std::lock_guard lock(mutex_);
                 player_name_ = name;
             }
-            net_.setName(name);
+            if (!internet_room_.load()) net_.setName(name);
         }
     }
 

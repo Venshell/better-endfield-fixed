@@ -199,6 +199,80 @@ public final class XposedEntry extends XposedModule {
     }
 
     /**
+     * ColorOS leaves {@code Looper.mLooperExt} null on the Unity thread.
+     * {@code loopOnce} then calls {@code traceEnd()} and the process dies.
+     * A no-op stand-in keeps that thread looping; the main looper already has
+     * a real extension and is left alone.
+     */
+    private void installLooperExtGuard() {
+        int hooked = 0;
+        for (Method method : android.os.Looper.class.getDeclaredMethods()) {
+            String name = method.getName();
+            if (!name.equals("loop")) continue;
+            try {
+                hook(method).intercept(chain -> {
+                    try {
+                        Object self = chain.getThisObject();
+                        if (self instanceof android.os.Looper) ensureLooperExt((android.os.Looper) self);
+                        try {
+                            Object first = chain.getArg(0);
+                            if (first instanceof android.os.Looper) ensureLooperExt((android.os.Looper) first);
+                        } catch (Throwable ignored) { /* loop() has no arguments */ }
+                        android.os.Looper current = android.os.Looper.myLooper();
+                        if (current != null) ensureLooperExt(current);
+                    } catch (Throwable ignored) { /* the guard must never break the looper */ }
+                    return chain.proceed();
+                });
+                hooked++;
+            } catch (Throwable error) {
+                RuntimeLog.record("looper guard skipped " + method + ": " + error);
+            }
+        }
+        RuntimeLog.record("looper guard installed on " + hooked + " Looper method(s)");
+    }
+
+    private static volatile Object looperExtStub;
+    private static volatile java.lang.reflect.Field looperExtField;
+    private static final ThreadLocal<Boolean> looperChecked = new ThreadLocal<>();
+
+    private static void ensureLooperExt(android.os.Looper looper) {
+        if (Boolean.TRUE.equals(looperChecked.get())) return;
+        try {
+            java.lang.reflect.Field field = looperExtField;
+            if (field == null) {
+                field = android.os.Looper.class.getDeclaredField("mLooperExt");
+                field.setAccessible(true);
+                looperExtField = field;
+            }
+            if (field.get(looper) != null) {
+                looperChecked.set(Boolean.TRUE);
+                return;
+            }
+            Object stub = looperExtStub;
+            if (stub == null) {
+                Class<?> type = Class.forName("android.os.ILooperExt");
+                stub = java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type},
+                        (proxy, method, args) -> {
+                            Class<?> ret = method.getReturnType();
+                            if (ret == boolean.class) return Boolean.FALSE;
+                            if (ret == int.class) return 0;
+                            if (ret == long.class) return 0L;
+                            if (ret == float.class) return 0f;
+                            if (ret == double.class) return 0d;
+                            return null;
+                        });
+                looperExtStub = stub;
+            }
+            field.set(looper, stub);
+            looperChecked.set(Boolean.TRUE);
+            RuntimeLog.record("looper guard filled a missing ILooperExt on "
+                    + Thread.currentThread().getName());
+        } catch (Throwable error) {
+            RuntimeLog.record("looper guard failed: " + error);
+        }
+    }
+
+    /**
      * Hooks the base {@code Activity.dispatchKeyEvent}, which is the first
      * Activity-level entry point a key event passes through. It is the relay
      * for every host that does not override the method.
@@ -376,6 +450,7 @@ public final class XposedEntry extends XposedModule {
                     + "waiting for game startup");
             installActivityResultRelay();
             installVolumeKeyRelay();
+            installLooperExtGuard();
             startRemoteCommandPoller();
         } catch (Throwable error) { report("entry failed: " + error); }
     }

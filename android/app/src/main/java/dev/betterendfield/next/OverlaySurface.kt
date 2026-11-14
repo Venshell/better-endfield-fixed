@@ -75,10 +75,18 @@ class OverlaySurface(
     private var showJournal by mutableStateOf(true)
     private var compositionInitialized = false
 
-    val handle: ComposeView = ComposeView(activity).apply {
+    /**
+     * Popup windows read [android.view.View.getContext], not [LocalContext].
+     * A text cursor is one of those popups, and it asks for Compose's
+     * `default_popup_window_title`. The game's resource table does not contain
+     * that id, so the view itself has to carry the module context.
+     */
+    private val resourceContext = OverlayResourceContext(activity)
+
+    val handle: ComposeView = ComposeView(resourceContext).apply {
         setViewTreeOwners(this)
     }
-    val panel: ComposeView = ComposeView(activity).apply {
+    val panel: ComposeView = ComposeView(resourceContext).apply {
         setViewTreeOwners(this)
     }
 
@@ -96,7 +104,6 @@ class OverlaySurface(
     fun composeNow() {
         if (compositionInitialized) return
         check(handle.isAttachedToWindow && panel.isAttachedToWindow)
-        val resourceContext = OverlayResourceContext(handle.context)
         handle.setContent {
             CompositionLocalProvider(LocalContext provides resourceContext,
                 LocalResources provides resourceContext.resources,
