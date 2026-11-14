@@ -345,5 +345,6 @@
     <string name="eflink_room">Default room name</string>
     <string name="eflink_port">Port, default 47615</string>
     <string name="eflink_players">Player cap, 2–16</string>
-    <string name="eflink_restart">Restart the game after saving. Room discovery uses LAN UDP; if it does not appear, connect by IP.</string>
+    <string name="eflink_lobby">Lobby address, for example 1.2.3.4:47617. Leave empty for LAN only</string>
+    <string name="eflink_restart">Restart the game after saving. Start the lobby on your server first. LAN UDP discovery still works.</string>
 </resources>

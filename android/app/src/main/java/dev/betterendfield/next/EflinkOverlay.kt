@@ -86,14 +86,22 @@ internal fun EflinkOverlay(preview: Boolean) {
                 send(context, nextSequence(), JSONObject().put("op", "refresh"))
             }
             status.rooms.forEach { found ->
+                val where = if (found.roomId != 0L) "大厅" else found.address
                 val label = found.name + " · " + found.host + " · " + found.players + "/" + found.max +
-                    (if (found.locked) " · 有密码" else "")
+                    " · " + where + (if (found.locked) " · 有密码" else "")
                 OverlayAction(label) {
-                    address = found.address
-                    send(context, nextSequence(), JSONObject()
-                        .put("op", "join")
-                        .put("address", found.address)
-                        .put("password", password))
+                    if (found.roomId != 0L) {
+                        send(context, nextSequence(), JSONObject()
+                            .put("op", "join_lobby")
+                            .put("room_id", found.roomId)
+                            .put("password", password))
+                    } else {
+                        address = found.address
+                        send(context, nextSequence(), JSONObject()
+                            .put("op", "join")
+                            .put("address", found.address)
+                            .put("password", password))
+                    }
                     password = ""
                 }
             }
@@ -177,6 +185,7 @@ private data class EflinkRoom(
     val players: Int,
     val max: Int,
     val locked: Boolean,
+    val roomId: Long = 0,
 )
 
 private data class EflinkSnapshot(
@@ -234,7 +243,8 @@ private data class EflinkSnapshot(
                     if (array != null) for (index in 0 until array.length()) {
                         val item = array.optJSONObject(index) ?: continue
                         add(EflinkRoom(item.optString("name"), item.optString("host"), item.optString("address"),
-                            item.optInt("players"), item.optInt("max"), item.optBoolean("password")))
+                            item.optInt("players"), item.optInt("max"), item.optBoolean("password"),
+                            item.optLong("room_id")))
                     }
                 }
                 val chat = buildList {

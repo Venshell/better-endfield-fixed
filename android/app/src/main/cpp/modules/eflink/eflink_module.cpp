@@ -3,6 +3,7 @@
 #include "core/hook_broker.h"
 #include "core/log.h"
 #include "core/runtime.h"
+#include "eflink_lobby_client.h"
 #include "link_net.h"
 #include "link_session.h"
 #include "link_version.h"
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -65,6 +67,8 @@ public:
         port_ = static_cast<std::uint16_t>(std::clamp(config.value("port", 47615), 1024, 65535));
         if (port_ == 47616) port_ = 47615;
         max_players_ = static_cast<unsigned>(std::clamp(config.value("max_players", 8), 2, 16));
+        lobby_endpoint_ = config.value("lobby", std::string{});
+        if (lobby_endpoint_.find(':') == std::string::npos) lobby_endpoint_.clear();
         net_.version = EFLINK_VERSION;
         net_.setName(player_name_);
         net_.onData = [this](std::uint16_t from, std::uint32_t channel, const unsigned char* data, std::size_t size) {
@@ -259,6 +263,7 @@ private:
         while (running_.load()) {
             try {
                 Poll();
+                MaintainLobby();
                 if (!hooked_.load()) Pump();
                 Publish();
             } catch (const std::exception& error) {
@@ -306,6 +311,16 @@ private:
             net_.host(std::move(options));
         } else if (op == "join") {
             net_.join(command.value("address", std::string{}), command.value("password", std::string{}));
+        } else if (op == "join_lobby") {
+            std::uint32_t roomId = command.value("room_id", 0u);
+            std::string failure;
+            const int bridged = lobby_endpoint_.empty() ? -1 : eflink::lobby::join(lobby_endpoint_, roomId, failure);
+            if (bridged < 0) {
+                std::lock_guard lock(mutex_);
+                lobby_error_ = failure.empty() ? "未设置大厅地址" : failure;
+            } else {
+                net_.adoptServer(bridged, command.value("password", std::string{}), "lobby");
+            }
         } else if (op == "leave") {
             net_.leave();
         } else if (op == "refresh") {
@@ -326,6 +341,68 @@ private:
                 player_name_ = name;
             }
             net_.setName(name);
+        }
+    }
+
+    void MaintainLobby() {
+        if (lobby_endpoint_.empty()) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_lobby_list_ > std::chrono::seconds(2)) {
+            last_lobby_list_ = now;
+            std::string failure;
+            const auto listed = eflink::lobby::list(lobby_endpoint_, failure);
+            Json rooms = Json::array();
+            for (const auto& room : listed) {
+                if (lobby_host_ && room.id == lobby_host_->roomId()) continue;
+                rooms.push_back({{"name", room.name}, {"host", room.host}, {"room_id", room.id},
+                    {"players", room.players}, {"max", room.maxPlayers}, {"password", room.password},
+                    {"version", room.version}, {"lobby", true}, {"address", ""}});
+            }
+            std::lock_guard lock(mutex_);
+            lobby_rooms_ = std::move(rooms);
+            lobby_error_ = failure;
+        }
+        const auto snapshot = net_.snapshot();
+        if (snapshot.role == eflink::Role::Host) {
+            if (!lobby_host_) {
+                auto host = std::make_unique<eflink::lobby::Host>();
+                std::string failure;
+                std::string name;
+                {
+                    std::lock_guard lock(mutex_);
+                    name = player_name_;
+                }
+                const auto roomName = snapshot.roomName.empty() ? room_name_ : snapshot.roomName;
+                if (!host->start(lobby_endpoint_, name, roomName, static_cast<int>(snapshot.maxPlayers),
+                        snapshot.password, net_.version, failure)) {
+                    std::lock_guard lock(mutex_);
+                    lobby_error_ = failure;
+                } else {
+                    lobby_host_ = std::move(host);
+                    std::lock_guard lock(mutex_);
+                    lobby_error_.clear();
+                }
+            }
+            if (lobby_host_) {
+                lobby_host_->beat(static_cast<int>(std::max<std::size_t>(1, snapshot.peers.size())));
+                std::string failure;
+                for (;;) {
+                    const int guest = lobby_host_->pollGuest(failure);
+                    if (guest < 0) {
+                        if (lobby_host_->roomId() == 0) {
+                            lobby_host_.reset();
+                            if (!failure.empty()) {
+                                std::lock_guard lock(mutex_);
+                                lobby_error_ = failure;
+                            }
+                        }
+                        break;
+                    }
+                    net_.adoptIncoming(guest, "lobby");
+                }
+            }
+        } else if (lobby_host_) {
+            lobby_host_.reset();
         }
     }
 
@@ -367,12 +444,21 @@ private:
         for (auto it = begin; it != lines.end(); ++it) {
             chat.push_back({{"name", it->name}, {"text", it->text}, {"system", it->system}});
         }
+        Json lobbyRooms = Json::array();
+        std::string lobbyError;
+        {
+            std::lock_guard lock(mutex_);
+            lobbyRooms = lobby_rooms_;
+            lobbyError = lobby_error_;
+        }
+        for (const auto& room : lobbyRooms) rooms.push_back(room);
         const char* role = "offline";
         if (snapshot.role == eflink::Role::Connecting) role = "connecting";
         else if (snapshot.role == eflink::Role::Host) role = "host";
         else if (snapshot.role == eflink::Role::Client) role = "client";
         Json body{{"role", role}, {"room_name", snapshot.roomName}, {"local_id", snapshot.localId},
-            {"error", snapshot.lastError}, {"players", std::move(players)}, {"rooms", std::move(rooms)},
+            {"error", snapshot.lastError.empty() ? lobbyError : snapshot.lastError},
+            {"players", std::move(players)}, {"rooms", std::move(rooms)},
             {"chat", std::move(chat)}, {"pose_ready", pose_ready_.load()},
             {"udp", snapshot.udpLinks}, {"tcp_only", snapshot.tcpOnlyLinks},
             {"version", EFLINK_VERSION}};
@@ -392,7 +478,10 @@ private:
     std::atomic<Il2CppRuntime*> game_runtime_{nullptr};
     eflink::Net net_;
     eflink::Session session_;
-    std::string directory_, player_name_ = "玩家", room_name_, model_path_;
+    std::string directory_, player_name_ = "玩家", room_name_, model_path_, lobby_endpoint_, lobby_error_;
+    Json lobby_rooms_ = Json::array();
+    std::unique_ptr<eflink::lobby::Host> lobby_host_;
+    std::chrono::steady_clock::time_point last_lobby_list_{};
     std::uint16_t port_ = 47615;
     unsigned max_players_ = 8;
     std::uint64_t command_sequence_ = 0;

@@ -94,6 +94,33 @@ public:
     }
     void host(HostOptions value) {post([this,value]{startHost(value);});}
     void join(std::string address,std::string password) {post([this,address,password]{startJoin(address,password);});}
+    // A TCP socket already bridged by the lobby. The network thread owns it after this call.
+    void adoptIncoming(int connected,std::string address) {
+        post([this,connected,address]{
+            if(role.load()!=Role::Host||connected<0) {if(connected>=0) closesocket(connected);return;}
+            nonBlocking(connected);int on=1;setsockopt(connected,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&on),sizeof on);
+            if(pending.size()>=16) {closesocket(connected);return;}
+            auto member=std::make_unique<Member>();member->tcp.socket=connected;member->tcp.lastHeard=nowMs();member->address=std::move(address);
+            pending.push_back(std::move(member));
+        });
+    }
+    void adoptServer(int connected,std::string password,std::string label) {
+        post([this,connected,password,label]{
+            if(connected<0) {notice("大厅连接失败",true);return;}
+            closeSession("left the room",true);
+            server.socket=connected;nonBlocking(server.socket);
+            int on=1;setsockopt(server.socket,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&on),sizeof on);
+            joinPassword=password;joinStarted=nowMs();joinAddress=label;
+            role.store(Role::Connecting);udpWelcomed=false;udpNoticed=false;
+            {std::lock_guard lock(viewMutex);view.lastError.clear();}
+            resetView();publishPeers();
+            notice("正在通过大厅连接…");
+            proto::Writer hello;
+            hello.u32(proto::kMagic).u16(proto::kProtocol).str(version,32).str(name(),64).u64(proto::passwordProof(0,password)).u16(0);
+            auto bytes=proto::frame(proto::Tcp::Hello,hello);server.out.insert(server.out.end(),bytes.begin(),bytes.end());
+            server.lastHeard=nowMs();
+        });
+    }
     void leave() {post([this]{closeSession("left the room",true);});}
     void refresh() {post([this]{sendDiscover();});}
     void kick(std::uint16_t id) {post([this,id]{kickPeer(id);});}

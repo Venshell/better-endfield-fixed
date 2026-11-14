@@ -11,7 +11,8 @@
     <string name="eflink_room">默认房间名</string>
     <string name="eflink_port">端口，默认 47615</string>
     <string name="eflink_players">人数上限 2–16</string>
-    <string name="eflink_restart">保存后重启游戏生效。发现房间依赖局域网 UDP；连不上时用 IP 直接连接。</string>
+    <string name="eflink_lobby">大厅地址，例如 1.2.3.4:47617，留空只用局域网</string>
+    <string name="eflink_restart">保存后重启游戏生效。大厅要在你的服务器上先运行。发现房间仍可用局域网 UDP。</string>
     <string name="third_party_eyebrow">THIRD-PARTY MODULES</string>
     <string name="third_party_title">第三方模块</string>
     <string name="third_party_hint">安装 ZIP 后可启用、排序并打开模块界面。游戏内运行状态以运行日志为准。</string>

@@ -17,6 +17,7 @@ fun EflinkSettingsCard(state: SettingsState) {
     var room by remember(state.eflinkRoom) { mutableStateOf(state.eflinkRoom) }
     var port by remember(state.eflinkPort) { mutableStateOf(state.eflinkPort.toString()) }
     var players by remember(state.eflinkMaxPlayers) { mutableStateOf(state.eflinkMaxPlayers.toString()) }
+    var lobby by remember(state.eflinkLobby) { mutableStateOf(state.eflinkLobby) }
     PanelCard {
         CardTitle(stringResource(R.string.eflink_title))
         BodyText(stringResource(R.string.eflink_hint), modifier = Modifier.padding(top = Be.Space.m))
@@ -61,6 +62,15 @@ fun EflinkSettingsCard(state: SettingsState) {
             maxLength = 2,
             enabled = state.eflinkEnabled,
             onCommit = { players.toIntOrNull()?.let(state::updateEflinkMaxPlayers) },
+        )
+        TextFieldRow(
+            value = lobby,
+            onValueChange = { lobby = it },
+            hint = stringResource(R.string.eflink_lobby),
+            keyboardType = KeyboardType.Uri,
+            maxLength = 128,
+            enabled = state.eflinkEnabled,
+            onCommit = { state.updateEflinkLobby(lobby) },
         )
         BodyText(
             stringResource(R.string.eflink_restart),
