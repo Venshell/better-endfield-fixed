@@ -16,6 +16,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -151,15 +155,15 @@ private fun PackageRow(pkg: BemPackage, onOpen: () -> Unit) {
  */
 @Composable
 fun LoginDisplayPage(state: SettingsState) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
-        SectionCard(
-            eyebrow = stringResource(R.string.model_eyebrow),
-            title = stringResource(R.string.model_title),
-            status = state.modelTableStatus,
-        ) {}
-
-        PanelCard {
-            GroupLabel(stringResource(R.string.model_group_model), top = Be.Space.l)
+    Disclosure(
+        eyebrow = stringResource(R.string.model_eyebrow),
+        title = stringResource(R.string.model_title),
+        hint = state.loginDisplaySummary,
+    ) {
+        if (state.modelTableStatus.isNotEmpty()) {
+            StatusBlock(state.modelTableStatus)
+        }
+        GroupLabel(stringResource(R.string.model_group_model), top = Be.Space.l)
             Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
                 SwitchRow(
                     title = stringResource(R.string.model_enable),
@@ -170,10 +174,11 @@ fun LoginDisplayPage(state: SettingsState) {
                 )
 
                 FieldLabel(stringResource(R.string.model_character), top = Be.Space.m)
-                SelectField(
+                SearchableSelect(
                     options = state.characterNames,
                     selectedIndex = state.characterIndex,
                     onSelect = state::selectCharacter,
+                    searchHint = stringResource(R.string.search_character),
                     enabled = state.modelAvailable,
                 )
 
@@ -190,10 +195,11 @@ fun LoginDisplayPage(state: SettingsState) {
             GroupLabel(stringResource(R.string.model_group_animation))
             Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
                 FieldLabel(stringResource(R.string.model_action), top = Be.Space.none)
-                SelectField(
+                SearchableSelect(
                     options = state.actionIds,
                     selectedIndex = state.actionIndex,
                     onSelect = state::selectAction,
+                    searchHint = stringResource(R.string.search_action),
                     enabled = state.modelAvailable,
                 )
                 SwitchRow(
@@ -293,34 +299,72 @@ fun LoginDisplayPage(state: SettingsState) {
                     ColorPreview(state.logoColor)
                 }
             }
-        }
 
         PrimaryButton(
             text = stringResource(R.string.model_save),
             onClick = state::saveModelSettings,
-            modifier = Modifier.padding(top = Be.Space.hairline),
+            modifier = Modifier.padding(top = Be.Space.l),
         )
-
-        StatusBlock(state.modelSelectionStatus, monospace = true)
+        if (state.modelSelectionStatus.isNotEmpty()) {
+            StatusBlock(
+                state.modelSelectionStatus,
+                Modifier.padding(top = Be.Space.m),
+                monospace = true,
+            )
+        }
     }
 }
 
 @Composable
 fun VoicePage(state: SettingsState) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
-        SectionCard(
-            eyebrow = stringResource(R.string.voice_eyebrow),
-            title = stringResource(R.string.settings_title),
-            status = state.voiceTableStatus,
-        ) {}
-
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
-            state.voiceCharacterIds.forEachIndexed { index, characterId ->
-                VoiceRuleRow(
-                    name = state.voiceCharacterNames.getOrElse(index) { characterId },
-                    selected = state.voiceLanguage(characterId),
-                    onSelect = { position -> state.updateVoiceLanguage(characterId, position) },
+    var query by rememberSaveable { mutableStateOf("") }
+    val customLanguages = state.voiceCharacterIds.count { state.voiceLanguage(it) != 0 }
+    val needle = query.trim()
+    val visible = state.voiceCharacterIds.indices.filter { index ->
+        if (needle.isEmpty()) return@filter true
+        val id = state.voiceCharacterIds[index]
+        val name = state.voiceCharacterNames.getOrElse(index) { id }
+        name.contains(needle, ignoreCase = true) || id.contains(needle, ignoreCase = true)
+    }
+    Disclosure(
+        eyebrow = stringResource(R.string.voice_eyebrow),
+        title = stringResource(R.string.settings_title),
+        hint = if (state.voiceCharacterIds.isEmpty()) {
+            null
+        } else {
+            stringResource(R.string.home_voice_summary, customLanguages)
+        },
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = Be.Space.m),
+            verticalArrangement = Arrangement.spacedBy(Be.Space.m),
+        ) {
+            if (state.voiceTableStatus.isNotEmpty()) {
+                StatusBlock(state.voiceTableStatus)
+            }
+            SearchField(
+                value = query,
+                onValueChange = { query = it },
+                hint = stringResource(R.string.search_voice),
+            )
+            if (visible.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.search_empty),
+                    color = Be.Colors.textMuted,
+                    fontSize = Be.Type.bodySmall,
+                    modifier = Modifier.padding(horizontal = Be.Space.s, vertical = Be.Space.m),
                 )
+            } else {
+                visible.forEach { index ->
+                    val characterId = state.voiceCharacterIds[index]
+                    VoiceRuleRow(
+                        name = state.voiceCharacterNames.getOrElse(index) { characterId },
+                        selected = state.voiceLanguage(characterId),
+                        onSelect = { position -> state.updateVoiceLanguage(characterId, position) },
+                    )
+                }
             }
         }
     }

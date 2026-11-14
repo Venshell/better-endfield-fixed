@@ -1,6 +1,18 @@
 package dev.betterendfield.next
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -13,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +33,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -37,34 +53,55 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -88,8 +125,43 @@ import kotlin.math.sqrt
 
 /* ------------------------------------------------------------------ surfaces */
 
+/**
+ * Material expressive springs. The scheme type in Material 3 is internal, so the
+ * same damping and stiffness live here and every motion in the shell uses them.
+ */
+internal object BeMotion {
+    fun <T> spatial(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 380f)
+    fun <T> fastSpatial(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.6f, stiffness = 800f)
+    fun <T> effects(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 1600f)
+}
+
 /** Press state plus the interaction modifier that produced it. */
 class Pressed(val value: Boolean, val modifier: Modifier)
+
+/** Shrinks a control around its center while it is held. */
+@Composable
+internal fun Modifier.pressScale(pressed: Boolean, to: Float = 0.975f): Modifier {
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) to else 1f,
+        animationSpec = BeMotion.fastSpatial(),
+        label = "press",
+    )
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
+
+/** Fills that ease between the resting and pressed colours. */
+@Composable
+internal fun pressedFill(pressed: Boolean, idle: Color, down: Color): Color {
+    val color by animateColorAsState(
+        targetValue = if (pressed) down else idle,
+        animationSpec = BeMotion.effects(),
+        label = "pressFill",
+    )
+    return color
+}
 
 /** Whole-row press feedback with the ripple suppressed. */
 @Composable
@@ -166,6 +238,85 @@ fun SectionCard(
         Column(Modifier.padding(top = Be.Space.xl)) { content() }
         if (!status.isNullOrEmpty()) {
             StatusBlock(status, Modifier.padding(top = Be.Space.l))
+        }
+    }
+}
+
+/**
+ * A card that stays folded until its header is tapped. The body stays on this
+ * page; expanding does not open another screen.
+ */
+@Composable
+fun Disclosure(
+    title: String,
+    modifier: Modifier = Modifier,
+    eyebrow: String? = null,
+    hint: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val press = rememberPressed(true) { expanded = !expanded }
+    val caret by animateFloatAsState(
+        targetValue = if (expanded) 0f else -90f,
+        animationSpec = BeMotion.fastSpatial(),
+        label = "disclosure",
+    )
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Be.Radius.card))
+            .background(Be.Colors.panel),
+    ) {
+        Row(
+            Modifier
+                .pressScale(press.value)
+                .fillMaxWidth()
+                .background(pressedFill(press.value, Be.Colors.panel, Be.Colors.rowHigh))
+                .then(press.modifier)
+                .padding(horizontal = Be.Space.cardInner, vertical = Be.Space.xl),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                if (!eyebrow.isNullOrEmpty()) Eyebrow(eyebrow)
+                Text(
+                    text = title,
+                    color = Be.Colors.textPrimary,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = if (eyebrow.isNullOrEmpty()) 0.dp else Be.Space.xs),
+                )
+                if (!hint.isNullOrEmpty()) {
+                    Text(
+                        text = hint,
+                        color = Be.Colors.textMuted,
+                        fontSize = Be.Type.bodySmall,
+                        lineHeight = 16.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = Be.Space.s),
+                    )
+                }
+            }
+            Caret(
+                color = Be.Colors.textSecondary,
+                modifier = Modifier
+                    .padding(start = Be.Space.m)
+                    .rotate(caret),
+            )
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(BeMotion.spatial(), expandFrom = Alignment.Top) + fadeIn(BeMotion.effects()),
+            exit = shrinkVertically(BeMotion.spatial(), shrinkTowards = Alignment.Top) + fadeOut(BeMotion.effects()),
+        ) {
+            Column(
+                Modifier.padding(
+                    start = Be.Space.cardInner,
+                    end = Be.Space.cardInner,
+                    bottom = Be.Space.cardInner,
+                ),
+                content = content,
+            )
         }
     }
 }
@@ -365,9 +516,10 @@ fun SwitchRow(
     val press = rememberToggleable(checked, enabled, onCheckedChange)
     Row(
         modifier
+            .pressScale(press.value)
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(if (press.value) Be.Colors.rowHigh else Be.Colors.row)
+            .background(pressedFill(press.value, Be.Colors.row, Be.Colors.rowHigh))
             .then(press.modifier)
             .alpha(if (enabled) 1f else 0.42f)
             .heightIn(min = Be.Size.rowMinHeight)
@@ -536,9 +688,10 @@ fun SelectField(
     Box(modifier) {
         Row(
             Modifier
+                .pressScale(press.value)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Be.Radius.input))
-                .background(if (press.value) Be.Colors.rowHigh else Be.Colors.field)
+                .background(pressedFill(press.value, Be.Colors.field, Be.Colors.rowHigh))
                 .then(press.modifier)
                 .heightIn(min = Be.Size.fieldHeight)
                 .alpha(if (enabled) 1f else 0.42f)
@@ -582,8 +735,337 @@ fun SelectField(
     }
 }
 
+/**
+ * A field that opens a menu with a search box pinned to the top. The closed
+ * field keeps the current choice; the menu filters the full list as it is typed.
+ */
 @Composable
-private fun Caret(color: Color, modifier: Modifier = Modifier) {
+fun SearchableSelect(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    searchHint: String,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    enabled: Boolean = true,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var anchorWidth by remember { mutableStateOf(0) }
+    val safeIndex = selectedIndex.coerceIn(0, (options.size - 1).coerceAtLeast(0))
+    val press = rememberPressed(enabled && options.isNotEmpty()) {
+        query = ""
+        expanded = true
+    }
+    val density = LocalDensity.current
+    val caret by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = BeMotion.fastSpatial(),
+        label = "menu",
+    )
+    Box(modifier.onSizeChanged { anchorWidth = it.width }) {
+        Row(
+            Modifier
+                .pressScale(press.value)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Be.Radius.input))
+                .background(pressedFill(press.value, Be.Colors.field, Be.Colors.rowHigh))
+                .then(press.modifier)
+                .heightIn(min = Be.Size.fieldHeight)
+                .alpha(if (enabled) 1f else 0.42f)
+                .padding(start = Be.Space.xl, end = Be.Space.m + 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = options.getOrNull(safeIndex) ?: placeholder,
+                color = Be.Colors.textPrimary,
+                fontSize = Be.Type.rowTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Be.Space.s))
+            Caret(
+                color = Be.Colors.accent,
+                modifier = Modifier.rotate(caret),
+            )
+        }
+        if (expanded && anchorWidth > 0) {
+            val needle = query.trim()
+            val matches = if (needle.isEmpty()) {
+                options.indices.toList()
+            } else {
+                options.indices.filter { options[it].contains(needle, ignoreCase = true) }
+            }
+            Popup(
+                popupPositionProvider = DropdownAnchorPosition(),
+                onDismissRequest = {
+                    expanded = false
+                    query = ""
+                },
+                properties = PopupProperties(focusable = true),
+            ) {
+                SearchSelectMenu(
+                    width = with(density) { anchorWidth.toDp() },
+                    options = options,
+                    matches = matches,
+                    selectedIndex = safeIndex,
+                    query = query,
+                    onQueryChange = { query = it },
+                    searchHint = searchHint,
+                    onPick = { index ->
+                        expanded = false
+                        query = ""
+                        if (index != safeIndex) onSelect(index)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchSelectMenu(
+    width: Dp,
+    options: List<String>,
+    matches: List<Int>,
+    selectedIndex: Int,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    searchHint: String,
+    onPick: (Int) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(Unit) {
+        val position = matches.indexOf(selectedIndex)
+        if (position > 0) listState.scrollToItem(position)
+    }
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val scale by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0.96f,
+        animationSpec = BeMotion.fastSpatial(),
+        label = "menuScale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = BeMotion.effects(),
+        label = "menuAlpha",
+    )
+    Column(
+        Modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                this.alpha = alpha
+            }
+            .width(width)
+            .heightIn(max = 360.dp)
+            .clip(RoundedCornerShape(Be.Radius.card))
+            .background(Be.Colors.panelHigh)
+            .padding(Be.Space.m),
+    ) {
+        SearchField(
+            value = query,
+            onValueChange = onQueryChange,
+            hint = searchHint,
+            requestFocus = true,
+        )
+        if (matches.isEmpty()) {
+            Text(
+                text = stringResource(R.string.search_empty),
+                color = Be.Colors.textMuted,
+                fontSize = Be.Type.bodySmall,
+                modifier = Modifier.padding(horizontal = Be.Space.m, vertical = Be.Space.l),
+            )
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .padding(top = Be.Space.s)
+                    .heightIn(max = 280.dp),
+            ) {
+                items(matches, key = { it }) { index ->
+                    val selected = index == selectedIndex
+                    val rowPress = rememberPressed(true) { onPick(index) }
+                    Text(
+                        text = options[index],
+                        color = if (selected) Be.Colors.accent else Be.Colors.textPrimary,
+                        fontSize = Be.Type.rowTitle,
+                        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .pressScale(rowPress.value)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Be.Radius.input))
+                            .background(
+                                when {
+                                    rowPress.value -> Be.Colors.rowHigh
+                                    selected -> Be.Colors.accentSoft
+                                    else -> Color.Transparent
+                                },
+                            )
+                            .then(rowPress.modifier)
+                            .padding(horizontal = Be.Space.l, vertical = Be.Space.l),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A single-line search box: mark, hint, and a clear control once there is text. */
+@Composable
+fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    hint: String,
+    modifier: Modifier = Modifier,
+    requestFocus: Boolean = false,
+) {
+    val focus = remember { FocusRequester() }
+    if (requestFocus) {
+        LaunchedEffect(Unit) { focus.requestFocus() }
+    }
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(Be.Radius.input))
+            .background(Be.Colors.field)
+            .padding(horizontal = Be.Space.l),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SearchMark(Be.Colors.textMuted)
+        Spacer(Modifier.width(Be.Space.m))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = TextStyle(color = Be.Colors.textPrimary, fontSize = Be.Type.rowTitle),
+            cursorBrush = SolidColor(Be.Colors.accent),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Search,
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .then(if (requestFocus) Modifier.focusRequester(focus) else Modifier),
+            decorationBox = { inner ->
+                Box(Modifier.padding(vertical = Be.Space.l)) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = hint,
+                            color = Be.Colors.textMuted,
+                            fontSize = Be.Type.rowTitle,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    inner()
+                }
+            },
+        )
+        if (value.isNotEmpty()) {
+            Text(
+                text = "×",
+                color = Be.Colors.textSecondary,
+                fontSize = 18.sp,
+                modifier = Modifier
+                    .padding(start = Be.Space.s)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onValueChange("") },
+                    ),
+            )
+        }
+    }
+}
+
+/** Header control that opens or closes the home feature search. */
+@Composable
+fun SearchIconButton(
+    open: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val press = rememberPressed(true, onClick)
+    Box(
+        modifier
+            .pressScale(press.value, 0.92f)
+            .size(40.dp)
+            .clip(RoundedCornerShape(Be.Radius.input))
+            .background(pressedFill(press.value || open, Be.Colors.field, Be.Colors.rowHigh))
+            .then(press.modifier)
+            .then(
+                if (contentDescription == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics { this.contentDescription = contentDescription }
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = open,
+            transitionSpec = { fadeIn(BeMotion.effects()) togetherWith fadeOut(BeMotion.effects()) },
+            label = "searchIcon",
+        ) { opened ->
+            if (opened) {
+                Text(text = "×", color = Be.Colors.textPrimary, fontSize = 18.sp)
+            } else {
+                SearchMark(Be.Colors.textPrimary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchMark(color: Color) {
+    Canvas(Modifier.size(16.dp)) {
+        val radius = size.minDimension * 0.28f
+        val center = Offset(size.width * 0.40f, size.height * 0.40f)
+        drawCircle(color, radius, center, style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round))
+        val handle = Offset(center.x + radius * 0.72f, center.y + radius * 0.72f)
+        drawLine(
+            color = color,
+            start = handle,
+            end = Offset(size.width * 0.88f, size.height * 0.88f),
+            strokeWidth = 1.6.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+/** Puts the menu under the field, or above it when the field sits too low. */
+private class DropdownAnchorPosition : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val gap = 8
+        val below = anchorBounds.bottom + gap
+        val above = anchorBounds.top - popupContentSize.height - gap
+        val y = when {
+            below + popupContentSize.height <= windowSize.height -> below
+            above >= 0 -> above
+            else -> (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+        }
+        val x = anchorBounds.left.coerceIn(
+            0,
+            (windowSize.width - popupContentSize.width).coerceAtLeast(0),
+        )
+        return IntOffset(x, y)
+    }
+}
+
+@Composable
+internal fun Caret(color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier.size(12.dp)) {
         val path = Path().apply {
             moveTo(size.width * 0.15f, size.height * 0.36f)
@@ -652,17 +1134,16 @@ fun PrimaryButton(
     enabled: Boolean = true,
 ) {
     val press = rememberPressed(enabled) { onClick() }
+    val fill = when {
+        !enabled -> Be.Colors.accent.copy(alpha = 0.35f)
+        else -> pressedFill(press.value, Be.Colors.accent, Be.Colors.accentPressed)
+    }
     Box(
         modifier
+            .pressScale(press.value, 0.96f)
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.button))
-            .background(
-                when {
-                    !enabled -> Be.Colors.accent.copy(alpha = 0.35f)
-                    press.value -> Be.Colors.accentPressed
-                    else -> Be.Colors.accent
-                },
-            )
+            .background(fill)
             .then(press.modifier)
             .heightIn(min = Be.Size.buttonHeight),
         contentAlignment = Alignment.Center,
@@ -686,8 +1167,9 @@ fun GhostButton(
     val press = rememberPressed(enabled) { onClick() }
     Box(
         modifier
+            .pressScale(press.value, 0.96f)
             .clip(RoundedCornerShape(Be.Radius.button))
-            .background(if (press.value) Be.Colors.rowHigh else Be.Colors.row)
+            .background(pressedFill(press.value, Be.Colors.row, Be.Colors.rowHigh))
             .then(press.modifier)
             .alpha(if (enabled) 1f else 0.42f)
             .heightIn(min = Be.Size.buttonHeight),
@@ -705,7 +1187,10 @@ fun GhostButton(
 
 /* --------------------------------------------------------------- page chrome */
 
-/** The tab strip. It turns into the wide layout's side rail on tablets. */
+/** Glyphs for the five dock entries, in [SettingsPage.TAB_ORDER]. */
+enum class DockGlyph { Home, Experience, Characters, Tools, User }
+
+/** The tab strip. On a phone it is the bottom dock; on a wide screen it is the side rail. */
 @Composable
 fun PageTabs(
     labels: List<String>,
@@ -713,24 +1198,48 @@ fun PageTabs(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     vertical: Boolean = false,
+    glyphs: List<DockGlyph> = emptyList(),
 ) {
     if (vertical) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(Be.Space.s)) {
             labels.forEachIndexed { index, label ->
-                TabItem(label, index == selectedIndex, true, { onSelect(index) }, Modifier.fillMaxWidth())
+                TabItem(
+                    label, glyphs.getOrNull(index), index == selectedIndex, true,
+                    { onSelect(index) }, Modifier.fillMaxWidth(),
+                )
             }
         }
     } else {
-        Row(
+        Box(
             modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Be.Radius.tabs))
+                .height(Be.Size.dockHeight)
+                .clip(RoundedCornerShape(Be.Radius.card))
                 .background(Be.Colors.panel)
-                .padding(Be.Space.xs),
-            horizontalArrangement = Arrangement.spacedBy(Be.Space.xs),
+                .padding(horizontal = 6.dp, vertical = 5.dp),
         ) {
-            labels.forEachIndexed { index, label ->
-                TabItem(label, index == selectedIndex, false, { onSelect(index) }, Modifier.weight(1f))
+            if (labels.isNotEmpty() && selectedIndex in labels.indices) {
+                val travel by animateFloatAsState(
+                    targetValue = selectedIndex.toFloat(),
+                    animationSpec = BeMotion.spatial(),
+                    label = "dock",
+                )
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(1f / labels.size)
+                        .graphicsLayer { translationX = travel * size.width }
+                        .clip(RoundedCornerShape(Be.Radius.compact))
+                        .background(Be.Colors.accent),
+                )
+            }
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                labels.forEachIndexed { index, label ->
+                    TabItem(
+                        label, glyphs.getOrNull(index), index == selectedIndex, false,
+                        { onSelect(index) }, Modifier.weight(1f).fillMaxHeight(),
+                    )
+                }
             }
         }
     }
@@ -739,36 +1248,92 @@ fun PageTabs(
 @Composable
 private fun TabItem(
     label: String,
+    glyph: DockGlyph?,
     selected: Boolean,
     vertical: Boolean,
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
     val press = rememberPressed(enabled = true) { onClick() }
+    val ink by animateColorAsState(
+        targetValue = if (selected) Be.Colors.accentInk else Be.Colors.textSecondary,
+        animationSpec = BeMotion.spatial(),
+        label = "tabInk",
+    )
+    val fillTarget = when {
+        vertical && selected && press.value -> Be.Colors.accentPressed
+        vertical && selected -> Be.Colors.accent
+        !vertical && selected && press.value -> Be.Colors.accentPressed
+        press.value -> Be.Colors.rowHigh
+        else -> Color.Transparent
+    }
+    val fill by animateColorAsState(fillTarget, BeMotion.effects(), label = "tabFill")
     Box(
         modifier
-            .clip(RoundedCornerShape(Be.Radius.button))
-            .background(
-                when {
-                    selected -> Be.Colors.accent
-                    press.value -> Be.Colors.panelHigh
-                    else -> Color.Transparent
-                },
-            )
+            .pressScale(press.value, 0.94f)
+            .clip(RoundedCornerShape(if (vertical) Be.Radius.button else Be.Radius.compact))
+            .background(fill)
             .then(press.modifier)
-            .heightIn(min = if (vertical) Be.Size.touchTarget else Be.Size.tabHeight),
+            .heightIn(min = if (vertical) Be.Size.touchTarget else Be.Size.dockItemHeight),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = if (selected) Be.Colors.accentInk else Be.Colors.textSecondary,
-            fontSize = if (vertical) Be.Type.tab else Be.Type.tabCompact,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = Be.Space.s),
-        )
+        if (vertical) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Be.Space.l),
+                modifier = Modifier.padding(horizontal = Be.Space.l),
+            ) {
+                if (glyph != null) DockMark(glyph, ink, Modifier.size(22.dp))
+                TabLabel(label, ink, Be.Type.tab)
+            }
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (glyph != null) DockMark(glyph, ink, Modifier.size(22.dp))
+                if (glyph != null) Spacer(Modifier.height(2.dp))
+                TabLabel(
+                    label,
+                    ink,
+                    Be.Type.dock,
+                    if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun TabLabel(
+    label: String,
+    color: Color,
+    size: androidx.compose.ui.unit.TextUnit,
+    weight: FontWeight = FontWeight.Medium,
+) {
+    Text(
+        text = label,
+        color = color,
+        fontSize = size,
+        fontWeight = weight,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** Dock glyphs from the shipped SVG set, tinted for the active and idle states. */
+@Composable
+private fun DockMark(glyph: DockGlyph, color: Color, modifier: Modifier = Modifier) {
+    val drawable = when (glyph) {
+        DockGlyph.Home -> R.drawable.ic_dock_home
+        DockGlyph.Experience -> R.drawable.ic_dock_experience
+        DockGlyph.Characters -> R.drawable.ic_dock_characters
+        DockGlyph.Tools -> R.drawable.ic_dock_tools
+        DockGlyph.User -> R.drawable.ic_dock_user
+    }
+    Image(
+        painter = painterResource(drawable),
+        contentDescription = null,
+        colorFilter = ColorFilter.tint(color),
+        modifier = modifier,
+    )
 }
 
 /* -------------------------------------------------------------- colour wheel */
@@ -984,6 +1549,7 @@ fun ColorSwatch(
     val press = rememberPressed(enabled = true) { onClick() }
     Box(
         modifier
+            .pressScale(press.value, 0.92f)
             .size(Be.Size.swatch)
             .clip(RoundedCornerShape(Be.Radius.chip))
             .background(parseHex(hex) ?: Be.Colors.row)

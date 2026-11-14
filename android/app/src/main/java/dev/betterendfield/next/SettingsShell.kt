@@ -1,5 +1,13 @@
 package dev.betterendfield.next
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -21,15 +29,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -56,6 +71,11 @@ fun SettingsShell(
     val configuration = LocalConfiguration.current
     val wide = configuration.screenWidthDp >= 720 && configuration.fontScale < 1.5f
     val openPage = { index: Int -> state.openPage(index) }
+    var homeSearch by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.page) {
+        if (state.page != SettingsPage.HOME) homeSearch = false
+    }
+    val showSearch = state.page == SettingsPage.HOME && homeSearch
 
     Surface(
         color = Be.Colors.background,
@@ -71,31 +91,47 @@ fun SettingsShell(
                             .fillMaxSize()
                             .padding(start = Be.Space.l, top = Be.Space.xxl, end = Be.Space.l, bottom = Be.Space.l),
                     ) {
-                        AppHeader()
+                        AppHeader(
+                            searchOpen = homeSearch,
+                            onSearch = if (state.page == SettingsPage.HOME) {
+                                { homeSearch = !homeSearch }
+                            } else {
+                                null
+                            },
+                        )
                         Spacer(Modifier.height(Be.Space.xxl))
                         PageTabs(
                             labels = SettingsPage.TAB_LABELS.map { stringResource(it) },
                             selectedIndex = SettingsPage.TAB_ORDER.indexOf(SettingsPage.parentOf(state.page)),
                             onSelect = { tab -> openPage(SettingsPage.TAB_ORDER[tab]) },
                             vertical = true,
+                            glyphs = DockGlyphs,
                         )
                     }
-                    SettingsBody(state, onPreviewOverlay, onInstallBem, Modifier.weight(1f))
+                    ShellBody(state, onPreviewOverlay, onInstallBem, showSearch, openPage, { homeSearch = false }, Modifier.weight(1f))
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
                     // A sub-page replaces the big header with its own back-and-title
                     // row, which lives in the body so the rail layout gets it too.
-                    if (!SettingsPage.isSubPage(state.page)) {
+                    if (!SettingsPage.isSubPage(state.page) && state.page != SettingsPage.USER) {
                         Box(Modifier.padding(horizontal = Be.Space.gutter, vertical = Be.Space.page)) {
-                            AppHeader()
+                            AppHeader(
+                                searchOpen = homeSearch,
+                                onSearch = if (state.page == SettingsPage.HOME) {
+                                    { homeSearch = !homeSearch }
+                                } else {
+                                    null
+                                },
+                            )
                         }
                     }
-                    SettingsBody(state, onPreviewOverlay, onInstallBem, Modifier.weight(1f))
+                    ShellBody(state, onPreviewOverlay, onInstallBem, showSearch, openPage, { homeSearch = false }, Modifier.weight(1f))
                     PageTabs(
                         labels = SettingsPage.TAB_LABELS.map { stringResource(it) },
                         selectedIndex = SettingsPage.TAB_ORDER.indexOf(SettingsPage.parentOf(state.page)),
                         onSelect = { tab -> openPage(SettingsPage.TAB_ORDER[tab]) },
+                        glyphs = DockGlyphs,
                         modifier = Modifier.padding(
                             start = Be.Space.gutter,
                             end = Be.Space.gutter,
@@ -105,6 +141,45 @@ fun SettingsShell(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ShellBody(
+    state: SettingsState,
+    onPreviewOverlay: () -> Unit,
+    onInstallBem: () -> Unit,
+    showSearch: Boolean,
+    onOpenPage: (Int) -> Unit,
+    onCloseSearch: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedContent(
+        targetState = showSearch,
+        modifier = modifier.clipToBounds(),
+        transitionSpec = {
+            val fade = BeMotion.effects<Float>()
+            val grow = BeMotion.spatial<IntSize>()
+            if (targetState) {
+                (fadeIn(fade) + expandVertically(grow, expandFrom = Alignment.Top))
+                    .togetherWith(fadeOut(fade))
+            } else {
+                fadeIn(fade).togetherWith(
+                    fadeOut(fade) + shrinkVertically(grow, shrinkTowards = Alignment.Top),
+                )
+            }.using(null)
+        },
+        label = "homeSearch",
+    ) { searching ->
+        if (searching) {
+            HomeSearchPanel(
+                onOpenPage = onOpenPage,
+                onClose = onCloseSearch,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            SettingsBody(state, onPreviewOverlay, onInstallBem, Modifier.fillMaxSize())
         }
     }
 }
@@ -125,53 +200,88 @@ private fun SettingsBody(
     onInstallBem: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier
-                .widthIn(max = Be.Size.contentMaxWidth)
-                .fillMaxWidth()
-                .verticalScroll(
-                    // Keyed by the page: the shell owns a single scroll container
-                    // for every page, so an unkeyed state would hand a freshly
-                    // opened page whatever offset the previous one was left at.
-                    rememberSaveable(state.page, saver = ScrollState.Saver) { ScrollState(0) },
-                )
-                .padding(
-                    start = Be.Space.gutter,
-                    end = Be.Space.gutter,
-                    top = Be.Space.m,
-                    bottom = Be.Space.footer,
-                ),
-        ) {
-            if (SettingsPage.isSubPage(state.page)) {
-                // The rail layout keeps the header instead of a title row, so the
-                // back affordance has to exist there too or a sub-page would be a
-                // one-way trip on a tablet.
-                Box(Modifier.fillMaxWidth().padding(bottom = Be.Space.l)) {
-                    BackButton(state::back)
+    AnimatedContent(
+        targetState = state.page,
+        modifier = modifier.fillMaxWidth().clipToBounds(),
+        contentAlignment = Alignment.TopCenter,
+        transitionSpec = {
+            val travel = pageTravel(initialState, targetState)
+            val shift = BeMotion.fastSpatial<IntOffset>()
+            val fade = BeMotion.effects<Float>()
+            (slideInHorizontally(shift) { width -> travel * width / 8 } + fadeIn(fade))
+                .togetherWith(slideOutHorizontally(shift) { width -> -travel * width / 8 } + fadeOut(fade))
+                .using(null)
+        },
+        label = "page",
+    ) { page ->
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier
+                    .widthIn(max = Be.Size.contentMaxWidth)
+                    .fillMaxWidth()
+                    .verticalScroll(
+                        // Keyed by the page: the shell owns a single scroll container
+                        // for every page, so an unkeyed state would hand a freshly
+                        // opened page whatever offset the previous one was left at.
+                        rememberSaveable(page, saver = ScrollState.Saver) { ScrollState(0) },
+                    )
+                    .padding(
+                        start = Be.Space.gutter,
+                        end = Be.Space.gutter,
+                        top = Be.Space.m,
+                        bottom = Be.Space.footer,
+                    ),
+            ) {
+                if (SettingsPage.isSubPage(page)) {
+                    // The rail layout keeps the header instead of a title row, so the
+                    // back affordance has to exist there too or a sub-page would be a
+                    // one-way trip on a tablet.
+                    Box(Modifier.fillMaxWidth().padding(bottom = Be.Space.l)) {
+                        BackButton(state::back)
+                    }
                 }
-            }
 
-            when (state.page) {
-                SettingsPage.HOME -> HomePage(state)
-                SettingsPage.EXPERIENCE -> ExperiencePage(state)
-                SettingsPage.CHARACTERS -> CharacterPage(state, onInstallBem)
-                SettingsPage.TOOLS -> ToolsPage(state, onPreviewOverlay)
-                SettingsPage.USER -> AccountPage(state)
-                SettingsPage.FIRST_PERSON -> FirstPersonPage(state)
-                SettingsPage.CAMERA_MOTION -> CameraMotionPage(state)
-                SettingsPage.MMD -> MmdPage(state)
-                SettingsPage.APPEARANCE -> AppearancePage(state, onInstallBem)
-                SettingsPage.ADMINISTRATOR_APPEARANCE -> AdministratorAppearancePage(state::markAdministratorAppearanceSaved)
-                SettingsPage.LOG -> LogPage(state)
-                SettingsPage.ABOUT -> AboutPage()
-                SettingsPage.WORKSHOP -> WorkshopPage()
+                when (page) {
+                    SettingsPage.HOME -> HomePage(state)
+                    SettingsPage.EXPERIENCE -> ExperiencePage(state)
+                    SettingsPage.CHARACTERS -> CharacterPage(state, onInstallBem)
+                    SettingsPage.TOOLS -> ToolsPage(state, onPreviewOverlay)
+                    SettingsPage.USER -> AccountPage(state)
+                    SettingsPage.FIRST_PERSON -> FirstPersonPage(state)
+                    SettingsPage.CAMERA_MOTION -> CameraMotionPage(state)
+                    SettingsPage.MMD -> MmdPage(state)
+                    SettingsPage.APPEARANCE -> AppearancePage(state, onInstallBem)
+                    SettingsPage.ADMINISTRATOR_APPEARANCE -> AdministratorAppearancePage(state::markAdministratorAppearanceSaved)
+                    SettingsPage.LOG -> LogPage(state)
+                    SettingsPage.ABOUT -> AboutPage()
+                    SettingsPage.WORKSHOP -> WorkshopPage()
+                }
+                Spacer(Modifier.height(Be.Space.xxl))
+                if (state.status.isNotBlank()) Notice(state.status)
             }
-            Spacer(Modifier.height(Be.Space.xxl))
-            if (state.status.isNotBlank()) Notice(state.status)
         }
     }
 }
+
+/** Which way a page change travels: 1 enters from the right, -1 from the left. */
+private fun pageTravel(from: Int, to: Int): Int {
+    val fromTab = SettingsPage.parentOf(from)
+    val toTab = SettingsPage.parentOf(to)
+    return when {
+        SettingsPage.isSubPage(to) && from == SettingsPage.parentOf(to) -> 1
+        SettingsPage.isSubPage(from) && to == fromTab -> -1
+        toTab != fromTab -> if (toTab > fromTab) 1 else -1
+        else -> 1
+    }
+}
+
+private val DockGlyphs = listOf(
+    DockGlyph.Home,
+    DockGlyph.Experience,
+    DockGlyph.Characters,
+    DockGlyph.Tools,
+    DockGlyph.User,
+)
 
 @Composable
 fun BackButton(onBack: () -> Unit) {
@@ -188,7 +298,11 @@ fun BackButton(onBack: () -> Unit) {
 }
 
 @Composable
-private fun AppHeader(modifier: Modifier = Modifier) {
+private fun AppHeader(
+    modifier: Modifier = Modifier,
+    searchOpen: Boolean = false,
+    onSearch: (() -> Unit)? = null,
+) {
     Row(
         modifier
             .fillMaxWidth()
@@ -227,6 +341,14 @@ private fun AppHeader(modifier: Modifier = Modifier) {
             Badge(
                 text = stringResource(R.string.runtime_badge),
                 modifier = Modifier.padding(top = Be.Space.m + 2.dp),
+            )
+        }
+        if (onSearch != null) {
+            Spacer(Modifier.width(Be.Space.m))
+            SearchIconButton(
+                open = searchOpen,
+                onClick = onSearch,
+                contentDescription = stringResource(R.string.search_features),
             )
         }
     }

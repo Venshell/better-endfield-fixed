@@ -1,7 +1,6 @@
 package dev.betterendfield.next
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -70,10 +69,9 @@ private fun InterfaceCard(state: SettingsState) {
 
 @Composable
 private fun CameraCard(state: SettingsState) {
-    SectionCard(
+    Disclosure(
         eyebrow = stringResource(R.string.camera_card_eyebrow),
         title = stringResource(R.string.camera_card_title),
-        status = state.cameraCardStatus,
     ) {
         GroupLabel(stringResource(R.string.camera_group_general), top = Be.Space.l)
         Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
@@ -170,6 +168,9 @@ private fun CameraCard(state: SettingsState) {
             state = state.mmdEnabled,
             onClick = { state.openPage(SettingsPage.MMD) },
         )
+        if (state.cameraCardStatus.isNotEmpty()) {
+            StatusBlock(state.cameraCardStatus, Modifier.padding(top = Be.Space.l))
+        }
     }
 }
 
@@ -242,12 +243,14 @@ fun SubPageRow(
     state: Boolean,
     onClick: () -> Unit,
 ) {
+    val press = rememberPressed(true, onClick)
     Row(
         Modifier
+            .pressScale(press.value)
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(Be.Colors.row)
-            .clickable(onClick = onClick)
+            .background(pressedFill(press.value, Be.Colors.row, Be.Colors.rowHigh))
+            .then(press.modifier)
             .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
         verticalAlignment = Alignment.CenterVertically,
     ) {

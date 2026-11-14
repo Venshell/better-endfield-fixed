@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Profile-frame radii. One set for every language: do not copy these into
+      values-en, values-zh, or any other locale folder. Compose reads the same
+      numbers from Be.Radius.
+    -->
+    <dimen name="radius_progress">3dp</dimen>
+    <dimen name="radius_chip">8dp</dimen>
+    <dimen name="radius_badge">11dp</dimen>
+    <dimen name="radius_input">12dp</dimen>
+    <dimen name="radius_button">12dp</dimen>
+    <dimen name="radius_compact">17dp</dimen>
+    <dimen name="radius_row">19dp</dimen>
+    <dimen name="radius_card">23dp</dimen>
+    <dimen name="dock_height">72dp</dimen>
+    <dimen name="dock_item_height">62dp</dimen>
+    <dimen name="page_gutter">22dp</dimen>
+</resources>

@@ -301,10 +301,7 @@ private fun LibraryCard(state: SettingsState, busy: Boolean, onImportFolder: () 
             if (state.mmdLibraryStatus.isNotEmpty()) {
                 BodyText(state.mmdLibraryStatus)
             }
-            BodyText(
-                "导入的文件先发布到框架的共享空间，游戏进程在下次启动时复制到自己目录，" +
-                    "所以导入之后要重启游戏才能在游戏里切换作品。",
-            )
+            BodyText("导入之后要重启游戏才能在游戏里切换作品。")
         }
     }
 }
@@ -429,10 +426,7 @@ private fun SourceCard(
             if (state.mmdImportStatus.isNotEmpty()) {
                 BodyText(state.mmdImportStatus)
             }
-            BodyText(
-                "文件先由本应用发布到框架的共享文件空间，游戏进程在下次启动时复制到自己目录，" +
-                    "所以导入之后要重启游戏。",
-            )
+            BodyText("导入之后要重启游戏。")
             Notice(
                 if (state.mmdWork.isNotEmpty()) {
                     "当前按作品库播放：上面的散文件槽位会被忽略，" +

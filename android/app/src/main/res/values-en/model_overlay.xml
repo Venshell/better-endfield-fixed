@@ -8,7 +8,7 @@
     <string name="bem_operation_busy">Wait for the current operation to finish.</string>
     <string name="overlay_model_restart_hint">Restart the game after saving model changes to apply them.</string>
     <string name="overlay_model_restart_detail">Restart the game to apply changes</string>
-    <string name="overlay_fov_delivery_hint">Changes are sent to the running game when possible. Check the runtime log to confirm they took effect.</string>
+    <string name="overlay_fov_delivery_hint">Changes are sent to the running game.</string>
     <string name="overlay_auto_snap_hint">Release the floating button to snap to the left or right edge.</string>
     <string name="bem_retry_external_import">Import pending file</string>
     <string name="bem_pending_external_import">The file opened from the file manager has not been imported yet.</string>

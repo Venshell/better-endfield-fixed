@@ -1,5 +1,7 @@
 package dev.betterendfield.next
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -20,6 +22,7 @@ fun EflinkSettingsCard(state: SettingsState) {
     PanelCard {
         CardTitle(stringResource(R.string.eflink_title))
         BodyText(stringResource(R.string.eflink_hint), modifier = Modifier.padding(top = Be.Space.m))
+        Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
         SwitchRow(
             title = stringResource(R.string.eflink_lan),
             description = stringResource(R.string.eflink_lan_hint),
@@ -66,6 +69,7 @@ fun EflinkSettingsCard(state: SettingsState) {
             checked = state.eflinkInternet,
             onCheckedChange = state::updateEflinkInternet,
         )
+        }
         BodyText(
             if (state.accountUsername.isEmpty()) stringResource(R.string.eflink_internet_signed_out)
             else state.accountUsername,
