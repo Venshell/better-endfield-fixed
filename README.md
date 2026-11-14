@@ -26,7 +26,7 @@ Android 设置应用和游戏内悬浮面板沿用本仓库的 Compose 入口，
 
 ## 功能一览
 
-功能表列出 Android 端的入口和用途。实机验收范围见对应发行说明。
+功能表列出 Android 端的入口和用途。前四行是正式版 `main`；缓降和联机只在实验性分支。实机验收范围见对应发行说明。
 
 | 功能 | Android ARM64 |
 | --- | --- |
@@ -34,6 +34,8 @@ Android 设置应用和游戏内悬浮面板沿用本仓库的 Compose 入口，
 | 相机 | 第一人称与陀螺仪、自由相机、全局 FOV、人物跟随、时间冻结、运镜 |
 | MMD 与会客室媒体屏 | 作品导入与槽位确认、游戏内播放、会客室图片和视频投屏 |
 | 游戏设置 | 首页游戏管理与启用功能一览、游戏内悬浮面板、界面调整、角色配音与持续冲刺 |
+| 缓降 | 不在正式版。空中再次按跳跃展开或收起。见实验性分支 [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive) |
+| 联机 | 不在正式版。局域网与互联网房间。见实验性分支 [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive) |
 
 `.bem` 外观包使用标准 BEMv1 格式；具体能力边界与制作流程见 [BEM 创作者指南](docs/custom_model/BEM_CREATOR_GUIDE.md)。
 
