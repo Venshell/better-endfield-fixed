@@ -338,7 +338,7 @@
     <string name="next_link_open_failed">Unable to open the link</string>
     <string name="next_close">Close</string>
     <string name="eflink_title">LAN link</string>
-    <string name="eflink_hint">Protocol from EF Link. Turn it on, restart the game, then host, browse LAN rooms, or connect directly from the floating panel. Passwords are not saved.</string>
+    <string name="eflink_hint">Turn it on, then create a room from the in-game panel. LAN is the same Wi-Fi. Internet uses the server address below. Passwords are not saved.</string>
     <string name="eflink_enable">Enable link</string>
     <string name="eflink_enable_hint">Loads the room network the next time the game starts. Off by default, so current features stay unchanged.</string>
     <string name="eflink_name">Display name</string>

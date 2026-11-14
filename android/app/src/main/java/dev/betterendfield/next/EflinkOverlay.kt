@@ -2,10 +2,14 @@ package dev.betterendfield.next
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
@@ -31,17 +35,20 @@ import java.io.File
 internal fun EflinkOverlay(preview: Boolean) {
     if (preview) {
         OverlaySection("联机") {
-            Text("预览不连接房间。进入游戏后可在这里开房、发现局域网房间、直接连接，并看到其他玩家的位置。",
+            Text("预览不连接房间。进入游戏后可以创建局域网或互联网房间，并看到其他玩家。",
                 color = Be.Colors.textSecondary, fontSize = 11.sp)
         }
         return
     }
     val context = LocalContext.current
     var status by remember { mutableStateOf(EflinkSnapshot.missing()) }
+    var page by remember { mutableStateOf("home") }
+    var scope by remember { mutableStateOf("lan") }
     var room by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var chat by remember { mutableStateOf("") }
+    var players by remember { mutableStateOf(8) }
     var sequence by remember { mutableLongStateOf(0L) }
     fun nextSequence(): Long {
         val now = System.currentTimeMillis()
@@ -54,75 +61,185 @@ internal fun EflinkOverlay(preview: Boolean) {
             delay(400)
         }
     }
+    val inRoom = status.role == "host" || status.role == "client" || status.role == "connecting"
     OverlaySection("联机") {
-        Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(7.dp)) {
-            Text(status.headline(), color = Be.Colors.textPrimary, fontSize = 12.sp)
-            if (status.error.isNotEmpty()) {
-                Text(status.error, color = Be.Colors.textSecondary, fontSize = 11.sp)
-            }
-            OverlayField(room, { room = it }, "房间名", 64)
-            OverlayField(password, { password = it }, "密码，不保存", 64)
-            OverlayActionRow(
-                "开放房间",
-                {
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            if (!status.present) {
+                Text("联机还没启动。在工具页开启后重启游戏。",
+                    color = Be.Colors.textSecondary, fontSize = 11.sp)
+            } else if (inRoom) {
+                RoomScreen(status, chat, { chat = it }) {
+                    val text = chat.trim()
+                    if (text.isNotEmpty()) {
+                        send(context, nextSequence(), JSONObject().put("op", "chat").put("text", text))
+                        chat = ""
+                    }
+                }
+                OverlayAction("离开房间") {
+                    send(context, nextSequence(), JSONObject().put("op", "leave"))
+                    page = "home"
+                }
+            } else when (page) {
+                "create" -> CreateScreen(
+                    room, { room = it }, password, { password = it }, scope, { scope = it },
+                    players, { players = it }, status,
+                ) {
                     send(context, nextSequence(), JSONObject()
                         .put("op", "host")
-                        .put("room_name", room)
-                        .put("password", password))
+                        .put("network", scope)
+                        .put("room_name", room.ifBlank { "房间" })
+                        .put("password", password)
+                        .put("max_players", players))
                     password = ""
-                },
-                "离开",
-                { send(context, nextSequence(), JSONObject().put("op", "leave")) },
-            )
-            OverlayField(address, { address = it }, "IP:端口", 64, KeyboardType.Uri)
-            OverlayAction("直接连接") {
-                send(context, nextSequence(), JSONObject()
-                    .put("op", "join")
-                    .put("address", address)
-                    .put("password", password))
-                password = ""
-            }
-            OverlayAction("刷新局域网房间") {
-                send(context, nextSequence(), JSONObject().put("op", "refresh"))
-            }
-            status.rooms.forEach { found ->
-                val where = if (found.roomId != 0L) "大厅" else found.address
-                val label = found.name + " · " + found.host + " · " + found.players + "/" + found.max +
-                    " · " + where + (if (found.locked) " · 有密码" else "")
-                OverlayAction(label) {
+                }
+                "browse" -> BrowseScreen(status, scope, { scope = it }, password, { password = it }, address, { address = it }) { found ->
                     if (found.roomId != 0L) {
                         send(context, nextSequence(), JSONObject()
-                            .put("op", "join_lobby")
-                            .put("room_id", found.roomId)
-                            .put("password", password))
+                            .put("op", "join_lobby").put("room_id", found.roomId).put("password", password))
                     } else {
-                        address = found.address
                         send(context, nextSequence(), JSONObject()
-                            .put("op", "join")
-                            .put("address", found.address)
-                            .put("password", password))
+                            .put("op", "join").put("address", found.address).put("password", password))
                     }
                     password = ""
                 }
+                else -> HomeScreen(status, { page = "create" }, { page = "browse" })
             }
-            if (status.players.isEmpty()) {
-                Text("还没有玩家。", color = Be.Colors.textSecondary, fontSize = 11.sp)
+            if (!inRoom && page != "home" && status.present) {
+                OverlayAction("返回") { page = "home" }
             }
-            status.players.forEach { player ->
-                Text(player.line(), color = Be.Colors.textPrimary, fontSize = 11.sp)
-            }
-            status.chat.takeLast(6).forEach { line ->
-                Text(line, color = Be.Colors.textSecondary, fontSize = 11.sp)
-            }
-            OverlayField(chat, { chat = it }, "聊天", 200, KeyboardType.Text)
-            OverlayAction("发送") {
-                val text = chat.trim()
-                if (text.isNotEmpty()) {
-                    send(context, nextSequence(), JSONObject().put("op", "chat").put("text", text))
-                    chat = ""
-                }
+            if (status.error.isNotEmpty()) {
+                Text(status.error, color = Be.Colors.textSecondary, fontSize = 11.sp)
             }
         }
+    }
+}
+
+@Composable
+private fun HomeScreen(status: EflinkSnapshot, onCreate: () -> Unit, onJoin: () -> Unit) {
+    Text(if (status.lobbyReady) "局域网或互联网" else "当前可创建局域网房间",
+        color = Be.Colors.textSecondary, fontSize = 11.sp)
+    OverlayAction("创建房间", onClick = onCreate)
+    OverlayAction("加入房间", onClick = onJoin)
+}
+
+@Composable
+private fun CreateScreen(
+    room: String, onRoom: (String) -> Unit,
+    password: String, onPassword: (String) -> Unit,
+    scope: String, onScope: (String) -> Unit,
+    players: Int, onPlayers: (Int) -> Unit,
+    status: EflinkSnapshot,
+    onCreate: () -> Unit,
+) {
+    Text("创建房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
+    NetworkChoice(scope, onScope, status.lobbyReady)
+    OverlayField(room, onRoom, "房间名", 64)
+    OverlayField(password, onPassword, "密码，可留空", 64)
+    Segmented(players == 4, "4 人", "8 人", { onPlayers(4) }, { onPlayers(8) })
+    val internetBlocked = scope == "internet" && !status.lobbyReady
+    if (internetBlocked) {
+        Text("互联网需要先在工具页填写大厅地址，保存后重启游戏。",
+            color = Be.Colors.textSecondary, fontSize = 11.sp)
+    }
+    OverlayAction("创建", enabled = !internetBlocked) { onCreate() }
+}
+
+@Composable
+private fun BrowseScreen(
+    status: EflinkSnapshot,
+    scope: String, onScope: (String) -> Unit,
+    password: String, onPassword: (String) -> Unit,
+    address: String, onAddress: (String) -> Unit,
+    onJoin: (EflinkRoom) -> Unit,
+) {
+    val context = LocalContext.current
+    var sequence by remember { mutableLongStateOf(0L) }
+    Text("加入房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
+    NetworkChoice(scope, onScope, status.lobbyReady)
+    val rooms = status.rooms.filter { if (scope == "internet") it.roomId != 0L else it.roomId == 0L }
+    if (rooms.isEmpty()) {
+        Text(if (scope == "internet") "互联网上还没有房间。" else "附近还没有局域网房间。",
+            color = Be.Colors.textSecondary, fontSize = 11.sp)
+    }
+    rooms.forEach { found ->
+        val lock = if (found.locked) "  ·  需要密码" else ""
+        OverlayAction("${found.name}    ${found.players}/${found.max}$lock") { onJoin(found) }
+    }
+    if (scope == "lan") {
+        OverlayField(address, onAddress, "或输入 IP:端口", 64, KeyboardType.Uri)
+        OverlayAction("用地址加入", enabled = address.isNotBlank()) {
+            onJoin(EflinkRoom("", "", address, 0, 0, false, 0))
+        }
+        OverlayAction("刷新附近房间") {
+            val now = System.currentTimeMillis()
+            sequence = if (now > sequence) now else sequence + 1
+            send(context, sequence, JSONObject().put("op", "refresh"))
+        }
+    }
+    if (rooms.any { it.locked } || password.isNotEmpty()) {
+        OverlayField(password, onPassword, "房间密码", 64)
+    }
+}
+
+@Composable
+private fun RoomScreen(status: EflinkSnapshot, chat: String, onChat: (String) -> Unit, onSend: () -> Unit) {
+    val kind = if (status.network == "internet") "互联网" else "局域网"
+    val role = when (status.role) {
+        "host" -> "房主"
+        "connecting" -> "连接中"
+        else -> "已加入"
+    }
+    Text("${status.room.ifBlank { "房间" }}  ·  $kind  ·  $role",
+        color = Be.Colors.textPrimary, fontSize = 13.sp)
+    Text(if (status.poseReady) "位置已同步" else "正在同步位置",
+        color = Be.Colors.textSecondary, fontSize = 11.sp)
+    if (status.players.isEmpty()) {
+        Text("等待其他玩家。", color = Be.Colors.textSecondary, fontSize = 11.sp)
+    }
+    status.players.forEach { player ->
+        Text(player.line(), color = Be.Colors.textPrimary, fontSize = 11.sp)
+    }
+    status.chat.takeLast(4).forEach { line ->
+        Text(line, color = Be.Colors.textSecondary, fontSize = 11.sp)
+    }
+    OverlayField(chat, onChat, "说点什么", 200)
+    OverlayAction("发送", onClick = onSend)
+}
+
+@Composable
+private fun NetworkChoice(scope: String, onScope: (String) -> Unit, internetReady: Boolean) {
+    Segmented(scope == "lan", "局域网", "互联网", { onScope("lan") }, { onScope("internet") })
+    Text(
+        if (scope == "lan") "同一 Wi-Fi 下的房间" else if (internetReady) "通过你的服务器匹配" else "尚未配置服务器",
+        color = Be.Colors.textSecondary, fontSize = 11.sp,
+    )
+}
+
+@Composable
+private fun Segmented(
+    leftSelected: Boolean,
+    left: String,
+    right: String,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Segment(left, leftSelected, onLeft, Modifier.weight(1f))
+        Segment(right, !leftSelected, onRight, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun Segment(title: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Row(
+        modifier.height(30.dp)
+            .background(if (selected) Be.Colors.overlayPressed else Be.Colors.overlayField, RoundedCornerShape(3.dp))
+            .border(1.dp, Be.Colors.overlayOutline, RoundedCornerShape(3.dp))
+            .clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = Be.Colors.textPrimary, fontSize = 12.sp)
     }
 }
 
@@ -196,30 +313,14 @@ private data class EflinkSnapshot(
     val poseReady: Boolean,
     val udp: Int,
     val tcpOnly: Int,
+    val network: String,
+    val lobbyReady: Boolean,
     val players: List<EflinkPlayer>,
     val rooms: List<EflinkRoom>,
     val chat: List<String>,
 ) {
-    fun headline(): String {
-        if (!present) return "联机模块还没运行。在工具页开启后重启游戏。"
-        val where = when (role) {
-            "host" -> "房主"
-            "client" -> "已加入"
-            "connecting" -> "连接中"
-            else -> "未连接"
-        }
-        val path = when {
-            udp > 0 -> "UDP"
-            tcpOnly > 0 -> "仅 TCP"
-            else -> "等待 UDP"
-        }
-        val pose = if (poseReady) "已采样姿态" else "尚未采样到角色"
-        val title = if (room.isEmpty()) where else "$where · $room"
-        return "$title · $path · $pose"
-    }
-
     companion object {
-        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, emptyList(), emptyList(), emptyList())
+        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, "", false, emptyList(), emptyList(), emptyList())
 
         fun read(file: File): EflinkSnapshot {
             if (!file.isFile) return missing()
@@ -257,7 +358,8 @@ private data class EflinkSnapshot(
                     }
                 }
                 EflinkSnapshot(true, json.optString("role"), json.optString("room_name"), json.optString("error"),
-                    json.optBoolean("pose_ready"), json.optInt("udp"), json.optInt("tcp_only"), players, rooms, chat)
+                    json.optBoolean("pose_ready"), json.optInt("udp"), json.optInt("tcp_only"),
+                    json.optString("network"), json.optBoolean("lobby_ready"), players, rooms, chat)
             } catch (_: Throwable) {
                 missing()
             }

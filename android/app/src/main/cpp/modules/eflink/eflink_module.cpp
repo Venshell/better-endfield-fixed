@@ -299,6 +299,14 @@ private:
             auto port = command.value("port", static_cast<int>(port_));
             if (port < 1024 || port > 65535 || port == 47616) port = port_;
             options.port = static_cast<std::uint16_t>(port);
+            const auto network = command.value("network", std::string{"lan"});
+            if (network == "internet" && lobby_endpoint_.empty()) {
+                std::lock_guard lock(mutex_);
+                lobby_error_ = "互联网房间需要先在工具页填写大厅地址，并重启游戏";
+                internet_room_.store(false);
+                return;
+            }
+            internet_room_.store(network == "internet");
             if (command.contains("player_name") && command["player_name"].is_string()) {
                 auto name = command["player_name"].get<std::string>().substr(0, 64);
                 if (name.empty()) name = "玩家";
@@ -310,6 +318,7 @@ private:
             }
             net_.host(std::move(options));
         } else if (op == "join") {
+            internet_room_.store(false);
             net_.join(command.value("address", std::string{}), command.value("password", std::string{}));
         } else if (op == "join_lobby") {
             std::uint32_t roomId = command.value("room_id", 0u);
@@ -319,9 +328,11 @@ private:
                 std::lock_guard lock(mutex_);
                 lobby_error_ = failure.empty() ? "未设置大厅地址" : failure;
             } else {
+                internet_room_.store(true);
                 net_.adoptServer(bridged, command.value("password", std::string{}), "lobby");
             }
         } else if (op == "leave") {
+            internet_room_.store(false);
             net_.leave();
         } else if (op == "refresh") {
             net_.refresh();
@@ -363,7 +374,7 @@ private:
             lobby_error_ = failure;
         }
         const auto snapshot = net_.snapshot();
-        if (snapshot.role == eflink::Role::Host) {
+        if (snapshot.role == eflink::Role::Host && internet_room_.load()) {
             if (!lobby_host_) {
                 auto host = std::make_unique<eflink::lobby::Host>();
                 std::string failure;
@@ -461,6 +472,8 @@ private:
             {"players", std::move(players)}, {"rooms", std::move(rooms)},
             {"chat", std::move(chat)}, {"pose_ready", pose_ready_.load()},
             {"udp", snapshot.udpLinks}, {"tcp_only", snapshot.tcpOnlyLinks},
+            {"network", internet_room_.load() ? "internet" : (std::string(role) == "offline" ? "" : "lan")},
+            {"lobby_ready", !lobby_endpoint_.empty()},
             {"version", EFLINK_VERSION}};
         const auto text = body.dump();
         const auto path = std::filesystem::path(directory_) / "status.json";
@@ -481,6 +494,7 @@ private:
     std::string directory_, player_name_ = "玩家", room_name_, model_path_, lobby_endpoint_, lobby_error_;
     Json lobby_rooms_ = Json::array();
     std::unique_ptr<eflink::lobby::Host> lobby_host_;
+    std::atomic<bool> internet_room_{false};
     std::chrono::steady_clock::time_point last_lobby_list_{};
     std::uint16_t port_ = 47615;
     unsigned max_players_ = 8;
