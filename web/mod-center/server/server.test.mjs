@@ -1,10 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { DatabaseSync } from 'node:sqlite';
 import { createApp, makeSession, validateDraft } from './server.mjs';
+import { clientAddress, isMainlandChina } from './network.mjs';
+import { backupDatabase } from '../deploy/backup-database.mjs';
 
 const minimum = { name: '测试模型', type: 'bem', url: 'https://example.com/model.zip' };
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jfuQAAAAASUVORK5CYII=', 'base64');
@@ -298,18 +302,27 @@ test('upload bounds reject oversized declared and chunked bodies without retaini
     assert.equal((await app.call('api/uploads?kind=file', { method: 'POST', raw: Buffer.alloc(0), headers: uploadHeaders('empty.zip') })).status, 400);
   } finally { await app.close(); }
 });
+const mainland = { 'X-Forwarded-For': '114.114.114.114' };
+test('client address is taken from the loopback proxy and only mainland networks pass', () => {
+  assert.equal(clientAddress({ socket: { remoteAddress: '::ffff:127.0.0.1' }, headers: { 'x-forwarded-for': '::ffff:223.5.5.5' } }), '223.5.5.5');
+  assert.equal(clientAddress({ socket: { remoteAddress: '8.8.8.8' }, headers: { 'x-forwarded-for': '114.114.114.114' } }), '8.8.8.8');
+  assert.equal(clientAddress({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-forwarded-for': '114.114.114.114, 10.0.0.1' } }), '127.0.0.1');
+  assert.equal(isMainlandChina('114.114.114.114'), true);
+  assert.equal(isMainlandChina('8.8.8.8'), false);
+  assert.equal(isMainlandChina('127.0.0.1'), false);
+});
 test('email codes create a session and can only be used once', async () => {
   const sent = [];
   const app = await fixture({ smtpFrom: 'no-reply@example.com', sendEmail: async message => { sent.push(message); } });
   try {
     const status = await app.call('api/session', { anonymous: true });
     assert.equal(status.data.emailEnabled, true);
-    const requested = await app.call('auth/email/request', { method: 'POST', body: { email: 'Author@QQ.com' }, anonymous: true });
+    const requested = await app.call('auth/email/request', { method: 'POST', body: { email: 'Author@QQ.com' }, anonymous: true, headers: mainland });
     assert.equal(requested.status, 202); assert.equal(sent.length, 1); assert.match(sent[0].to, /^author@qq\.com$/);
     assert.match(sent[0].text, /\b\d{6}\b/);
     const code = sent[0].text.match(/\b(\d{6})\b/)[1];
     const emailCookie = requested.headers.getSetCookie().find(value => value.startsWith('be_email=')).split(';')[0];
-    const verified = await app.call('auth/email/verify', { method: 'POST', body: { code }, anonymous: true, headers: { Cookie: emailCookie } });
+    const verified = await app.call('auth/email/verify', { method: 'POST', body: { code }, anonymous: true, headers: { ...mainland, Cookie: emailCookie } });
     assert.equal(verified.status, 200);
     const sessionCookie = verified.headers.getSetCookie().find(value => value.startsWith('be_session=')).split(';')[0];
     const session = await app.call('api/session', { anonymous: true, headers: { Cookie: sessionCookie } });
@@ -324,9 +337,55 @@ test('email codes create a session and can only be used once', async () => {
     assert.equal(malformed.status, 400);
     assert.equal(malformed.data.error, '邮箱地址格式不正确。');
     assert.equal(sent.length, 1);
-    const reused = await app.call('auth/email/verify', { method: 'POST', body: { code }, anonymous: true, headers: { Cookie: emailCookie } });
+    const repeated = await app.call('auth/email/request', { method: 'POST', body: { email: '10002@qq.com' }, anonymous: true, headers: mainland });
+    assert.equal(repeated.status, 429);
+    assert.equal(repeated.data.error, '同一网络 60 秒内只能发送一次验证码。');
+    assert.equal(sent.length, 1);
+    const reused = await app.call('auth/email/verify', { method: 'POST', body: { code }, anonymous: true, headers: { ...mainland, Cookie: emailCookie } });
     assert.equal(reused.status, 400);
   } finally { await app.close(); }
+});
+test('email verification stays on the requesting mainland IP', async () => {
+  const sent = [];
+  const app = await fixture({ smtpFrom: 'no-reply@example.com', sendEmail: async message => { sent.push(message); } });
+  try {
+    const blocked = await app.call('auth/email/request', { method: 'POST', body: { email: '10001@qq.com' }, anonymous: true, headers: { 'X-Forwarded-For': '8.8.8.8' } });
+    assert.equal(blocked.status, 403);
+    assert.equal(blocked.data.error, '目前仅限中国大陆网络。');
+    assert.equal(sent.length, 0);
+    const requested = await app.call('auth/email/request', { method: 'POST', body: { email: '10001@qq.com' }, anonymous: true, headers: mainland });
+    const code = sent[0].text.match(/\b(\d{6})\b/)[1];
+    const emailCookie = requested.headers.getSetCookie().find(value => value.startsWith('be_email=')).split(';')[0];
+    const moved = await app.call('auth/email/verify', { method: 'POST', body: { code }, anonymous: true, headers: { 'X-Forwarded-For': '223.5.5.5', Cookie: emailCookie } });
+    assert.equal(moved.status, 403);
+    assert.equal(moved.data.error, '请在申请验证码的同一网络下完成验证。');
+    const verified = await app.call('auth/email/verify', { method: 'POST', body: { code }, anonymous: true, headers: { ...mainland, Cookie: emailCookie } });
+    assert.equal(verified.status, 200);
+    app.db.prepare(`UPDATE email_auth_events SET created_at=? WHERE kind='send'`).run(Date.now() - 61000);
+    const again = await app.call('auth/email/request', { method: 'POST', body: { email: '10002@qq.com' }, anonymous: true, headers: mainland });
+    assert.equal(again.status, 202);
+    assert.equal(sent.length, 2);
+  } finally { await app.close(); }
+});
+test('database backup is a consistent snapshot and keeps a bounded history', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'endfield-backup-'));
+  const databasePath = path.join(root, 'catalog.sqlite');
+  const directory = path.join(root, 'backups');
+  try {
+    const db = new DatabaseSync(databasePath);
+    db.exec(`PRAGMA journal_mode=WAL; CREATE TABLE users(id TEXT); INSERT INTO users VALUES ('kept')`);
+    mkdirSync(directory);
+    writeFileSync(path.join(directory, 'catalog-20000101T000000000Z.sqlite'), 'obsolete');
+    const snapshot = await backupDatabase({ databasePath, directory, keep: 1 });
+    db.prepare('INSERT INTO users VALUES (?)').run('later');
+    db.close();
+    assert.deepEqual(readdirSync(directory).filter(name => name.startsWith('catalog-')), [path.basename(snapshot)]);
+    assert.equal(statSync(snapshot).mode & 0o777, 0o600);
+    const copy = new DatabaseSync(snapshot, { readOnly: true });
+    assert.equal(copy.prepare('SELECT id FROM users').get().id, 'kept');
+    assert.equal(copy.prepare('SELECT COUNT(*) AS n FROM users').get().n, 1);
+    copy.close();
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 test('pagination is bounded and private source files are not served', async () => {
   const app = await fixture();

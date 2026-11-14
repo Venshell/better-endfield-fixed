@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Endfield resource center database backup every six hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+Persistent=true
+RandomizedDelaySec=20min
+Unit=endfield-resource-center-backup.service
+
+[Install]
+WantedBy=timers.target

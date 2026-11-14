@@ -1,0 +1,26 @@
+[Unit]
+Description=Backup Endfield resource center database
+After=endfield-resource-center.service
+
+[Service]
+Type=oneshot
+User=endfield-mods
+Group=endfield-mods
+WorkingDirectory=/opt/endfield-resource-center
+EnvironmentFile=-/etc/endfield-resource-center.env
+Environment=BACKUP_KEEP=28
+ExecStart=/opt/endfield-resource-center/runtime/node deploy/backup-database.mjs
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/endfield-resource-center
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=128M
+StandardOutput=journal
+StandardError=journal

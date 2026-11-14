@@ -77,7 +77,9 @@ sudo systemctl restart endfield-resource-center
 
 ## 开通邮箱登录
 
-邮箱登录不保存用户密码。用户填写的地址必须是 `@qq.com`，页面和接口都会拒绝其他邮箱；通过校验后发送六位验证码，10 分钟有效，只能使用一次。验证码绑定申请时的浏览器，最多允许五次验证尝试；每个邮箱每 15 分钟最多发送三次，每个 IP 每 15 分钟五次，网站每天最多发送 100 封。发信邮箱由服务端的 SMTP 配置提供，不要求发信地址本身是 QQ 邮箱。
+邮箱登录不保存用户密码。用户填写的地址必须是 `@qq.com`，页面和接口都会拒绝其他邮箱。申请和验证都必须来自中国大陆公网地址（APNIC 分配给 CN 的地址，不含港澳台）；本机回环上的 HTTPS 代理写入的客户端地址才被采信，调用方自行提供的 `X-Forwarded-For` 无效。同一 IP 60 秒只能发送一次，这个限制写在数据库里，重启服务不能绕过。验证码绑定申请时的浏览器和该 IP，换网络后不能继续验证。每个验证码最多五次尝试；同一 IP 每 10 分钟最多验证 20 次。每个邮箱每 15 分钟最多发送三次，网站每天最多发送 100 封。验证码 10 分钟有效，只能使用一次。发信邮箱由服务端的 SMTP 配置提供，不要求发信地址本身是 QQ 邮箱。
+
+地址库来自 APNIC `delegated-apnic-latest`，文件是 `server/cn-mainland.txt`。分配发生变化时，在 `web` 目录运行 `node mod-center/scripts/build-cn-ip.mjs` 后重新部署。
 
 已有 GitHub 作者可以在「我的发布」中验证并绑定邮箱，之后通过邮箱登录仍管理原来的作品。直接通过未绑定的邮箱登录会建立新账号，不根据第三方邮箱自动合并账号；公共作者资料不展示邮箱。
 
@@ -106,11 +108,17 @@ SMTP_FROM=专用发信邮箱@qq.com
 
 ## 备份与运维
 
-用 SQLite 的备份 API 创建一致快照，不在服务运行时单独复制 WAL 模式的 `.sqlite` 文件。升级只替换代码与静态构建，不覆盖数据库和环境配置。
+数据库运行在 WAL 模式。不要在服务运行时直接复制 `catalog.sqlite`。备份程序打开数据库后走 SQLite 备份接口，写成完整快照，再执行 `integrity_check`，文件权限为 `0600`。快照每 6 小时一次，保留 28 份，大约覆盖 7 天；定时器错过的周期会在恢复后补跑。快照里有账号和邮箱，目录是 `/var/lib/endfield-resource-center/backups/`。上传文件不在数据库里，恢复账号数据不会自动恢复作品文件。
 
 ```sh
+sudo cp deploy/endfield-resource-center-backup.service deploy/endfield-resource-center-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now endfield-resource-center-backup.timer
+sudo systemctl start endfield-resource-center-backup.service
 sudo systemctl status endfield-resource-center --no-pager
 sudo journalctl -u endfield-resource-center -n 30 --no-pager
 ```
+
+恢复时先停止服务，用要恢复的快照替换 `catalog.sqlite`，并删除旁边的 `-wal` 和 `-shm`，再启动。升级只替换代码与静态构建，不覆盖数据库、备份和环境配置。
 
 域名迁移后，更新 `PUBLIC_URL`、GitHub 首页/回调 URL 与 TLS 入口，再重启服务。

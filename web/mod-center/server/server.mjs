@@ -9,6 +9,7 @@ import nodemailer from 'nodemailer';
 import { createUploads, uploadLimits } from './uploads.mjs';
 import { createSocial } from './social.mjs';
 import { createVisibility, visibilityOf } from './visibility.mjs';
+import { clientAddress, isMainlandChina } from './network.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const types = JSON.parse(readFileSync(path.join(root, 'shared/types.json'), 'utf8'));
@@ -110,6 +111,23 @@ export function createApp(options = {}) {
       PRAGMA foreign_keys=ON;`);
   }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL');
+  if (!db.prepare('PRAGMA table_info(email_codes)').all().some(column => column.name === 'ip_hash')) db.exec(`ALTER TABLE email_codes ADD COLUMN ip_hash TEXT NOT NULL DEFAULT ''`);
+  db.exec(`CREATE TABLE IF NOT EXISTS app_meta (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS email_auth_events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, ip_hash TEXT NOT NULL, email_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS email_auth_ip ON email_auth_events(kind, ip_hash, created_at);
+    CREATE INDEX IF NOT EXISTS email_auth_email ON email_auth_events(kind, email_hash, created_at);
+    CREATE INDEX IF NOT EXISTS email_auth_time ON email_auth_events(created_at);`);
+  const ipPepper = () => {
+    const existing = db.prepare('SELECT value FROM app_meta WHERE name=?').get('ip_pepper');
+    if (existing) return existing.value;
+    db.prepare('INSERT INTO app_meta(name,value) VALUES (?,?) ON CONFLICT(name) DO NOTHING').run('ip_pepper', token());
+    return db.prepare('SELECT value FROM app_meta WHERE name=?').get('ip_pepper').value;
+  };
+  const sameHash = (left, right) => {
+    const actual = Buffer.from(String(left || ''));
+    const expected = Buffer.from(String(right || ''));
+    return actual.length === expected.length && actual.length > 0 && timingSafeEqual(actual, expected);
+  };
   if (!db.prepare('PRAGMA table_info(releases)').all().some(column => column.name === 'file_id')) db.exec('ALTER TABLE releases ADD COLUMN file_id TEXT REFERENCES uploads(id)');
   const visibility = createVisibility({ db, canAdmin });
   const secure = publicUrl.protocol === 'https:';
@@ -228,8 +246,7 @@ export function createApp(options = {}) {
       }
       if (route === 'auth/github' && req.method === 'GET') {
         if (!githubEnabled) return redirect(res, `${prefix}#/publish?login=unavailable`);
-        const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress).slice(0, 128);
-        rate(`auth:${clientIp}`, 30, 900000);
+        rate(`auth:${clientAddress(req) || 'unknown'}`, 30, 900000);
         const state = token(), verifier = token();
         db.prepare('INSERT INTO oauth_states VALUES (?,?,?)').run(digest(state), verifier, Date.now() + 600000);
         const target = new URL('https://github.com/login/oauth/authorize');
@@ -269,20 +286,28 @@ export function createApp(options = {}) {
         const binding = body.purpose === 'bind';
         const user = binding ? authorize(req) : null;
         if (user?.email && user.email !== email) fail(409, '账号已绑定邮箱。');
-        const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress).slice(0, 128);
-        rate(`email-ip:${clientIp}`, 5, 900000);
-        rate(`email:${digest(email)}`, 3, 900000);
-        rate('email-global', 100, 86400000);
+        const ip = clientAddress(req);
+        if (!isMainlandChina(ip)) fail(403, '目前仅限中国大陆网络。');
+        const pepper = ipPepper();
+        const ipHash = digest(`${pepper}:${ip}`);
+        const emailHash = digest(`${pepper}:${email}`);
         const value = token(), code = randomInt(100000, 1000000).toString();
         const previous = cookies(req).be_email;
-        if (previous?.length <= 128) db.prepare('DELETE FROM email_codes WHERE challenge_hash=?').run(digest(previous));
-        db.prepare('DELETE FROM email_codes WHERE expires_at<?').run(Date.now());
-        db.prepare('INSERT INTO email_codes(challenge_hash,code_hash,email,user_id,expires_at) VALUES (?,?,?,?,?)').run(digest(value), digest(`${value}:${code}`), email, user?.id || null, Date.now() + 10 * 60 * 1000);
+        transaction(() => {
+          const now = Date.now();
+          if (db.prepare(`SELECT 1 FROM email_auth_events WHERE kind='send' AND ip_hash=? AND created_at>?`).get(ipHash, now - 60000)) fail(429, '同一网络 60 秒内只能发送一次验证码。');
+          if (db.prepare(`SELECT COUNT(*) AS n FROM email_auth_events WHERE kind='send' AND email_hash=? AND created_at>?`).get(emailHash, now - 900000).n >= 3) fail(429, '该邮箱发送过于频繁，请稍后再试。');
+          if (db.prepare(`SELECT COUNT(*) AS n FROM email_auth_events WHERE kind='send' AND created_at>?`).get(now - 86400000).n >= 100) fail(429, '今日验证码发送已达上限，请明天再试。');
+          if (previous?.length <= 128) db.prepare('DELETE FROM email_codes WHERE challenge_hash=?').run(digest(previous));
+          db.prepare('DELETE FROM email_codes WHERE expires_at<?').run(now);
+          db.prepare('INSERT INTO email_codes(challenge_hash,code_hash,email,user_id,expires_at,ip_hash) VALUES (?,?,?,?,?,?)').run(digest(value), digest(`${value}:${code}`), email, user?.id || null, now + 10 * 60 * 1000, ipHash);
+          db.prepare(`INSERT INTO email_auth_events(kind,ip_hash,email_hash,created_at) VALUES ('send',?,?,?)`).run(ipHash, emailHash, now);
+        });
         const english = body.lang === 'en';
         try {
           await sendEmail({ from: smtpFrom, to: email,
             subject: english ? 'Better Endfield sign-in code' : 'Better Endfield 下载站验证码',
-            text: english ? `Your ${binding ? 'email linking' : 'sign-in'} code is: ${code}\n\nEnter it in the browser where you requested it. It expires in 10 minutes. If you did not request this email, ignore it.` : `你的${binding ? '邮箱绑定' : '登录'}验证码为：${code}\n\n请回到申请验证码的网页填写，10 分钟内有效。如果不是你发起的请求，可以忽略此邮件。` });
+            text: english ? `Your ${binding ? 'email linking' : 'sign-in'} code is: ${code}\n\nEnter it in the browser where you requested it. It expires in 10 minutes and only works from the same network. If you did not request this email, ignore it.` : `你的${binding ? '邮箱绑定' : '登录'}验证码为：${code}\n\n请回到申请验证码的网页填写，10 分钟内有效，且必须使用同一网络。如果不是你发起的请求，可以忽略此邮件。` });
         } catch {
           db.prepare('DELETE FROM email_codes WHERE challenge_hash=?').run(digest(value));
           fail(503, '登录邮件发送失败，请稍后重试。');
@@ -296,9 +321,18 @@ export function createApp(options = {}) {
         const body = await bodyOf(req);
         const code = text(body.code, 6, '验证码', true);
         if (!/^\d{6}$/.test(code)) fail(400, '请填写六位数字验证码。');
+        const ip = clientAddress(req);
+        if (!isMainlandChina(ip)) fail(403, '目前仅限中国大陆网络。');
+        const ipHash = digest(`${ipPepper()}:${ip}`);
         const value = cookies(req).be_email || '';
         const challenge = value.length <= 128 ? db.prepare('SELECT * FROM email_codes WHERE challenge_hash=? AND expires_at>?').get(digest(value), Date.now()) : null;
+        transaction(() => {
+          const now = Date.now();
+          if (db.prepare(`SELECT COUNT(*) AS n FROM email_auth_events WHERE kind='verify' AND ip_hash=? AND created_at>?`).get(ipHash, now - 600000).n >= 20) fail(429, '当前网络验证次数过多，请稍后再试。');
+          db.prepare(`INSERT INTO email_auth_events(kind,ip_hash,email_hash,created_at) VALUES ('verify',?,?,?)`).run(ipHash, digest(`${ipPepper()}:${challenge?.email || ''}`), now);
+        });
         if (!challenge || challenge.attempts >= 5) fail(400, '验证码无效或已过期，请重新发送。');
+        if (!sameHash(challenge.ip_hash, ipHash)) fail(403, '请在申请验证码的同一网络下完成验证。');
         if (!timingSafeEqual(Buffer.from(challenge.code_hash), Buffer.from(digest(`${value}:${code}`)))) {
           db.prepare('UPDATE email_codes SET attempts=attempts+1 WHERE challenge_hash=?').run(digest(value));
           fail(400, '验证码不正确，请重试。');
@@ -426,7 +460,7 @@ export function createApp(options = {}) {
   });
   server.requestTimeout = 300000; server.headersTimeout = 10000; server.maxHeadersCount = 48; server.maxConnections = 128;
   let uploadCleanup = Promise.resolve();
-  const cleanup = setInterval(() => { db.prepare('DELETE FROM sessions WHERE expires_at<?').run(Date.now()); db.prepare('DELETE FROM oauth_states WHERE expires_at<?').run(Date.now()); db.prepare('DELETE FROM email_codes WHERE expires_at<?').run(Date.now()); uploadCleanup = uploads.cleanup().catch(() => console.error('Upload cleanup failed')); }, 600000).unref();
+  const cleanup = setInterval(() => { const now = Date.now(); db.prepare('DELETE FROM sessions WHERE expires_at<?').run(now); db.prepare('DELETE FROM oauth_states WHERE expires_at<?').run(now); db.prepare('DELETE FROM email_codes WHERE expires_at<?').run(now); db.prepare('DELETE FROM email_auth_events WHERE created_at<?').run(now - 2 * 86400000); uploadCleanup = uploads.cleanup().catch(() => console.error('Upload cleanup failed')); }, 600000).unref();
   return { server, db, close: () => new Promise(resolve => { clearInterval(cleanup); server.close(async () => { await uploadCleanup; mailer?.close(); db.close(); resolve(); }); server.closeIdleConnections(); }) };
 }
 
