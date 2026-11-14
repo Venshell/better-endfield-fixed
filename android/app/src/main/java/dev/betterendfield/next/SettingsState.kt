@@ -832,7 +832,7 @@ class SettingsState(private val context: Context) {
         private set
     var eflinkMaxPlayers by mutableStateOf(8)
         private set
-    var eflinkServer by mutableStateOf("game.venshell.top")
+    var eflinkServer by mutableStateOf("127.0.0.1")
         private set
 
     private fun loadEnhancement() {
@@ -927,8 +927,17 @@ class SettingsState(private val context: Context) {
         eflinkEnabled = ModuleSettings.isEflinkEnabled(context)
         eflinkLan = ModuleSettings.isEflinkLanEnabled(context)
         eflinkInternet = ModuleSettings.isEflinkInternetEnabled(context)
-        accountUsername = ModuleSettings.getAccountUsername(context)
-        accountEmail = ModuleSettings.getAccountEmail(context)
+        val storedName = ModuleSettings.getAccountUsername(context)
+        val storedExpiry = ModuleSettings.getAccountExpires(context)
+        if (storedName.isNotEmpty() && storedExpiry > 0L && storedExpiry <= System.currentTimeMillis() / 1000L) {
+            ModuleSettings.clearAccount(context)
+            accountUsername = ""
+            accountEmail = ""
+            accountStatus = "登录已过期，请重新登录"
+        } else {
+            accountUsername = storedName
+            accountEmail = ModuleSettings.getAccountEmail(context)
+        }
         eflinkName = ModuleSettings.getEflinkPlayerName(context)
         eflinkRoom = ModuleSettings.getEflinkRoomName(context)
         eflinkPort = ModuleSettings.getEflinkPort(context)
@@ -961,11 +970,18 @@ class SettingsState(private val context: Context) {
         ModuleSettings.setEflinkInternetEnabled(context, value)
     }
 
-    fun applyAccount(token: String, username: String, email: String) {
-        ModuleSettings.setAccount(context, token, username, email)
+    fun applyAccount(token: String, username: String, email: String, expires: Long) {
+        ModuleSettings.setAccount(context, token, username, email, expires)
         accountUsername = username
         accountEmail = email
         accountStatus = ""
+    }
+
+    fun accountToken(): String = ModuleSettings.getAccountToken(context)
+
+    fun accountPastExpiry(): Boolean {
+        val expires = ModuleSettings.getAccountExpires(context)
+        return expires > 0L && expires <= System.currentTimeMillis() / 1000L
     }
 
     fun clearAccount() {
@@ -973,6 +989,11 @@ class SettingsState(private val context: Context) {
         accountUsername = ""
         accountEmail = ""
         accountStatus = ""
+    }
+
+    fun expireAccount() {
+        clearAccount()
+        accountStatus = "登录已过期，请重新登录"
     }
 
     fun showAccountStatus(message: String) {
@@ -1005,7 +1026,7 @@ class SettingsState(private val context: Context) {
 
     fun updateEflinkServer(value: String) {
         val trimmed = value.trim().take(128)
-        eflinkServer = trimmed.ifEmpty { "game.venshell.top" }
+        eflinkServer = trimmed.ifEmpty { "127.0.0.1" }
         ModuleSettings.setEflinkServer(context, eflinkServer)
     }
 

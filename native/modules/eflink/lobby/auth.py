@@ -14,11 +14,9 @@ import sqlite3
 import threading
 import time
 from email.message import EmailMessage
-from pathlib import Path
 
 USERNAME = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fff]{2,16}$")
-QQ_MAIL = re.compile(r"^[^\s@]+@qq\.com$")
-RANGES = Path(__file__).with_name("cn-mainland.txt")
+EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 SEND_GAP = 60
 EMAIL_WINDOW = 15 * 60
 EMAIL_MAX = 3
@@ -30,42 +28,6 @@ LOGIN_MAX = 10
 CODE_TTL = 10 * 60
 SESSION_TTL = 30 * DAY
 PBKDF2_ROUNDS = 600_000
-
-
-def ipv4(value):
-    parts = str(value).split(".")
-    if len(parts) != 4:
-        return None
-    number = 0
-    for part in parts:
-        if not part.isdigit() or int(part) > 255:
-            return None
-        number = number * 256 + int(part)
-    return number
-
-
-def load_ranges(path=RANGES):
-    ranges = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        if not line or line.startswith("#") or not line.startswith("4 "):
-            continue
-        _, start, end = line.split()
-        ranges.append((int(start), int(end)))
-    if not ranges:
-        raise RuntimeError("mainland IPv4 ranges are missing")
-    return ranges
-
-
-def contains(ranges, value):
-    low, high, found = 0, len(ranges) - 1, -1
-    while low <= high:
-        mid = (low + high) // 2
-        if ranges[mid][0] <= value:
-            found = mid
-            low = mid + 1
-        else:
-            high = mid - 1
-    return found >= 0 and value <= ranges[found][1]
 
 
 def hash_password(password, salt=None, rounds=PBKDF2_ROUNDS):
@@ -85,11 +47,11 @@ class AccountGate:
     def __init__(self, database, mailer=None, rounds=PBKDF2_ROUNDS):
         self.mailer = mailer or smtp_mail
         self.rounds = rounds
-        self.ranges = load_ranges()
         self.lock = threading.Lock()
         self.db = sqlite3.connect(database, check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")
-        self._migrate()
+        self.purged = 0
+        self._reject_legacy_accounts()
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS accounts (
@@ -126,13 +88,10 @@ class AccountGate:
             self.db.commit()
         self.pepper = self.db.execute("SELECT value FROM meta WHERE name='pepper'").fetchone()[0]
         self.dummy_salt, self.dummy_hash = hash_password("not-a-user", rounds=rounds)
+        self._purge(int(time.time()), force=True)
 
     def close(self):
         self.db.close()
-
-    def mainland(self, ip):
-        number = ipv4(ip)
-        return number is not None and contains(self.ranges, number)
 
     def register(self, username, password, email, ip):
         name, reason = self._username(username)
@@ -143,12 +102,11 @@ class AccountGate:
             return reason
         address = self._email(email)
         if address is None:
-            return "目前仅支持 QQ 邮箱"
-        if not self.mainland(ip):
-            return "目前仅限中国大陆网络"
+            return "邮箱格式不正确"
         now = int(time.time())
         key = name.casefold()
         with self.lock:
+            self._purge(now)
             if self._taken(key, address):
                 return "用户名或邮箱已被注册"
             if self._count("send", "ip", ip, now - SEND_GAP):
@@ -181,11 +139,10 @@ class AccountGate:
         name, reason = self._username(username)
         if reason or not re.fullmatch(r"\d{6}", str(code or "")):
             return None, "", "", "验证码无效或已过期"
-        if not self.mainland(ip):
-            return None, "", "", "目前仅限中国大陆网络"
         now = int(time.time())
         key = name.casefold()
         with self.lock:
+            self._purge(now)
             if self._count("verify", "ip", ip, now - VERIFY_WINDOW) >= VERIFY_MAX:
                 return None, "", "", "当前网络验证次数过多，请稍后再试"
             self.db.execute(
@@ -224,11 +181,10 @@ class AccountGate:
         name, reason = self._username(username)
         if reason or not isinstance(password, str):
             return None, "", "", "账号或密码不正确"
-        if not self.mainland(ip):
-            return None, "", "", "目前仅限中国大陆网络"
         now = int(time.time())
         key = name.casefold()
         with self.lock:
+            self._purge(now)
             if self._count("login", "ip", ip, now - VERIFY_WINDOW) >= LOGIN_MAX:
                 return None, "", "", "当前网络登录次数过多，请稍后再试"
             self.db.execute(
@@ -249,24 +205,38 @@ class AccountGate:
             self.db.commit()
             return token, row[0], row[1], ""
 
+    def session_deadline(self):
+        return int(time.time()) + SESSION_TTL
+
     def session(self, token, ip):
-        if not isinstance(token, str) or not token or not self.mainland(ip):
+        if not isinstance(token, str) or not token:
             return None
         now = int(time.time())
         with self.lock:
+            self._purge(now)
             row = self.db.execute(
                 "SELECT username FROM sessions WHERE token_hash=? AND expires_at>?",
                 (self._hash(token), now)).fetchone()
             return row[0] if row else None
 
-    def _migrate(self):
+    def _reject_legacy_accounts(self):
         names = {row[1] for row in self.db.execute("PRAGMA table_info(accounts)")}
-        if names and "username" not in names:
-            self.db.executescript("""
-                DROP TABLE IF EXISTS accounts;
-                DROP TABLE IF EXISTS challenges;
-                DROP TABLE IF EXISTS sessions;
-                """)
+        if not names or "username" in names:
+            return
+        self.db.close()
+        raise SystemExit(
+            "账号库是旧结构，accounts 表没有 username。启动已停止，库文件保持原样。"
+            "停掉大厅，把 accounts.sqlite 连同 -wal、-shm 移到别处，再启动。"
+            "旧记录只有邮箱，要保留的地址请先导出。")
+
+    def _purge(self, now, force=False):
+        if not force and now - self.purged < 3600:
+            return
+        self.purged = now
+        self.db.execute("DELETE FROM events WHERE created_at<=?", (now - DAY,))
+        self.db.execute("DELETE FROM sessions WHERE expires_at<=?", (now,))
+        self.db.execute("DELETE FROM challenges WHERE expires_at<=?", (now,))
+        self.db.commit()
 
     def _username(self, value):
         name = str(value or "").strip()
@@ -283,7 +253,9 @@ class AccountGate:
 
     def _email(self, value):
         address = str(value or "").strip().lower()
-        return address if QQ_MAIL.fullmatch(address) else None
+        if len(address) > 254 or not EMAIL.fullmatch(address):
+            return None
+        return address
 
     def _taken(self, key, address):
         row = self.db.execute(

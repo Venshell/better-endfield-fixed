@@ -49,14 +49,13 @@ float YawDegrees(const float rotation[4]) {
 
 std::string explainLobby(std::string code) {
     if (code == "login-required") return "请登录";
-    if (code == "not-mainland") return "目前仅限中国大陆网络";
-    if (code == "qq-mail-only") return "目前仅支持 QQ 邮箱";
     if (code == "slow-down") return "同一网络 60 秒内只能发送一次验证码";
     if (code == "mail-busy") return "该邮箱发送过于频繁，请稍后再试";
     if (code == "mail-daily") return "今日验证码发送已达上限";
     if (code == "verify-limit") return "当前网络验证次数过多，请稍后再试";
     if (code == "same-network") return "请在申请验证码的同一网络下完成验证";
     if (code == "tls-required") return "联机服务器需要加密连接";
+    if (code == "busy") return "加入过于频繁，请稍后再试";
     if (code == "bad-code" || code == "code-expired") return "验证码无效或已过期";
     if (code == "mail-failed") return "验证码邮件发送失败";
     return code;
@@ -417,7 +416,7 @@ private:
                 std::uint16_t relayPort = 0;
                 splitLobby(lobby_endpoint_, host, relayPort);
                 net_.adoptServer(bridged, command.value("password", std::string{}), "lobby",
-                    eflink::lobby::relayBytes(relay), host, relayPort);
+                    eflink::lobby::relayBytes(relay), host, relayPort, roomId);
             }
         } else if (op == "leave") {
             internet_room_.store(false);
@@ -506,7 +505,7 @@ private:
                         break;
                     }
                     if (guest.socket < 0) break;
-                    net_.adoptIncoming(guest.socket, "lobby", eflink::lobby::relayBytes(guest.relay));
+                    net_.adoptIncoming(guest.socket, "lobby", eflink::lobby::relayBytes(guest.relay), lobby_host_->roomId());
                 }
             }
         } else if (lobby_host_) {

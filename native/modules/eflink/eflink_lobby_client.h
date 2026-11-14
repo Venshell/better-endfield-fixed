@@ -1,6 +1,7 @@
 #pragma once
 // Client for lobby/server.py. The lobby lists rooms and then splices a raw
-// EF Link TCP stream. It never sees the room password.
+// EF Link TCP stream. It never sees the room password. kEndpoint is the local
+// default; a public deployment replaces it with that host.
 #include <nlohmann/json.hpp>
 
 #include <arpa/inet.h>
@@ -19,7 +20,7 @@
 
 namespace eflink::lobby {
 // Baked-in internet lobby. "endfield" is the game id on that host, not an HTTP path.
-inline constexpr const char* kEndpoint = "game.venshell.top:47617";
+inline constexpr const char* kEndpoint = "127.0.0.1:47617";
 inline constexpr const char* kGame = "endfield";
 
 struct Room {
@@ -188,9 +189,9 @@ inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& 
     }
     const auto ticket = parsed.value("ticket", std::string{});
     relay = parsed.value("relay", std::string{});
-    const int socketFd = dial(endpoint, 4000, error);
+    const int socketFd = DialTls(endpoint, 4000, error);
     if (socketFd < 0) return -1;
-    if (!writeLine(socketFd, {{"op", "bridge"}, {"game", kGame}, {"ticket", ticket}, {"side", "guest"}}) || !readLine(socketFd, line)) {
+    if (!writeLine(socketFd, {{"op", "bridge"}, {"game", kGame}, {"ticket", ticket}, {"side", "guest"}, {"account", token}}) || !readLine(socketFd, line)) {
         ::close(socketFd);
         error = "大厅没有接上房间";
         return -1;
@@ -234,6 +235,7 @@ public:
         }
         roomId_ = parsed.value("room_id", 0u);
         udpToken_ = parsed.value("udp", std::string{});
+        account_ = token;
         error.clear();
         return roomId_ != 0;
     }
@@ -261,10 +263,10 @@ public:
         if (!parsed.is_object() || parsed.value("op", std::string{}) != "guest") return result;
         const auto token = parsed.value("token", std::string{});
         result.relay = parsed.value("relay", std::string{});
-        const int socketFd = dial(endpoint_, 4000, error);
+        const int socketFd = DialTls(endpoint_, 4000, error);
         if (socketFd < 0) return result;
         std::string answer;
-        if (!writeLine(socketFd, {{"op", "bridge"}, {"game", kGame}, {"ticket", token}, {"side", "host"}}) || !readLine(socketFd, answer)) {
+        if (!writeLine(socketFd, {{"op", "bridge"}, {"game", kGame}, {"ticket", token}, {"side", "host"}, {"account", account_}}) || !readLine(socketFd, answer)) {
             ::close(socketFd);
             error = "无法接上大厅里的客人";
             return result;
@@ -286,10 +288,11 @@ public:
         control_ = -1;
         roomId_ = 0;
         udpToken_.clear();
+        account_.clear();
     }
 private:
     int control_ = -1;
     std::uint32_t roomId_ = 0;
-    std::string endpoint_, udpToken_;
+    std::string endpoint_, udpToken_, account_;
 };
 }  // namespace eflink::lobby

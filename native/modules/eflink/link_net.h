@@ -97,35 +97,36 @@ public:
     void host(HostOptions value) {post([this,value]{startHost(value);});}
     void join(std::string address,std::string password) {post([this,address,password]{startJoin(address,password);});}
     // A TCP socket already bridged by the lobby. The network thread owns it after this call.
-    void adoptIncoming(int connected,std::string address,std::string relayToken={}) {
-        post([this,connected,address,relayToken]{
+    void adoptIncoming(int connected,std::string address,std::string relayToken,std::uint32_t lobbyRoom) {
+        post([this,connected,address,relayToken,lobbyRoom]{
             if(role.load()!=Role::Host||connected<0) {if(connected>=0) closesocket(connected);return;}
             nonBlocking(connected);int on=1;setsockopt(connected,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&on),sizeof on);
             if(pending.size()>=16) {closesocket(connected);return;}
             auto member=std::make_unique<Member>();member->tcp.socket=connected;member->tcp.lastHeard=nowMs();member->address=std::move(address);
-            member->relayToken=relayToken;
+            member->relayToken=relayToken;member->secureJoin=true;member->lobbyRoom=lobbyRoom;
+            std::random_device device;
+            for(int i=0;i<8;++i) {const auto word=device();std::memcpy(member->challenge+static_cast<std::size_t>(i)*4,&word,4);}
+            proto::Writer challenge;challenge.raw(member->challenge,32).u32(lobbyRoom);
+            queue(member->tcp,proto::Tcp::Challenge,challenge);
             pending.push_back(std::move(member));
         });
     }
     // Internet client. relayToken is the 8-byte UDP channel; empty keeps the TCP fallback only.
-    void adoptServer(int connected,std::string password,std::string label,std::string relayToken,std::string relayHost,std::uint16_t relayPort) {
-        post([this,connected,password,label,relayToken,relayHost,relayPort]{
+    void adoptServer(int connected,std::string password,std::string label,std::string relayToken,std::string relayHost,std::uint16_t relayPort,std::uint32_t lobbyRoom) {
+        post([this,connected,password,label,relayToken,relayHost,relayPort,lobbyRoom]{
             if(connected<0) {notice("服务器连接失败",true);return;}
             closeSession("left the room",true);
             relay_=false;guestRelayToken_.clear();selfRelayToken_.clear();
             server.socket=connected;nonBlocking(server.socket);
             int on=1;setsockopt(server.socket,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&on),sizeof on);
-            joinPassword=password;joinStarted=nowMs();joinAddress=label;
+            joinPassword=password;joinStarted=nowMs();joinAddress=label;lobbyRoom_=lobbyRoom;awaitChallenge_=true;
             role.store(Role::Connecting);udpWelcomed=false;udpNoticed=false;
             if(relayToken.size()==8&&rememberRelay(relayHost,relayPort)) {relay_=true;guestRelayToken_=relayToken;udp=udpSocket(0,false);}
             {std::lock_guard lock(viewMutex);view.lastError.clear();}
             resetView();publishPeers();
             notice("正在通过服务器连接…");
-            proto::Writer hello;
-            std::uint16_t localPort=0;
-            if(udp!=INVALID_SOCKET) {sockaddr_in local{};socklen_t length=sizeof local;getsockname(udp,reinterpret_cast<sockaddr*>(&local),&length);localPort=ntohs(local.sin_port);}
-            hello.u32(proto::kMagic).u16(proto::kProtocol).str(version,32).str(name(),64).u64(proto::passwordProof(0,password)).u16(localPort);
-            auto bytes=proto::frame(proto::Tcp::Hello,hello);server.out.insert(server.out.end(),bytes.begin(),bytes.end());
+            joinUdpPort_=0;
+            if(udp!=INVALID_SOCKET) {sockaddr_in local{};socklen_t length=sizeof local;getsockname(udp,reinterpret_cast<sockaddr*>(&local),&length);joinUdpPort_=ntohs(local.sin_port);}
             server.lastHeard=nowMs();
         });
     }
@@ -193,8 +194,10 @@ private:
         sockaddr_in udp{};bool udpKnown=false;std::uint64_t joinedAt=0;
         std::uint32_t token=0;
         std::string relayToken;
-        bool welcomed=false,tcpNoticed=false;
+        bool welcomed=false,tcpNoticed=false,secureJoin=false,challengeUsed=false;
         std::string address;
+        unsigned char challenge[32]{};
+        std::uint32_t lobbyRoom=0;
     };
     std::thread thread;
     std::atomic<bool> stopping=false;
@@ -255,6 +258,9 @@ private:
     std::uint64_t bytesIn=0,bytesOut=0,statesIn=0,statesOut=0;
     std::uint64_t pongs=0;
     std::string lastError,joinAddress;
+    bool awaitChallenge_=false;
+    std::uint32_t lobbyRoom_=0;
+    std::uint16_t joinUdpPort_=0;
     std::mt19937 random{std::random_device{}()};
 
     void post(std::function<void()> command) {std::lock_guard lock(commandMutex);commands.push_back(std::move(command));}
@@ -409,6 +415,7 @@ private:
         closeSocket(udp);closeSocket(listener);
         auto departed=peers;peers.clear();
         relay_=false;selfRelayToken_.clear();guestRelayToken_.clear();
+        awaitChallenge_=false;lobbyRoom_=0;joinUdpPort_=0;
         role.store(Role::Offline);localId=0;roomId=0;token=0;udpWelcomed=false;rtt=0;
         resetView();publishPeers();
         for(const auto& [id,peer]:departed) if(onPeer) onPeer(id,false);
@@ -504,9 +511,24 @@ private:
     void hostHello(Member& m,proto::Reader& r) {
         if(r.u32()!=proto::kMagic) throw std::runtime_error("bad hello");
         const auto protocol=r.u16();const auto clientVersion=r.str(32);const auto clientName=r.str(64);
-        const auto proof=r.u64();const auto udpPort=r.u16();
-        if(protocol!=proto::kProtocol) {reject(m.tcp,"version:"+version);return;}
-        if(proof!=proto::passwordProof(0,options.password)) {reject(m.tcp,"password");return;}
+        std::uint16_t udpPort=0;
+        if(m.secureJoin) {
+            if(m.challengeUsed) {reject(m.tcp,"password");return;}
+            m.challengeUsed=true;
+            unsigned char nonce[32];
+            std::memcpy(nonce,m.challenge,sizeof nonce);
+            std::memset(m.challenge,0,sizeof m.challenge);
+            if(protocol!=proto::kProtocolSecure) {reject(m.tcp,"version:"+version);return;}
+            unsigned char expect[32];
+            proto::roomProof(options.password,nonce,m.lobbyRoom,expect);
+            std::memset(nonce,0,sizeof nonce);
+            const auto* mac=r.take(32);udpPort=r.u16();
+            if(!proto::sameBytes(mac,expect,32)) {reject(m.tcp,"password");return;}
+        } else {
+            const auto proof=r.u64();udpPort=r.u16();
+            if(protocol!=proto::kProtocol) {reject(m.tcp,"version:"+version);return;}
+            if(proof!=proto::passwordProof(0,options.password)) {reject(m.tcp,"password");return;}
+        }
         if(members.size()+1>=options.maxPlayers) {reject(m.tcp,"full");return;}
         std::uint16_t id=2;while(members.contains(id)) ++id;
         m.id=id;m.token=random();m.welcomed=true;m.udpKnown=false;m.joinedAt=nowMs();
@@ -605,7 +627,19 @@ private:
 
     // ---- client message handling ----
     void clientFrame(proto::Tcp type,proto::Reader& r) {
+        if(awaitChallenge_&&type!=proto::Tcp::Challenge) {closeSession("连接被拒绝：缺少房间校验",false,true);return;}
         switch(type) {
+        case proto::Tcp::Challenge: {
+            if(!awaitChallenge_) break;
+            const auto* nonce=r.take(32);const auto room=r.u32();
+            if(room!=lobbyRoom_) {closeSession("连接被拒绝：房间校验不一致",false,true);break;}
+            unsigned char mac[32];proto::roomProof(joinPassword,nonce,room,mac);
+            proto::Writer hello;
+            hello.u32(proto::kMagic).u16(proto::kProtocolSecure).str(version,32).str(name(),64).raw(mac,32).u16(joinUdpPort_);
+            queue(server,proto::Tcp::Hello,hello);
+            awaitChallenge_=false;
+            break;
+        }
         case proto::Tcp::Welcome: {
             localId=r.u16();roomId=r.u32();token=r.u32();options.roomName=r.str(64);options.maxPlayers=r.u8();r.u16();
             role.store(Role::Client);resetView();

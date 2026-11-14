@@ -359,7 +359,7 @@ private data class EflinkSnapshot(
     val chat: List<String>,
 ) {
     companion object {
-        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, "", false, "game.venshell.top", "", 0, emptyList(), emptyList(), emptyList())
+        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, "", false, "127.0.0.1", "", 0, emptyList(), emptyList(), emptyList())
 
         fun read(file: File): EflinkSnapshot {
             if (!file.isFile) return missing()
@@ -399,7 +399,7 @@ private data class EflinkSnapshot(
                 EflinkSnapshot(true, json.optString("role"), json.optString("room_name"), json.optString("error"),
                     json.optBoolean("pose_ready"), json.optInt("udp"), json.optInt("tcp_only"),
                     json.optString("network"), json.optBoolean("lobby_ready"),
-                    json.optString("server").ifBlank { "game.venshell.top" },
+                    json.optString("server").ifBlank { "127.0.0.1" },
                     json.optString("account"), json.optLong("room_number"), players, rooms, chat)
             } catch (_: Throwable) {
                 missing()

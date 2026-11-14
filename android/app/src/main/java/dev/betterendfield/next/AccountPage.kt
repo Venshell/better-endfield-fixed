@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,7 +46,12 @@ fun AccountPage(state: SettingsState) {
                 return@launch
             }
             if (onSession && response.optString("op") == "session") {
-                state.applyAccount(response.optString("token"), response.optString("username"), response.optString("email"))
+                state.applyAccount(
+                    response.optString("token"),
+                    response.optString("username"),
+                    response.optString("email"),
+                    response.optLong("expires"),
+                )
             } else if (response.optString("op") == "sent") {
                 state.showAccountStatus("验证码已发送")
             } else {
@@ -99,6 +105,18 @@ fun AccountPage(state: SettingsState) {
 
 @Composable
 private fun SignedIn(state: SettingsState) {
+    LaunchedEffect(state.accountUsername) {
+        if (state.accountPastExpiry()) {
+            state.expireAccount()
+            return@LaunchedEffect
+        }
+        val token = state.accountToken()
+        if (token.isEmpty()) return@LaunchedEffect
+        val response = withContext(Dispatchers.IO) {
+            EflinkAccount.call(JSONObject().put("op", "list").put("account", token), state.lobbyEndpoint())
+        }
+        if (response.optString("error") == "login-required") state.expireAccount()
+    }
     PanelCard {
         CardTitle(state.accountUsername)
         BodyText(state.accountEmail, modifier = Modifier.padding(top = Be.Space.m))

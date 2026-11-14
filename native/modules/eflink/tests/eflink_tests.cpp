@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -76,6 +77,29 @@ int main() {
     check(proto::quantize(2) == 32767 && proto::quantize(-2) == -32767, "bone rotations are bounded");
     check(proto::passwordProof(0, "secret") == proto::passwordProof(0, "secret"), "password proof is stable");
     check(proto::passwordProof(0, "secret") != proto::passwordProof(0, "other"), "password proof changes with the text");
+    unsigned char digest[32];
+    proto::sha256(reinterpret_cast<const unsigned char*>(""), 0, digest);
+    const unsigned char emptySha[32] = {
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55};
+    check(proto::sameBytes(digest, emptySha, 32), "sha256 of empty input");
+    const char* fox = "The quick brown fox jumps over the lazy dog";
+    proto::hmacSha256(reinterpret_cast<const unsigned char*>("key"), 3,
+        reinterpret_cast<const unsigned char*>(fox), std::strlen(fox), digest);
+    const unsigned char foxMac[32] = {
+        0xf7, 0xbc, 0x83, 0xf4, 0x30, 0x53, 0x84, 0x24, 0xb1, 0x32, 0x98, 0xe6, 0xaa, 0x6f, 0xb1, 0x43,
+        0xef, 0x4d, 0x59, 0xa1, 0x49, 0x46, 0x17, 0x59, 0x97, 0x47, 0x9d, 0xbc, 0x2d, 0x1a, 0x3c, 0xd8};
+    check(proto::sameBytes(digest, foxMac, 32), "hmac-sha256 test vector");
+    unsigned char nonce[32] = {};
+    unsigned char first[32], second[32];
+    proto::roomProof("secret", nonce, 7, first);
+    proto::roomProof("secret", nonce, 7, second);
+    check(proto::sameBytes(first, second, 32), "room proof is stable for one nonce");
+    proto::roomProof("other", nonce, 7, second);
+    check(!proto::sameBytes(first, second, 32), "room proof changes with the password");
+    nonce[0] = 1;
+    proto::roomProof("secret", nonce, 7, second);
+    check(!proto::sameBytes(first, second, 32), "room proof changes with the nonce");
     const auto encoded = proto::encode(proto::Beacon{7, 47615, 1, 8, true, "房间", "房主", "map", EFLINK_VERSION});
     proto::Reader beaconReader(encoded.data(), encoded.size());
     const auto header = proto::readUdpHeader(beaconReader);

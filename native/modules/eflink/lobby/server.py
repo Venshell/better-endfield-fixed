@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EF Link lobby for game.venshell.top/endfield.
+"""EF Link lobby. The default listen port is 47617.
 
 Players dial TCP and UDP on the same port. Each TCP line is JSON and carries
 "game":"endfield". This process lists rooms, splices each guest's TCP stream
@@ -24,6 +24,12 @@ GAME = "endfield"
 MAX_LINE = 8192
 MAX_ROOMS = 64
 JOIN_WAIT = 8
+# One room keeps a host thread plus one splice thread per guest. The extra
+# slots cover list, login, and joins that have not settled yet.
+MAX_CONNECTIONS = MAX_ROOMS * 16 + 256
+MAX_PER_IP = 32
+MAX_PENDING_BRIDGES = 64
+MAX_PENDING_PER_ACCOUNT = 2
 
 
 class Room:
@@ -43,6 +49,7 @@ class Room:
         self.udp_token = secrets.token_hex(8)
         self.host_udp = None
         self.relays = []
+        self.host_account = ""
 
     def public(self):
         return {
@@ -96,9 +103,11 @@ class Lobby:
 LOBBY = Lobby()
 RELAY_LOCK = threading.Lock()
 BRIDGE_LOCK = threading.Lock()
+CONNECTION_LOCK = threading.Lock()
 HOST_TOKENS = {}
 RELAYS = {}
 BRIDGES = {}
+CONNECTIONS = {}
 GATE = None
 CREDENTIAL_OPS = ("register", "verify", "login", "list", "host", "join")
 
@@ -107,6 +116,37 @@ def gate():
     if GATE is None:
         raise RuntimeError("account gate is not open")
     return GATE
+
+
+def reserve_connection(ip):
+    with CONNECTION_LOCK:
+        if sum(CONNECTIONS.values()) >= MAX_CONNECTIONS:
+            return False
+        if CONNECTIONS.get(ip, 0) >= MAX_PER_IP:
+            return False
+        CONNECTIONS[ip] = CONNECTIONS.get(ip, 0) + 1
+        return True
+
+
+def release_connection(ip):
+    with CONNECTION_LOCK:
+        left = CONNECTIONS.get(ip, 0) - 1
+        if left > 0:
+            CONNECTIONS[ip] = left
+        else:
+            CONNECTIONS.pop(ip, None)
+
+
+def reserve_bridge(ticket, pending):
+    with BRIDGE_LOCK:
+        waiting = [item for item in BRIDGES.values() if not item["spliced"]]
+        if len(waiting) >= MAX_PENDING_BRIDGES:
+            return False
+        account = pending.get("account")
+        if sum(1 for item in waiting if item.get("account") == account) >= MAX_PENDING_PER_ACCOUNT:
+            return False
+        BRIDGES[ticket] = pending
+        return True
 
 
 def send_line(conn, payload, lock=None):
@@ -248,9 +288,9 @@ def handle(conn, peer, secure=False):
             fail(conn, "wrong-game")
             return
         op = message.get("op")
-        # Passwords, verification codes, and the 30-day account token are only
-        # accepted after the TLS handshake has verified this process's certificate.
-        if op in CREDENTIAL_OPS and not secure:
+        # Passwords, verification codes, the account token, and the game bridge
+        # are only accepted after the TLS handshake has verified this process.
+        if (op in CREDENTIAL_OPS or op == "bridge") and not secure:
             fail(conn, "tls-required")
             return
         ip = peer[0]
@@ -267,7 +307,8 @@ def handle(conn, peer, secure=False):
             if reason:
                 fail(conn, reason)
                 return
-            send_line(conn, {"op": "session", "token": token, "username": username, "email": email})
+            send_line(conn, {"op": "session", "token": token, "username": username, "email": email,
+                             "expires": gate().session_deadline()})
             conn.close()
             return
         if op == "login":
@@ -275,21 +316,25 @@ def handle(conn, peer, secure=False):
             if reason:
                 fail(conn, reason)
                 return
-            send_line(conn, {"op": "session", "token": token, "username": username, "email": email})
+            send_line(conn, {"op": "session", "token": token, "username": username, "email": email,
+                             "expires": gate().session_deadline()})
             conn.close()
             return
-        if op in ("list", "host", "join") and gate().session(message.get("account"), ip) is None:
-            fail(conn, "login-required")
-            return
+        account = None
+        if op in ("list", "host", "join"):
+            account = gate().session(message.get("account"), ip)
+            if account is None:
+                fail(conn, "login-required")
+                return
         if op == "list":
             send_line(conn, {"op": "rooms", "rooms": LOBBY.snapshot()})
             conn.close()
             return
         if op == "host":
-            host(conn, peer, message)
+            host(conn, peer, message, account)
             return
         if op == "join":
-            issue_ticket(conn, peer, message)
+            issue_ticket(conn, peer, message, account)
             return
         if op == "bridge":
             bridge(conn, peer, message)
@@ -307,9 +352,9 @@ def clip(value, limit):
     return text[:limit]
 
 
-def host(conn, peer, message):
+def host(conn, peer, message, account):
     name = clip(message.get("room_name"), 64) or "房间"
-    host_name = clip(message.get("name"), 64) or "房主"
+    host_name = clip(account, 64) or "房主"
     version = clip(message.get("version"), 32)
     try:
         max_players = int(message.get("max_players", 8))
@@ -318,6 +363,7 @@ def host(conn, peer, message):
     max_players = min(16, max(2, max_players))
     room = Room(0, name, host_name, version, max_players,
                 bool(message.get("password")), conn, peer)
+    room.host_account = host_name
     if not LOBBY.add(room):
         fail(conn, "full")
         return
@@ -377,7 +423,7 @@ def expire_bridge(ticket):
     pending["ready"].set()
 
 
-def issue_ticket(conn, peer, message):
+def issue_ticket(conn, peer, message, account):
     try:
         room_id = int(message.get("room_id", 0))
     except (TypeError, ValueError):
@@ -397,21 +443,21 @@ def issue_ticket(conn, peer, message):
         "room": room,
         "relay": relay,
         "relay_key": relay_key,
-        "guest_ip": peer[0],
-        "host_ip": room.peer[0],
         "sides": {},
         "lock": threading.Lock(),
         "ready": threading.Event(),
         "spliced": False,
         "timer": None,
+        "account": account,
     }
+    if not reserve_bridge(ticket, pending):
+        fail(conn, "busy")
+        return
     with RELAY_LOCK:
         room.relays.append(relay_key)
         RELAYS[relay_key] = {"room": room, "guest": None}
     pending["timer"] = threading.Timer(JOIN_WAIT, expire_bridge, args=(ticket,))
     pending["timer"].daemon = True
-    with BRIDGE_LOCK:
-        BRIDGES[ticket] = pending
     pending["timer"].start()
     try:
         send_line(room.control, {"op": "guest", "token": ticket, "from": room.peer[0], "relay": relay}, room.write_lock)
@@ -432,13 +478,19 @@ def bridge(conn, peer, message):
     if not isinstance(ticket, str) or len(ticket) != 32 or side not in ("guest", "host"):
         fail(conn, "bad-ticket")
         return
+    account = gate().session(message.get("account"), peer[0])
+    if account is None:
+        fail(conn, "login-required")
+        return
     with BRIDGE_LOCK:
         pending = BRIDGES.get(ticket)
     if pending is None:
         fail(conn, "bad-ticket")
         return
-    expected = pending["guest_ip"] if side == "guest" else pending["host_ip"]
-    if peer[0] != expected:
+    # The ticket is bound to the account that asked to join, and to the account
+    # that owns the room. A shared public address is not a credential.
+    expected = pending["account"] if side == "guest" else pending["room"].host_account
+    if account != expected:
         fail(conn, "bad-ticket")
         return
     with pending["lock"]:
@@ -518,7 +570,20 @@ def serve(bind, port, database=None, tls_cert=None, tls_key=None):
     print(f"EF Link lobby on {bind}:{port} tcp+udp", flush=True)
     while True:
         conn, peer = listener.accept()
-        threading.Thread(target=dispatch, args=(conn, peer, context), daemon=True).start()
+        if not reserve_connection(peer[0]):
+            try:
+                conn.close()
+            except OSError:
+                pass
+            continue
+        threading.Thread(target=serve_connection, args=(conn, peer, context), daemon=True).start()
+
+
+def serve_connection(conn, peer, context):
+    try:
+        dispatch(conn, peer, context)
+    finally:
+        release_connection(peer[0])
 
 
 def main():

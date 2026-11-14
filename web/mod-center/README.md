@@ -81,7 +81,7 @@ sudo systemctl restart endfield-resource-center
 
 已有 GitHub 作者可以在「我的发布」中验证并绑定邮箱，之后通过邮箱登录仍管理原来的作品。直接通过未绑定的邮箱登录会建立新账号，不根据第三方邮箱自动合并账号；公共作者资料不展示邮箱。
 
-邮件通过 SMTP 发送。起步可准备专用 QQ 邮箱，在邮箱设置中开启 SMTP 并生成授权码；无需自建邮件服务器或购买域名。使用 OCI Email Delivery 等域名邮件服务时，按服务商要求配置发件域名和 SPF/DKIM。
+邮件通过 SMTP 发送。起步可准备一个专用发信邮箱，在邮箱设置中开启 SMTP 并生成授权码；无需自建邮件服务器或购买域名。使用域名邮件服务时，按服务商要求配置发件域名和 SPF/DKIM。
 
 在服务器编辑 `/etc/endfield-resource-center.env`，填写 SMTP 配置：
 
@@ -90,14 +90,14 @@ sudoedit /etc/endfield-resource-center.env
 sudo systemctl restart endfield-resource-center
 ```
 
-填写 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS` 和 `SMTP_FROM`。QQ 邮箱示例：
+填写 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS` 和 `SMTP_FROM`。示例：
 
 ```dotenv
-SMTP_HOST=smtp.qq.com
+SMTP_HOST=smtp.example.com
 SMTP_PORT=465
-SMTP_USER=专用发信邮箱@qq.com
-SMTP_PASS=QQ邮箱生成的SMTP授权码
-SMTP_FROM=专用发信邮箱@qq.com
+SMTP_USER=noreply@example.com
+SMTP_PASS=邮箱生成的授权码
+SMTP_FROM=noreply@example.com
 ```
 
 配置完成后，登录窗口会自动显示邮箱入口；未配置 SMTP 时不会显示邮箱登录。建议使用专用发件地址和应用专用密码，不要把邮箱主密码提交到仓库或聊天中。

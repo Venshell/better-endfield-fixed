@@ -169,12 +169,13 @@ final class ModuleSettings {
     private static final String ACCOUNT_TOKEN = "account_token";
     private static final String ACCOUNT_USERNAME = "account_username";
     private static final String ACCOUNT_EMAIL = "account_email";
+    private static final String ACCOUNT_EXPIRES = "account_expires";
     private static final String EFLINK_NAME = "eflink_player_name";
     private static final String EFLINK_ROOM = "eflink_room_name";
     private static final String EFLINK_PORT = "eflink_port";
     private static final String EFLINK_MAX = "eflink_max_players";
     private static final String EFLINK_SERVER = "eflink_server";
-    static final String EFLINK_DEFAULT_SERVER = "game.venshell.top";
+    static final String EFLINK_DEFAULT_SERVER = "127.0.0.1";
     private static final String OVERLAY_TRANSPARENCY = "overlay_transparency";
     private static final String OVERLAY_AUTO_SNAP = "overlay_auto_snap";
     private static final String OVERLAY_LOG_VISIBLE = "overlay_log_visible";
@@ -234,6 +235,10 @@ final class ModuleSettings {
                 .commit();
     }
 
+    static String getAccountToken(Context context) {
+        return text(preferences(context), ACCOUNT_TOKEN, 128);
+    }
+
     static String getAccountUsername(Context context) {
         return text(preferences(context), ACCOUNT_USERNAME, 32);
     }
@@ -242,11 +247,17 @@ final class ModuleSettings {
         return text(preferences(context), ACCOUNT_EMAIL, 254);
     }
 
-    static void setAccount(Context context, String token, String username, String email) {
+    /** Unix seconds. Zero when this install logged in before expiry was stored. */
+    static long getAccountExpires(Context context) {
+        return preferences(context).getLong(ACCOUNT_EXPIRES, 0);
+    }
+
+    static void setAccount(Context context, String token, String username, String email, long expires) {
         preferences(context).edit()
                 .putString(ACCOUNT_TOKEN, clip(token, 128))
                 .putString(ACCOUNT_USERNAME, clip(username, 32))
                 .putString(ACCOUNT_EMAIL, clip(email, 254))
+                .putLong(ACCOUNT_EXPIRES, Math.max(0, expires))
                 .commit();
     }
 
@@ -255,6 +266,7 @@ final class ModuleSettings {
                 .remove(ACCOUNT_TOKEN)
                 .remove(ACCOUNT_USERNAME)
                 .remove(ACCOUNT_EMAIL)
+                .remove(ACCOUNT_EXPIRES)
                 .commit();
     }
 
