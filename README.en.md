@@ -6,13 +6,13 @@ Better Endfield is an Android LSPosed module for *Arknights: Endfield*, with a s
 
 > This is an independently maintained derivative of [Dr-hydra/Better-Endfield](https://github.com/Dr-hydra/Better-Endfield). It is not an official release of the upstream project or the game publisher.
 
-[![Android Release 4.1.8](https://img.shields.io/badge/Android%20Release-4.1.8-26CDCB)](https://github.com/Venshell/better-endfield-fixed/releases/latest)
-[![Experimental glide](https://img.shields.io/badge/Glide-Experimental-E85327)](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467)
+[![Android Release 4.2.0](https://img.shields.io/badge/Android%20Release-4.2.0-26CDCB)](https://github.com/Venshell/better-endfield-fixed/releases/latest)
+[![Experimental](https://img.shields.io/badge/Experimental-glide%20%2B%20link-E85327)](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive)
 [![Changelog](https://img.shields.io/badge/Docs-Changelog-1C4A9C)](CHANGELOG.md)
 [![Android Guide](https://img.shields.io/badge/Android-Guide-1C4A9C)](android/README.md)
 [![BEM Creator Guide](https://img.shields.io/badge/BEM-Creator%20Guide-1C4A9C)](docs/custom_model/BEM_CREATOR_GUIDE.md)
 
-The current Android version is **4.1.8** (`dev.betterendfield.next`). Next installs separately from 3.x and requires its own LSPosed scope. It bundles 898 headwear assets for Android game version 1.6.4 (versionCode 61). Manual and automatic glide builds are available from the experimental branch's Actions artifacts.
+The current Android version is **4.2.0** (`dev.betterendfield.next`). Next installs separately from 3.x and requires its own LSPosed scope. It bundles 898 headwear assets for Android game version 1.6.4 (versionCode 61). Glide and multiplayer are on the experimental branch [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive).
 
 ## Differences from upstream Next
 
@@ -20,7 +20,7 @@ This repository targets Android ARM64 releases. These features and branch choice
 
 - **First-person gyroscope**: steer the first-person view with the phone's gyroscope. Its switch and sensitivity are in the Android settings app.
 - **Bundled headwear assets**: the APK contains 898 v3/v61 assets for hiding or replacing meshes that obstruct first-person vision. They target game versionCode 61. Character-by-character results require device validation.
-- **Experimental glide branch**: manual and automatic glide are on [`experimental/android-glide`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/android-glide). [Download the experimental APK from Actions](https://github.com/Venshell/better-endfield-fixed/actions/runs/42636634607/artifacts/13684341467). The stable `main` branch retains sustained dash.
+- **Experimental branch**: glide and multiplayer are on [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive). [Download the experimental APK from that branch's Actions](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fdestructive). Stable `main` does not include either, and it keeps sustained dash.
 
 The Android settings app and in-game panel use this repository's Compose screens for first person, BEM management, MMD import and reception-room display controls. See the [Android guide](android/README.md) for entry points and the [changelog](CHANGELOG.md) for version changes.
 
