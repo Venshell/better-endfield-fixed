@@ -820,6 +820,8 @@ class SettingsState(private val context: Context) {
         private set
     var eflinkMaxPlayers by mutableStateOf(8)
         private set
+    var eflinkServer by mutableStateOf("game.venshell.top")
+        private set
 
     private fun loadEnhancement() {
         hideUid = ModuleSettings.isHideUidEnabled(context)
@@ -915,6 +917,7 @@ class SettingsState(private val context: Context) {
         eflinkRoom = ModuleSettings.getEflinkRoomName(context)
         eflinkPort = ModuleSettings.getEflinkPort(context)
         eflinkMaxPlayers = ModuleSettings.getEflinkMaxPlayers(context)
+        eflinkServer = ModuleSettings.getEflinkServer(context)
     }
 
     /** Re-reads the panel switch, which the settings Activity can leave and re-enter. */
@@ -950,6 +953,12 @@ class SettingsState(private val context: Context) {
         if (value < 2 || value > 16) return
         eflinkMaxPlayers = value
         ModuleSettings.setEflinkMaxPlayers(context, value)
+    }
+
+    fun updateEflinkServer(value: String) {
+        val trimmed = value.trim().take(128)
+        eflinkServer = trimmed.ifEmpty { "game.venshell.top" }
+        ModuleSettings.setEflinkServer(context, eflinkServer)
     }
 
     fun updateHideUid(value: Boolean) {

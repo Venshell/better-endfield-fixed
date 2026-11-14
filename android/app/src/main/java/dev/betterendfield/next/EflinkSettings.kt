@@ -17,6 +17,7 @@ fun EflinkSettingsCard(state: SettingsState) {
     var room by remember(state.eflinkRoom) { mutableStateOf(state.eflinkRoom) }
     var port by remember(state.eflinkPort) { mutableStateOf(state.eflinkPort.toString()) }
     var players by remember(state.eflinkMaxPlayers) { mutableStateOf(state.eflinkMaxPlayers.toString()) }
+    var server by remember(state.eflinkServer) { mutableStateOf(state.eflinkServer) }
     PanelCard {
         CardTitle(stringResource(R.string.eflink_title))
         BodyText(stringResource(R.string.eflink_hint), modifier = Modifier.padding(top = Be.Space.m))
@@ -25,6 +26,15 @@ fun EflinkSettingsCard(state: SettingsState) {
             description = stringResource(R.string.eflink_enable_hint),
             checked = state.eflinkEnabled,
             onCheckedChange = state::updateEflinkEnabled,
+        )
+        TextFieldRow(
+            value = server,
+            onValueChange = { server = it },
+            hint = stringResource(R.string.eflink_server),
+            keyboardType = KeyboardType.Uri,
+            maxLength = 128,
+            enabled = state.eflinkEnabled,
+            onCommit = { state.updateEflinkServer(server) },
         )
         TextFieldRow(
             value = name,

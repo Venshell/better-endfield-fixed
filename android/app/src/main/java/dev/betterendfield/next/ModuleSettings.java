@@ -168,6 +168,8 @@ final class ModuleSettings {
     private static final String EFLINK_ROOM = "eflink_room_name";
     private static final String EFLINK_PORT = "eflink_port";
     private static final String EFLINK_MAX = "eflink_max_players";
+    private static final String EFLINK_SERVER = "eflink_server";
+    static final String EFLINK_DEFAULT_SERVER = "game.venshell.top";
     private static final String OVERLAY_TRANSPARENCY = "overlay_transparency";
     private static final String OVERLAY_AUTO_SNAP = "overlay_auto_snap";
     private static final String OVERLAY_LOG_VISIBLE = "overlay_log_visible";
@@ -222,6 +224,17 @@ final class ModuleSettings {
         if (value == port) preferences(context).edit().putInt(EFLINK_PORT, value).commit();
     }
 
+    static String getEflinkServer(Context context) {
+        String stored = text(preferences(context), EFLINK_SERVER, 128);
+        return stored.isEmpty() ? EFLINK_DEFAULT_SERVER : stored;
+    }
+
+    static void setEflinkServer(Context context, String server) {
+        String value = clip(server, 128);
+        if (value.isEmpty()) value = EFLINK_DEFAULT_SERVER;
+        preferences(context).edit().putString(EFLINK_SERVER, value).commit();
+    }
+
     static int getEflinkMaxPlayers(Context context) {
         return players(preferences(context).getInt(EFLINK_MAX, 8));
     }
@@ -240,7 +253,7 @@ final class ModuleSettings {
                     .put("room_name", text(settings, EFLINK_ROOM, 64))
                     .put("port", port(settings.getInt(EFLINK_PORT, 47615)))
                     .put("max_players", players(settings.getInt(EFLINK_MAX, 8)))
-                    .put("lobby", "game.venshell.top:47617")
+                    .put("lobby", lobbyEndpoint(text(settings, EFLINK_SERVER, 128)))
                     .put("game", "endfield")
                     .toString();
         } catch (JSONException error) {
@@ -256,6 +269,27 @@ final class ModuleSettings {
         if (value == null) return "";
         String trimmed = value.trim();
         return trimmed.length() <= limit ? trimmed : trimmed.substring(0, limit);
+    }
+
+    /** host, host:port, or a URL. Missing port means the lobby port 47617. */
+    private static String lobbyEndpoint(String raw) {
+        String text = clip(raw, 128);
+        if (text.regionMatches(true, 0, "https://", 0, 8)) text = text.substring(8);
+        else if (text.regionMatches(true, 0, "http://", 0, 7)) text = text.substring(7);
+        int slash = text.indexOf('/');
+        if (slash >= 0) text = text.substring(0, slash);
+        if (text.isEmpty()) text = EFLINK_DEFAULT_SERVER;
+        int colon = text.lastIndexOf(':');
+        if (colon > 0 && text.indexOf(':') == colon) {
+            try {
+                int value = Integer.parseInt(text.substring(colon + 1));
+                if (value >= 1 && value <= 65535) return text.substring(0, colon) + ":" + value;
+            } catch (NumberFormatException ignored) {
+                return EFLINK_DEFAULT_SERVER + ":47617";
+            }
+            return EFLINK_DEFAULT_SERVER + ":47617";
+        }
+        return text + ":47617";
     }
 
     private static int port(int value) {

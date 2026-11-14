@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -46,6 +47,24 @@ float YawDegrees(const float rotation[4]) {
     return std::atan2(2.f * (w * y + x * z), 1.f - 2.f * (y * y + z * z)) * 57.2957795f;
 }
 
+std::string normalizeLobby(std::string value) {
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) value.erase(value.begin());
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
+    if (value.rfind("https://", 0) == 0) value.erase(0, 8);
+    else if (value.rfind("http://", 0) == 0) value.erase(0, 7);
+    if (const auto slash = value.find('/'); slash != std::string::npos) value.resize(slash);
+    if (value.empty()) return eflink::lobby::kEndpoint;
+    const auto colon = value.rfind(':');
+    if (colon != std::string::npos && value.find(':') == colon && colon > 0 && colon + 1 < value.size()) {
+        try {
+            const auto port = std::stoul(value.substr(colon + 1));
+            if (port >= 1 && port <= 65535) return value.substr(0, colon) + ":" + std::to_string(port);
+        } catch (...) {}
+        return eflink::lobby::kEndpoint;
+    }
+    return value + ":47617";
+}
+
 class LinkRuntime {
 public:
     bool Start(Il2CppRuntime& runtime, const std::string& config_text, const std::string& directory) {
@@ -67,7 +86,7 @@ public:
         port_ = static_cast<std::uint16_t>(std::clamp(config.value("port", 47615), 1024, 65535));
         if (port_ == 47616) port_ = 47615;
         max_players_ = static_cast<unsigned>(std::clamp(config.value("max_players", 8), 2, 16));
-        lobby_endpoint_ = eflink::lobby::kEndpoint;
+        lobby_endpoint_ = normalizeLobby(config.value("lobby", std::string{}));
         net_.version = EFLINK_VERSION;
         net_.setName(player_name_);
         net_.onData = [this](std::uint16_t from, std::uint32_t channel, const unsigned char* data, std::size_t size) {
@@ -498,6 +517,7 @@ private:
             {"udp", snapshot.udpLinks}, {"tcp_only", snapshot.tcpOnlyLinks},
             {"network", internet_room_.load() ? "internet" : (std::string(role) == "offline" ? "" : "lan")},
             {"lobby_ready", !lobby_endpoint_.empty()},
+            {"server", lobby_endpoint_.substr(0, lobby_endpoint_.rfind(':'))},
             {"version", EFLINK_VERSION}};
         const auto text = body.dump();
         const auto path = std::filesystem::path(directory_) / "status.json";

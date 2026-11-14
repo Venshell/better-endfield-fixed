@@ -117,7 +117,7 @@ internal fun EflinkOverlay(preview: Boolean) {
 
 @Composable
 private fun HomeScreen(status: EflinkSnapshot, onCreate: () -> Unit, onJoin: () -> Unit) {
-    Text("局域网，或互联网 game.venshell.top",
+    Text("局域网，或互联网 ${status.server}",
         color = Be.Colors.textSecondary, fontSize = 11.sp)
     OverlayAction("创建房间", onClick = onCreate)
     OverlayAction("加入房间", onClick = onJoin)
@@ -133,7 +133,7 @@ private fun CreateScreen(
     onCreate: () -> Unit,
 ) {
     Text("创建房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
-    NetworkChoice(scope, onScope)
+    NetworkChoice(scope, onScope, status.server)
     OverlayField(room, onRoom, "房间名", 64)
     OverlayField(password, onPassword, "密码，可留空", 64)
     Segmented(players == 4, "4 人", "8 人", { onPlayers(4) }, { onPlayers(8) })
@@ -151,7 +151,7 @@ private fun BrowseScreen(
     val context = LocalContext.current
     var sequence by remember { mutableLongStateOf(0L) }
     Text("加入房间", color = Be.Colors.textPrimary, fontSize = 13.sp)
-    NetworkChoice(scope, onScope)
+    NetworkChoice(scope, onScope, status.server)
     val rooms = status.rooms.filter { if (scope == "internet") it.roomId != 0L else it.roomId == 0L }
     if (rooms.isEmpty()) {
         Text(if (scope == "internet") "互联网上还没有房间。" else "附近还没有局域网房间。",
@@ -209,10 +209,10 @@ private fun RoomScreen(status: EflinkSnapshot, chat: String, onChat: (String) ->
 }
 
 @Composable
-private fun NetworkChoice(scope: String, onScope: (String) -> Unit) {
+private fun NetworkChoice(scope: String, onScope: (String) -> Unit, server: String) {
     Segmented(scope == "lan", "局域网", "互联网", { onScope("lan") }, { onScope("internet") })
     Text(
-        if (scope == "lan") "同一 Wi-Fi 下的房间" else "经 game.venshell.top 转发",
+        if (scope == "lan") "同一 Wi-Fi 下的房间" else "经 $server 转发",
         color = Be.Colors.textSecondary, fontSize = 11.sp,
     )
 }
@@ -317,12 +317,13 @@ private data class EflinkSnapshot(
     val tcpOnly: Int,
     val network: String,
     val lobbyReady: Boolean,
+    val server: String,
     val players: List<EflinkPlayer>,
     val rooms: List<EflinkRoom>,
     val chat: List<String>,
 ) {
     companion object {
-        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, "", false, emptyList(), emptyList(), emptyList())
+        fun missing() = EflinkSnapshot(false, "offline", "", "", false, 0, 0, "", false, "game.venshell.top", emptyList(), emptyList(), emptyList())
 
         fun read(file: File): EflinkSnapshot {
             if (!file.isFile) return missing()
@@ -361,7 +362,8 @@ private data class EflinkSnapshot(
                 }
                 EflinkSnapshot(true, json.optString("role"), json.optString("room_name"), json.optString("error"),
                     json.optBoolean("pose_ready"), json.optInt("udp"), json.optInt("tcp_only"),
-                    json.optString("network"), json.optBoolean("lobby_ready"), players, rooms, chat)
+                    json.optString("network"), json.optBoolean("lobby_ready"),
+                    json.optString("server").ifBlank { "game.venshell.top" }, players, rooms, chat)
             } catch (_: Throwable) {
                 missing()
             }
