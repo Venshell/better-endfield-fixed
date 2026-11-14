@@ -58,6 +58,7 @@ The Android build requires JDK 21, Android SDK 37, NDK 27.2.12479018, CMake 3.22
 | [Documentation index](docs/README.md) | Current topic guides and historical records (Chinese) |
 | [Changelog](CHANGELOG.md) | Releases and validation boundaries |
 | [BEM creator guide](docs/custom_model/BEM_CREATOR_GUIDE.md) | Package authoring and validation |
+| [Downloads site](web/mod-center/README.md) | QQ Mail registration, mainland-China network limits and database backups (Chinese) |
 
 For bug reports, use [Issues](https://github.com/Venshell/better-endfield-fixed/issues) and include the platform, game and module versions, and reproduction steps. The Android app can export its runtime log; review it for personal information before sharing.
 

@@ -2,7 +2,7 @@
 
 独立部署的终末地社区下载站，提供中英双语界面，沿用仓库 Web 的 Preact、米白/深色主题、侧栏和黄色强调色。与 Toy 和战斗统计业务独立。
 
-作者可以使用 GitHub 或邮箱验证码登录，自助提交外部下载地址。普通作者必填名字、类型、链接；开通文件上传的账号可以用本站文件替代下载链接。版本名字、图片、介绍和更新说明均可选；不设置发布审核，不按地区屏蔽访问。
+作者可以使用 GitHub 或 QQ 邮箱验证码登录，自助提交外部下载地址。公开浏览不按地区屏蔽；邮箱登录和注册只接受中国大陆网络。普通作者必填名字、类型、链接；开通文件上传的账号可以用本站文件替代下载链接。版本名字、图片、介绍和更新说明均可选，不设置发布审核。
 
 ## 作品隐藏
 
@@ -20,7 +20,7 @@
 
 作品文件上传仅开放给 `FILE_UPLOAD_GITHUB_IDS` 配置的稳定 GitHub 数字 ID，不依据昵称或前端字段判断。当前服务器仅开通 Dr-hydra（116339679）。单文件 200 MB，流式写入磁盘；新版本保留历史文件，下载支持 Range 续传。网站不执行上传文件，文件下载使用 attachment 与 application/octet-stream。
 
-上传目录默认在数据库同级的 `uploads` 中，也可用 `UPLOAD_DIRECTORY` 配置；当前为 `/var/lib/endfield-resource-center/uploads`。单账号图片额度为 100 MB，全部上传文件总额度为 12 GB，同时最多两个上传。同账号未发布上传最多 12 份；超过 24 小时仍未被作品或版本使用的上传由后台清理。备份需要同时包含一致的 SQLite 快照和上传目录。
+上传目录默认在数据库同级的 `uploads` 中，也可用 `UPLOAD_DIRECTORY` 配置；当前为 `/var/lib/endfield-resource-center/uploads`。单账号图片额度为 100 MB，全部上传文件总额度为 12 GB，同时最多两个上传。同账号未发布上传最多 12 份；超过 24 小时仍未被作品或版本使用的上传由后台清理。自动备份只覆盖数据库；要保留已上传文件，需要另行复制这个目录。
 
 ## 感谢名单
 
@@ -75,24 +75,41 @@ sudo systemctl restart endfield-resource-center
 
 不要把 Client Secret 放到前端、Git 或聊天记录。凭据未填时，服务仍可浏览，真实 GitHub 登录和发布保持关闭。
 
+## 登录与注册
+
+发布、评论、点赞和上传需要已注册账号。公开作品可以不登录浏览。账号没有密码。
+
+| 方式 | 行为 |
+| --- | --- |
+| GitHub | 用稳定的 GitHub 数字 ID 建立或登录账号。授权使用浏览器绑定的一次性 state 和 PKCE，访问令牌不写入数据库。 |
+| QQ 邮箱 | 用户提交 `@qq.com` 地址后收到六位验证码。验证通过后，已有账号直接登录，没有账号则注册。 |
+
+已有 GitHub 作者可以在「我的发布」中绑定 QQ 邮箱，之后用邮箱登录仍管理原来的作品。未绑定过的邮箱会建立新账号，不按第三方邮箱自动合并。公开作者资料不展示邮箱。
+
+### QQ 邮箱
+
+- 页面和 `auth/email/request` 都只接受 `@qq.com`。`@vip.qq.com`、看起来像 QQ 域名的其他地址，以及格式不正确的地址会在发信前拒绝。
+- 地址会转成小写保存。发信账号由服务端 SMTP 配置提供，不要求发信地址本身是 QQ 邮箱。
+- 验证码 10 分钟内有效，只能使用一次，并且绑定申请时的浏览器。
+
+### 网络与次数
+
+- 申请和验证都必须来自中国大陆公网地址。地址库是 APNIC `delegated-apnic-latest` 里分配给 CN 的范围，不含港澳台，文件为 `server/cn-mainland.txt`。
+- 只有本机回环上的 HTTPS 代理写入的客户端地址会被采信。调用方自己提供的 `X-Forwarded-For` 无效。
+- 同一 IP 60 秒只能发送一次。每个邮箱每 15 分钟最多 3 次，全站每天最多 100 封。这些次数写在数据库里，重启服务不能清掉。
+- 验证必须使用申请验证码时的同一 IP。每个验证码最多 5 次尝试；同一 IP 每 10 分钟最多验证 20 次。
+- 邮件发送失败也会占用该 IP 的 60 秒，避免反复请求 SMTP。
+
+分配范围变化后，在 `web` 目录运行 `node mod-center/scripts/build-cn-ip.mjs`，再重新部署 `server/cn-mainland.txt`。
+
 ## 开通邮箱登录
 
-邮箱登录不保存用户密码。用户填写的地址必须是 `@qq.com`，页面和接口都会拒绝其他邮箱。申请和验证都必须来自中国大陆公网地址（APNIC 分配给 CN 的地址，不含港澳台）；本机回环上的 HTTPS 代理写入的客户端地址才被采信，调用方自行提供的 `X-Forwarded-For` 无效。同一 IP 60 秒只能发送一次，这个限制写在数据库里，重启服务不能绕过。验证码绑定申请时的浏览器和该 IP，换网络后不能继续验证。每个验证码最多五次尝试；同一 IP 每 10 分钟最多验证 20 次。每个邮箱每 15 分钟最多发送三次，网站每天最多发送 100 封。验证码 10 分钟有效，只能使用一次。发信邮箱由服务端的 SMTP 配置提供，不要求发信地址本身是 QQ 邮箱。
-
-地址库来自 APNIC `delegated-apnic-latest`，文件是 `server/cn-mainland.txt`。分配发生变化时，在 `web` 目录运行 `node mod-center/scripts/build-cn-ip.mjs` 后重新部署。
-
-已有 GitHub 作者可以在「我的发布」中验证并绑定邮箱，之后通过邮箱登录仍管理原来的作品。直接通过未绑定的邮箱登录会建立新账号，不根据第三方邮箱自动合并账号；公共作者资料不展示邮箱。
-
-邮件通过 SMTP 发送。起步可准备专用 QQ 邮箱，在邮箱设置中开启 SMTP 并生成授权码；无需自建邮件服务器或购买域名。使用 OCI Email Delivery 等域名邮件服务时，按服务商要求配置发件域名和 SPF/DKIM。
-
-在服务器编辑 `/etc/endfield-resource-center.env`，填写 SMTP 配置：
+在服务器填写 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS` 和 `SMTP_FROM` 后重启。未配置 SMTP 时不显示邮箱登录，浏览不受影响。建议使用专用发件地址和应用专用密码，不要把邮箱主密码提交到仓库或聊天中。起步可准备专用 QQ 邮箱并开启 SMTP 授权码，也可以使用 OCI Email Delivery 等按服务商要求配置 SPF/DKIM 的域名邮件服务。
 
 ```sh
 sudoedit /etc/endfield-resource-center.env
 sudo systemctl restart endfield-resource-center
 ```
-
-填写 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS` 和 `SMTP_FROM`。QQ 邮箱示例：
 
 ```dotenv
 SMTP_HOST=smtp.qq.com
@@ -102,13 +119,20 @@ SMTP_PASS=QQ邮箱生成的SMTP授权码
 SMTP_FROM=专用发信邮箱@qq.com
 ```
 
-配置完成后，登录窗口会自动显示邮箱入口；未配置 SMTP 时不会显示邮箱登录。建议使用专用发件地址和应用专用密码，不要把邮箱主密码提交到仓库或聊天中。
-
 部署包需包含构建后的 `dist`、`server`、`shared`、`deploy`、`README.md` 和 `web/node_modules/nodemailer`（放在部署包的 `node_modules/nodemailer`）。安装脚本会同时复制邮件运行依赖。
 
 ## 备份与运维
 
-数据库运行在 WAL 模式。不要在服务运行时直接复制 `catalog.sqlite`。备份程序打开数据库后走 SQLite 备份接口，写成完整快照，再执行 `integrity_check`，文件权限为 `0600`。快照每 6 小时一次，保留 28 份，大约覆盖 7 天；定时器错过的周期会在恢复后补跑。快照里有账号和邮箱，目录是 `/var/lib/endfield-resource-center/backups/`。上传文件不在数据库里，恢复账号数据不会自动恢复作品文件。
+数据库使用 WAL。不要在服务运行时直接复制 `catalog.sqlite`，那样可能缺页。`deploy/backup-database.mjs` 通过 SQLite 备份接口写出完整快照，执行 `integrity_check` 后再保存，文件权限为 `0600`。
+
+| 项目 | 值 |
+| --- | --- |
+| 定时器 | `endfield-resource-center-backup.timer`，每 6 小时一次，错过的周期会补跑 |
+| 保留 | 28 份，大约 7 天 |
+| 目录 | `/var/lib/endfield-resource-center/backups/` |
+| 内容 | 账号、会话、作品记录和邮箱。不含 `uploads/` 里的作品文件 |
+
+部署本版后在服务器启用定时器：
 
 ```sh
 sudo cp deploy/endfield-resource-center-backup.service deploy/endfield-resource-center-backup.timer /etc/systemd/system/
@@ -116,9 +140,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now endfield-resource-center-backup.timer
 sudo systemctl start endfield-resource-center-backup.service
 sudo systemctl status endfield-resource-center --no-pager
-sudo journalctl -u endfield-resource-center -n 30 --no-pager
+sudo journalctl -u endfield-resource-center-backup.service -n 30 --no-pager
 ```
 
-恢复时先停止服务，用要恢复的快照替换 `catalog.sqlite`，并删除旁边的 `-wal` 和 `-shm`，再启动。升级只替换代码与静态构建，不覆盖数据库、备份和环境配置。
+恢复数据库时先停止服务，用选中的快照替换 `catalog.sqlite`，删除旁边的 `-wal` 和 `-shm`，再启动。作品文件要另行从 `uploads/` 恢复。升级只替换代码和静态构建，不覆盖数据库、备份和环境配置。
 
 域名迁移后，更新 `PUBLIC_URL`、GitHub 首页/回调 URL 与 TLS 入口，再重启服务。

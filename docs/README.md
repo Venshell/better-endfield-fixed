@@ -18,6 +18,7 @@
 | [第一人称执行记录](CAMERA_FIRST_PERSON_EXECUTION.md) | 相机阶段门禁与验证边界 |
 | [OmniMix 集成交接](music/OMNIMIX_INTEGRATION_HANDOFF.md) | 音乐后端协议与回退合同 |
 | [项目更新日志](../CHANGELOG.md) | 版本变化与发布状态 |
+| [下载站](../web/mod-center/README.md) | 账号注册、QQ 邮箱验证码、中国大陆网络限制和数据库快照 |
 | [Android 上游 3.4.4 移植记录](ANDROID_UPSTREAM_344_PORT_20261004.md) | 本分支 Android 功能范围与验收证据 |
 | [Android 上游移植当前状态](ANDROID_UPSTREAM_STATUS_20261008.md) | 以 2026-10-10 获取的上游 `c2f8eafc` 为当前核查点，区分源码接线、构建与设备验收 |
 | [Android 移植规划与完成状态](ANDROID_PORT_ROADMAP_20261010.md) | 审计后的当前执行总表：已完成部分、未完成能力、P1/P2、S0–S7 顺序与验收停止条件 |

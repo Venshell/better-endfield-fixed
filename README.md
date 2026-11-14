@@ -58,6 +58,7 @@ Android 构建需要 JDK 21、Android SDK 37、NDK 27.2.12479018、CMake 3.22.1�
 | [文档导航](docs/README.md) | 当前专题文档和历史记录的入口 |
 | [更新日志](CHANGELOG.md) | 版本变更与验收边界 |
 | [BEM 创作者指南](docs/custom_model/BEM_CREATOR_GUIDE.md) | 外观包制作与验证 |
+| [下载站](web/mod-center/README.md) | QQ 邮箱注册登录、境内网络限制与数据库备份 |
 
 遇到问题时可在 [Issues](https://github.com/Venshell/better-endfield-fixed/issues) 描述平台、游戏版本、Better Endfield 版本和复现步骤。Android 端可从设置应用的“运行日志”页导出日志；日志中若有个人信息，请先检查再上传。
 
