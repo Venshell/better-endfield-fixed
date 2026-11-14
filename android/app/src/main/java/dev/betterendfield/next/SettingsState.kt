@@ -1001,6 +1001,8 @@ class SettingsState(private val context: Context) {
         ModuleSettings.setEflinkMaxPlayers(context, value)
     }
 
+    fun lobbyEndpoint(): String = ModuleSettings.getEflinkLobby(context)
+
     fun updateEflinkServer(value: String) {
         val trimmed = value.trim().take(128)
         eflinkServer = trimmed.ifEmpty { "game.venshell.top" }

@@ -318,7 +318,7 @@ final class ModuleSettings {
                     .put("room_name", text(settings, EFLINK_ROOM, 64))
                     .put("port", port(settings.getInt(EFLINK_PORT, 47615)))
                     .put("max_players", players(settings.getInt(EFLINK_MAX, 8)))
-                    .put("lobby", EFLINK_DEFAULT_SERVER + ":47617")
+                    .put("lobby", lobbyEndpoint(text(settings, EFLINK_SERVER, 128)))
                     .put("account", text(settings, ACCOUNT_TOKEN, 128))
                     .put("username", text(settings, ACCOUNT_USERNAME, 32))
                     .put("email", text(settings, ACCOUNT_EMAIL, 254))
@@ -337,6 +337,10 @@ final class ModuleSettings {
         if (value == null) return "";
         String trimmed = value.trim();
         return trimmed.length() <= limit ? trimmed : trimmed.substring(0, limit);
+    }
+
+    static String getEflinkLobby(Context context) {
+        return lobbyEndpoint(getEflinkServer(context));
     }
 
     /** host, host:port, or a URL. Missing port means the lobby port 47617. */

@@ -37,7 +37,7 @@ fun AccountPage(state: SettingsState) {
         busy = true
         state.showAccountStatus("")
         scope.launch {
-            val response = withContext(Dispatchers.IO) { EflinkAccount.call(payload) }
+            val response = withContext(Dispatchers.IO) { EflinkAccount.call(payload, state.lobbyEndpoint()) }
             busy = false
             val error = response.optString("error")
             if (error.isNotEmpty()) {

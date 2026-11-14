@@ -16,9 +16,14 @@
 
 地址库是 `cn-mainland.txt`，来自 APNIC 分配给 CN 的范围，不含港澳台。发信账号由服务器的 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASS`、`SMTP_FROM` 提供，不要求发信地址本身是 QQ 邮箱。未配置 SMTP 时不能注册。
 
+账号注册、登录和 30 天会话令牌只走 TLS。证书的主机名必须是客户端填写的大厅地址。游戏转发在验明身份之后另开一条连接，只携带一次性票据。
+
 ```sh
 export EFLINK_AUTH_DB=/var/lib/eflink/accounts.sqlite
-python3 server.py --bind 0.0.0.0 --port 47617 --auth-db "$EFLINK_AUTH_DB"
+export EFLINK_TLS_CERT=/etc/eflink/lobby.crt
+export EFLINK_TLS_KEY=/etc/eflink/lobby.key
+python3 server.py --bind 0.0.0.0 --port 47617 --auth-db "$EFLINK_AUTH_DB" \
+    --tls-cert "$EFLINK_TLS_CERT" --tls-key "$EFLINK_TLS_KEY"
 ```
 
 账号库用 SQLite 备份接口每 6 小时做一次快照，做完整性检查后以 `0600` 保存，保留 28 份。不要在服务运行时直接复制数据库文件。

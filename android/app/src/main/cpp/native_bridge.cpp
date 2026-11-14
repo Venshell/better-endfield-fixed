@@ -16,6 +16,7 @@
 #include "modules/desktop/desktop_module.h"
 #include "modules/login_model/login_model_module.h"
 #include "modules/eflink/eflink_module.h"
+#include "modules/eflink/eflink_tls.h"
 #include "modules/custom_model/resource_probe.h"
 #include "modules/custom_model/custom_model_module.h"
 #include "modules/camera/first_person_look_probe.h"
@@ -415,6 +416,7 @@ Java_dev_betterendfield_next_NativeCommandBridge_mmd(JNIEnv* env, jclass, jint t
     catch (...) { return JNI_FALSE; }
 }
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+    betterendfieldnext::SetJavaVm(vm);
     JNIEnv* env = nullptr;
     if (!vm || vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
     auto& state = betterendfieldnext::State();

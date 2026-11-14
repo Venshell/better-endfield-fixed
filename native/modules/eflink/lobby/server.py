@@ -15,6 +15,7 @@ import json
 import os
 import secrets
 import socket
+import ssl
 import threading
 
 from auth import AccountGate
@@ -94,9 +95,12 @@ class Lobby:
 
 LOBBY = Lobby()
 RELAY_LOCK = threading.Lock()
+BRIDGE_LOCK = threading.Lock()
 HOST_TOKENS = {}
 RELAYS = {}
+BRIDGES = {}
 GATE = None
+CREDENTIAL_OPS = ("register", "verify", "login", "list", "host", "join")
 
 
 def gate():
@@ -137,10 +141,13 @@ def splice(left, right):
         except OSError:
             pass
         finally:
-            try:
-                dst.shutdown(socket.SHUT_WR)
-            except OSError:
-                pass
+            # Closing, not only shutting down, is what wakes a blocked recv.
+            # Otherwise the other direction stays up and the UDP token remains usable.
+            for held in (src, dst):
+                try:
+                    held.close()
+                except OSError:
+                    pass
 
     threads = (
         threading.Thread(target=pump, args=(left, right), daemon=True),
@@ -229,7 +236,7 @@ def fail(conn, error):
         pass
 
 
-def handle(conn, peer):
+def handle(conn, peer, secure=False):
     try:
         conn.settimeout(20)
         raw = read_line(conn)
@@ -241,6 +248,11 @@ def handle(conn, peer):
             fail(conn, "wrong-game")
             return
         op = message.get("op")
+        # Passwords, verification codes, and the 30-day account token are only
+        # accepted after the TLS handshake has verified this process's certificate.
+        if op in CREDENTIAL_OPS and not secure:
+            fail(conn, "tls-required")
+            return
         ip = peer[0]
         if op == "register":
             reason = gate().register(message.get("username"), message.get("password"), message.get("email"), ip)
@@ -266,7 +278,7 @@ def handle(conn, peer):
             send_line(conn, {"op": "session", "token": token, "username": username, "email": email})
             conn.close()
             return
-        if op in ("list", "host", "join", "accept") and gate().session(message.get("account"), ip) is None:
+        if op in ("list", "host", "join") and gate().session(message.get("account"), ip) is None:
             fail(conn, "login-required")
             return
         if op == "list":
@@ -277,10 +289,10 @@ def handle(conn, peer):
             host(conn, peer, message)
             return
         if op == "join":
-            join(conn, message)
+            issue_ticket(conn, peer, message)
             return
-        if op == "accept":
-            accept(conn, message)
+        if op == "bridge":
+            bridge(conn, peer, message)
             return
         fail(conn, "unknown-op")
     except (OSError, ValueError, json.JSONDecodeError):
@@ -338,7 +350,34 @@ def host(conn, peer, message):
             pass
 
 
-def join(conn, message):
+def drop_bridge(ticket, tell):
+    with BRIDGE_LOCK:
+        pending = BRIDGES.pop(ticket, None)
+    if pending is None:
+        return None
+    pending["timer"].cancel()
+    forget_relay(pending["room"], pending["relay_key"])
+    for conn in tell:
+        fail(conn, "host-offline")
+    return pending
+
+
+def expire_bridge(ticket):
+    with BRIDGE_LOCK:
+        pending = BRIDGES.get(ticket)
+    if pending is None:
+        return
+    with pending["lock"]:
+        if pending["spliced"]:
+            return
+        pending["spliced"] = True
+        leftover = list(pending["sides"].values())
+        pending["sides"].clear()
+    drop_bridge(ticket, leftover)
+    pending["ready"].set()
+
+
+def issue_ticket(conn, peer, message):
     try:
         room_id = int(message.get("room_id", 0))
     except (TypeError, ValueError):
@@ -351,70 +390,123 @@ def join(conn, message):
     if room.players >= room.max_players:
         fail(conn, "full")
         return
-    token = secrets.token_hex(16)
+    ticket = secrets.token_hex(16)
     relay = secrets.token_hex(8)
-    pending = {"event": threading.Event(), "socket": None}
     relay_key = bytes.fromhex(relay)
+    pending = {
+        "room": room,
+        "relay": relay,
+        "relay_key": relay_key,
+        "guest_ip": peer[0],
+        "host_ip": room.peer[0],
+        "sides": {},
+        "lock": threading.Lock(),
+        "ready": threading.Event(),
+        "spliced": False,
+        "timer": None,
+    }
     with RELAY_LOCK:
         room.relays.append(relay_key)
         RELAYS[relay_key] = {"room": room, "guest": None}
-    with room.lock:
-        room.pending[token] = pending
+    pending["timer"] = threading.Timer(JOIN_WAIT, expire_bridge, args=(ticket,))
+    pending["timer"].daemon = True
+    with BRIDGE_LOCK:
+        BRIDGES[ticket] = pending
+    pending["timer"].start()
     try:
-        send_line(room.control, {"op": "guest", "token": token, "from": room.peer[0], "relay": relay}, room.write_lock)
+        send_line(room.control, {"op": "guest", "token": ticket, "from": room.peer[0], "relay": relay}, room.write_lock)
+        send_line(conn, {"op": "ticket", "ticket": ticket, "relay": relay})
     except OSError:
-        with room.lock:
-            room.pending.pop(token, None)
-        forget_relay(room, relay_key)
+        expire_bridge(ticket)
         fail(conn, "host-offline")
         return
-    if not pending["event"].wait(JOIN_WAIT) or pending["socket"] is None:
-        with room.lock:
-            room.pending.pop(token, None)
-        forget_relay(room, relay_key)
-        fail(conn, "host-offline")
-        return
-    other = pending["socket"]
     try:
-        send_line(conn, {"op": "bridged", "relay": relay})
-        send_line(other, {"op": "bridged", "relay": relay})
-    except OSError:
         conn.close()
-        other.close()
-        return
-    conn.settimeout(None)
-    other.settimeout(None)
-    splice(conn, other)
+    except OSError:
+        pass
 
 
-def accept(conn, message):
-    token = message.get("token")
-    if not isinstance(token, str) or len(token) != 32:
-        fail(conn, "bad-token")
+def bridge(conn, peer, message):
+    ticket = message.get("ticket")
+    side = message.get("side")
+    if not isinstance(ticket, str) or len(ticket) != 32 or side not in ("guest", "host"):
+        fail(conn, "bad-ticket")
         return
-    with LOBBY.lock:
-        rooms = list(LOBBY.rooms.values())
-    pending = None
-    owner = None
-    for room in rooms:
-        with room.lock:
-            found = room.pending.pop(token, None)
-        if found is not None:
-            pending = found
-            owner = room
-            break
+    with BRIDGE_LOCK:
+        pending = BRIDGES.get(ticket)
     if pending is None:
-        fail(conn, "bad-token")
+        fail(conn, "bad-ticket")
         return
-    pending["socket"] = conn
-    pending["event"].set()
-    # The join thread owns this socket from here. Do not close it.
-    del owner
+    expected = pending["guest_ip"] if side == "guest" else pending["host_ip"]
+    if peer[0] != expected:
+        fail(conn, "bad-ticket")
+        return
+    with pending["lock"]:
+        if pending["spliced"] or side in pending["sides"]:
+            fail(conn, "bad-ticket")
+            return
+        pending["sides"][side] = conn
+        if len(pending["sides"]) < 2:
+            owner = False
+        else:
+            pending["spliced"] = True
+            pair = (pending["sides"]["guest"], pending["sides"]["host"])
+            owner = True
+    if not owner:
+        # The second arrival owns both sockets from here.
+        pending["ready"].wait(JOIN_WAIT + 1)
+        return
+    pending["timer"].cancel()
+    pending["ready"].set()
+    relay = pending["relay"]
+    try:
+        send_line(pair[0], {"op": "bridged", "relay": relay})
+        send_line(pair[1], {"op": "bridged", "relay": relay})
+        pair[0].settimeout(None)
+        pair[1].settimeout(None)
+        splice(pair[0], pair[1])
+    except OSError:
+        for held in pair:
+            try:
+                held.close()
+            except OSError:
+                pass
+    finally:
+        drop_bridge(ticket, [])
 
 
-def serve(bind, port, database=None):
+def dispatch(conn, peer, context):
+    try:
+        conn.settimeout(20)
+        lead = conn.recv(1, socket.MSG_PEEK)
+    except OSError:
+        try:
+            conn.close()
+        except OSError:
+            pass
+        return
+    if lead[:1] == b"\x16":
+        try:
+            conn = context.wrap_socket(conn, server_side=True)
+        except ssl.SSLError:
+            try:
+                conn.close()
+            except OSError:
+                pass
+            return
+        handle(conn, peer, True)
+        return
+    handle(conn, peer, False)
+
+
+def serve(bind, port, database=None, tls_cert=None, tls_key=None):
     global GATE
+    if not tls_cert or not tls_key:
+        raise SystemExit("TLS certificate and key are required")
     GATE = AccountGate(database or os.environ.get("EFLINK_AUTH_DB", "accounts.sqlite"))
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(tls_cert, tls_key)
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind((bind, port))
@@ -426,7 +518,7 @@ def serve(bind, port, database=None):
     print(f"EF Link lobby on {bind}:{port} tcp+udp", flush=True)
     while True:
         conn, peer = listener.accept()
-        threading.Thread(target=handle, args=(conn, peer), daemon=True).start()
+        threading.Thread(target=dispatch, args=(conn, peer, context), daemon=True).start()
 
 
 def main():
@@ -434,10 +526,12 @@ def main():
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=47617)
     parser.add_argument("--auth-db", default=os.environ.get("EFLINK_AUTH_DB", "accounts.sqlite"))
+    parser.add_argument("--tls-cert", default=os.environ.get("EFLINK_TLS_CERT"))
+    parser.add_argument("--tls-key", default=os.environ.get("EFLINK_TLS_KEY"))
     args = parser.parse_args()
     if args.port < 1 or args.port > 65535:
         raise SystemExit("port must be 1-65535")
-    serve(args.bind, args.port, args.auth_db)
+    serve(args.bind, args.port, args.auth_db, args.tls_cert, args.tls_key)
 
 
 if __name__ == "__main__":

@@ -182,6 +182,7 @@ add_library(betterendfieldnext_android SHARED
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/shared/third_party_modules/third_party_host.cpp"
     modules/login_model/login_model_module.cpp
     modules/eflink/eflink_module.cpp
+    modules/eflink/eflink_tls.cpp
     "${BETTER_ENDFIELD_NEXT_ROOT}/native/modules/model/module.cpp")
 
 # The Android runtime currently uses its own Module interface. Compile the

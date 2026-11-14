@@ -106,8 +106,12 @@ inline bool readLine(int socketFd, std::string& line) {
     return false;
 }
 
+// TLS to the lobby. Defined with the Android runtime; passwords and the
+// 30-day account token only travel through this call.
+int DialTls(const std::string& endpoint, int timeoutMs, std::string& error);
+
 inline std::vector<Room> list(const std::string& endpoint, std::string& error, const std::string& token = {}) {
-    const int socketFd = dial(endpoint, 4000, error);
+    const int socketFd = DialTls(endpoint, 4000, error);
     if (socketFd < 0) return {};
     std::vector<Room> rooms;
     std::string line;
@@ -168,21 +172,35 @@ struct GuestLink {
 inline int join(const std::string& endpoint, std::uint32_t roomId, std::string& relay, std::string& error,
                const std::string& token = {}) {
     relay.clear();
+    const int tls = DialTls(endpoint, 4000, error);
+    if (tls < 0) return -1;
+    std::string line;
+    if (!writeLine(tls, {{"op", "join"}, {"game", kGame}, {"room_id", roomId}, {"account", token}}) || !readLine(tls, line)) {
+        ::close(tls);
+        error = "大厅没有接上房间";
+        return -1;
+    }
+    ::close(tls);
+    const auto parsed = nlohmann::json::parse(line, nullptr, false);
+    if (!parsed.is_object() || parsed.value("op", std::string{}) != "ticket") {
+        error = parsed.is_object() ? parsed.value("error", std::string{"大厅拒绝加入"}) : "大厅拒绝加入";
+        return -1;
+    }
+    const auto ticket = parsed.value("ticket", std::string{});
+    relay = parsed.value("relay", std::string{});
     const int socketFd = dial(endpoint, 4000, error);
     if (socketFd < 0) return -1;
-    std::string line;
-    if (!writeLine(socketFd, {{"op", "join"}, {"game", kGame}, {"room_id", roomId}, {"account", token}}) || !readLine(socketFd, line)) {
+    if (!writeLine(socketFd, {{"op", "bridge"}, {"game", kGame}, {"ticket", ticket}, {"side", "guest"}}) || !readLine(socketFd, line)) {
         ::close(socketFd);
         error = "大厅没有接上房间";
         return -1;
     }
-    const auto parsed = nlohmann::json::parse(line, nullptr, false);
-    if (!parsed.is_object() || parsed.value("op", std::string{}) != "bridged") {
+    const auto bridged = nlohmann::json::parse(line, nullptr, false);
+    if (!bridged.is_object() || bridged.value("op", std::string{}) != "bridged") {
         ::close(socketFd);
-        error = parsed.is_object() ? parsed.value("error", std::string{"大厅拒绝加入"}) : "大厅拒绝加入";
+        error = bridged.is_object() ? bridged.value("error", std::string{"大厅拒绝加入"}) : "大厅拒绝加入";
         return -1;
     }
-    relay = parsed.value("relay", std::string{});
     return socketFd;
 }
 
@@ -193,10 +211,9 @@ public:
                int maxPlayers, bool password, const std::string& version, std::string& error,
                const std::string& token = {}) {
         close();
-        control_ = dial(endpoint, 4000, error);
+        control_ = DialTls(endpoint, 4000, error);
         if (control_ < 0) return false;
         endpoint_ = endpoint;
-        token_ = token;
         if (!writeLine(control_, {{"op", "host"}, {"game", kGame}, {"account", token}, {"name", name}, {"room_name", roomName},
                 {"max_players", maxPlayers}, {"password", password}, {"version", version}})) {
             error = "无法向大厅登记房间";
@@ -247,7 +264,7 @@ public:
         const int socketFd = dial(endpoint_, 4000, error);
         if (socketFd < 0) return result;
         std::string answer;
-        if (!writeLine(socketFd, {{"op", "accept"}, {"game", kGame}, {"token", token}, {"account", token_}}) || !readLine(socketFd, answer)) {
+        if (!writeLine(socketFd, {{"op", "bridge"}, {"game", kGame}, {"ticket", token}, {"side", "host"}}) || !readLine(socketFd, answer)) {
             ::close(socketFd);
             error = "无法接上大厅里的客人";
             return result;
@@ -269,11 +286,9 @@ public:
         control_ = -1;
         roomId_ = 0;
         udpToken_.clear();
-        token_.clear();
     }
 private:
     int control_ = -1;
-    std::string token_;
     std::uint32_t roomId_ = 0;
     std::string endpoint_, udpToken_;
 };

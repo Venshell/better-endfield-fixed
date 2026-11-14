@@ -56,6 +56,7 @@ std::string explainLobby(std::string code) {
     if (code == "mail-daily") return "今日验证码发送已达上限";
     if (code == "verify-limit") return "当前网络验证次数过多，请稍后再试";
     if (code == "same-network") return "请在申请验证码的同一网络下完成验证";
+    if (code == "tls-required") return "联机服务器需要加密连接";
     if (code == "bad-code" || code == "code-expired") return "验证码无效或已过期";
     if (code == "mail-failed") return "验证码邮件发送失败";
     return code;
