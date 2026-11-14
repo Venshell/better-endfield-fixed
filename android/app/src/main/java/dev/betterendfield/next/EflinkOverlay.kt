@@ -36,7 +36,7 @@ import java.io.File
 internal fun EflinkOverlay(preview: Boolean) {
     if (preview) {
         OverlaySection("联机") {
-            Text("预览不连接房间。进入游戏后可以创建局域网或互联网房间，并看到其他玩家。",
+            Text("预览不连接房间。进入游戏后可以创建局域网或互联网房间。",
                 color = Be.Colors.textSecondary, fontSize = 11.sp)
         }
         return
@@ -66,7 +66,7 @@ internal fun EflinkOverlay(preview: Boolean) {
     OverlaySection("联机") {
         Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
             if (!status.present) {
-                Text("联机还没启动。在工具页开启后重启游戏。",
+                Text("联机还没启动。在工具里开启后重启游戏。",
                     color = Be.Colors.textSecondary, fontSize = 11.sp)
             } else if (inRoom) {
                 RoomScreen(status, chat, { chat = it }) {
@@ -186,9 +186,9 @@ private fun RoomScreen(status: EflinkSnapshot, chat: String, onChat: (String) ->
         else -> "已加入"
     }
     val path = when {
-        status.network == "internet" && status.udp > 0 -> "UDP 经服务器"
-        status.udp > 0 -> "UDP"
-        status.tcpOnly > 0 -> "TCP"
+        status.network == "internet" && status.udp > 0 -> "位置经服务器"
+        status.udp > 0 -> "位置直连"
+        status.tcpOnly > 0 -> "位置经可靠连接"
         else -> "正在连接"
     }
     Text("${status.room.ifBlank { "房间" }}  ·  $kind  ·  $role  ·  $path",

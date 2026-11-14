@@ -167,24 +167,38 @@ def relay_udp(sock):
             return
         if len(data) < 8:
             continue
-        token, payload = data[:8], data[8:]
+        token, rest = data[:8], data[8:]
         with RELAY_LOCK:
             room = HOST_TOKENS.get(token)
             if room is not None:
                 room.host_udp = addr
                 continue
             channel = RELAYS.get(token)
-            if channel is None:
+            if channel is None or not rest:
                 continue
-            host = channel["room"].host_udp
-            if host is not None and addr == host:
-                target = channel["guest"]
+            # H/G is which end sent this datagram. Comparing source addresses
+            # fails when a phone's NAT port changes between packets.
+            if rest[:1] in (b"H", b"G"):
+                direction, payload = rest[:1], rest[1:]
+                if direction == b"H":
+                    channel["host"] = addr
+                    channel["room"].host_udp = addr
+                    target = channel.get("guest")
+                else:
+                    channel["guest"] = addr
+                    target = channel.get("host") or channel["room"].host_udp
             else:
-                channel["guest"] = addr
-                target = host
-        if target is not None and payload:
+                payload = rest
+                host = channel.get("host") or channel["room"].host_udp
+                if host is not None and addr == host:
+                    target = channel.get("guest")
+                else:
+                    channel["guest"] = addr
+                    target = host
+            forwarded = token + payload if target is not None and payload else None
+        if forwarded is not None:
             try:
-                sock.sendto(data, target)
+                sock.sendto(forwarded, target)
             except OSError:
                 pass
 

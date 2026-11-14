@@ -313,9 +313,10 @@ private:
             if (port < 1024 || port > 65535 || port == 47616) port = port_;
             options.port = static_cast<std::uint16_t>(port);
             const auto network = command.value("network", std::string{"lan"});
+            options.internet = network == "internet";
             if (network == "internet" && lobby_endpoint_.empty()) {
                 std::lock_guard lock(mutex_);
-                lobby_error_ = "互联网房间需要先在工具页填写大厅地址，并重启游戏";
+                lobby_error_ = "连不上联机服务器";
                 internet_room_.store(false);
                 return;
             }
@@ -339,7 +340,7 @@ private:
             const int bridged = lobby_endpoint_.empty() ? -1 : eflink::lobby::join(lobby_endpoint_, roomId, relay, failure);
             if (bridged < 0) {
                 std::lock_guard lock(mutex_);
-                lobby_error_ = failure.empty() ? "未设置大厅地址" : failure;
+                lobby_error_ = failure.empty() ? "连不上联机服务器" : failure;
             } else {
                 internet_room_.store(true);
                 std::string host;
