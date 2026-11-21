@@ -345,4 +345,8 @@
     <string name="media_index_failed">Could not save media index</string>
     <string name="next_link_open_failed">Unable to open the link</string>
     <string name="next_close">Close</string>
+    <string name="app_theme_title">App theme</string>
+    <string name="app_theme_industrial">Industrial</string>
+    <string name="app_theme_miuix_light">Miuix Light</string>
+    <string name="app_theme_miuix_dark">Miuix Dark</string>
 </resources>

@@ -1,70 +1,65 @@
 package dev.betterendfield.next
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 
-/**
- * Binds the industrial tokens to Material so that stock controls - switches,
- * sliders, text fields, menus, progress bars - inherit the palette instead of
- * arriving with Material's own tonal colours attached to them.
- *
- * The app has exactly one theme. There is no light variant on purpose: the panel
- * is read over a dark game frame and next to a dark launcher, so a light scheme
- * would only ever be wrong.
- */
+internal fun materialColors(palette: UiPalette, light: Boolean): ColorScheme {
+    val scheme = if (light) lightColorScheme() else darkColorScheme()
+    return scheme.copy(
+        primary = palette.accent,
+        onPrimary = palette.accentInk,
+        primaryContainer = palette.accentSoft,
+        onPrimaryContainer = palette.accentText,
+        inversePrimary = palette.accentPressed,
 
-private val BeColorScheme = darkColorScheme(
-    primary = Be.Colors.accent,
-    onPrimary = Be.Colors.accentInk,
-    primaryContainer = Be.Colors.accentSoft,
-    onPrimaryContainer = Be.Colors.accent,
-    inversePrimary = Be.Colors.accentPressed,
+        secondary = palette.accent,
+        onSecondary = palette.accentInk,
+        secondaryContainer = palette.accentSoft,
+        onSecondaryContainer = palette.accentText,
 
-    secondary = Be.Colors.accent,
-    onSecondary = Be.Colors.accentInk,
-    secondaryContainer = Be.Colors.accentSoft,
-    onSecondaryContainer = Be.Colors.accent,
+        tertiary = palette.accent,
+        onTertiary = palette.accentInk,
+        tertiaryContainer = palette.accentSoft,
+        onTertiaryContainer = palette.accentText,
 
-    tertiary = Be.Colors.accent,
-    onTertiary = Be.Colors.accentInk,
-    tertiaryContainer = Be.Colors.accentSoft,
-    onTertiaryContainer = Be.Colors.accent,
+        background = palette.background,
+        onBackground = palette.textPrimary,
 
-    background = Be.Colors.background,
-    onBackground = Be.Colors.textPrimary,
+        surface = palette.panel,
+        onSurface = palette.textPrimary,
+        surfaceVariant = palette.row,
+        onSurfaceVariant = palette.textSecondary,
+        surfaceTint = palette.accent,
 
-    surface = Be.Colors.panel,
-    onSurface = Be.Colors.textPrimary,
-    surfaceVariant = Be.Colors.row,
-    onSurfaceVariant = Be.Colors.textSecondary,
-    surfaceTint = Be.Colors.accent,
+        surfaceContainerLowest = palette.background,
+        surfaceContainerLow = palette.panel,
+        surfaceContainer = palette.panel,
+        surfaceContainerHigh = palette.panelHigh,
+        surfaceContainerHighest = palette.rowHigh,
 
-    surfaceContainerLowest = Be.Colors.background,
-    surfaceContainerLow = Be.Colors.panel,
-    surfaceContainer = Be.Colors.panel,
-    surfaceContainerHigh = Be.Colors.panelHigh,
-    surfaceContainerHighest = Be.Colors.rowHigh,
+        inverseSurface = palette.textPrimary,
+        inverseOnSurface = palette.background,
 
-    inverseSurface = Be.Colors.textPrimary,
-    inverseOnSurface = Be.Colors.background,
+        outline = palette.outline,
+        outlineVariant = palette.outlineStrong,
 
-    outline = Be.Colors.outline,
-    outlineVariant = Be.Colors.outlineStrong,
+        error = palette.danger,
+        onError = if (light) androidx.compose.ui.graphics.Color.White else palette.accentInk,
+        errorContainer = palette.dangerSoft,
+        onErrorContainer = palette.danger,
 
-    error = Be.Colors.danger,
-    onError = Be.Colors.accentInk,
-    errorContainer = Be.Colors.dangerSoft,
-    onErrorContainer = Be.Colors.danger,
-
-    scrim = androidx.compose.ui.graphics.Color.Black,
-)
+        scrim = androidx.compose.ui.graphics.Color.Black,
+    )
+}
 
 private val BeShapes = Shapes(
     extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(Be.Radius.chip),
@@ -92,16 +87,20 @@ private val BeTypography = Typography(
 /** Numeric readouts and the journal are the only monospaced surfaces. */
 val Monospace: FontFamily = FontFamily.Monospace
 
+private val industrialMaterialColors = materialColors(IndustrialPalette, light = false)
+
 @Composable
 fun BetterEndfieldTheme(content: @Composable () -> Unit) {
-    // isSystemInDarkTheme() is read to keep the compiler honest about the fact
-    // that this app ignores it; deleting the import would silently change nothing.
-    @Suppress("UNUSED_EXPRESSION")
-    isSystemInDarkTheme()
-    MaterialTheme(
-        colorScheme = BeColorScheme,
-        shapes = BeShapes,
-        typography = BeTypography,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalUiPalette provides IndustrialPalette,
+        LocalAppAppearance provides AppAppearance.Industrial,
+        LocalSelectAppAppearance provides {},
+    ) {
+        MaterialUiTheme(industrialMaterialColors, content)
+    }
+}
+
+@Composable
+internal fun MaterialUiTheme(colors: ColorScheme, content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = colors, shapes = BeShapes, typography = BeTypography, content = content)
 }

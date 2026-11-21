@@ -17,7 +17,7 @@ fun AdministratorAppearancePage(onSaved: () -> Unit = {}) {
     fun save(next: AdministratorAppearanceSelection) {
         if (state.update(next)) onSaved()
     }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         SectionCard(eyebrow = stringResource(R.string.admin_appearance_eyebrow),
             title = stringResource(R.string.appearance_card_title)) {
             SwitchRow(stringResource(R.string.appearance_enable), "", selection.enabled,

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="beSplashInk" format="color" />
+    <color name="miuix_light_background">#FFFFFF</color>
+    <color name="miuix_dark_background">#1B1B1F</color>
+    <color name="miuix_light_control_active">#4D5E8C</color>
+    <color name="miuix_dark_control_active">#687BA7</color>
+    <dimen name="be_splash_icon_size">288dp</dimen>
+    <integer name="be_splash_write_ms">800</integer>
+    <item name="be_splash_start_icon" type="drawable">@android:color/transparent</item>
+
+    <style name="Theme.Bem.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/app_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/be_splash_start_icon</item>
+        <item name="windowSplashScreenAnimationDuration">@integer/be_splash_write_ms</item>
+        <item name="postSplashScreenTheme">@style/AppTheme</item>
+        <item name="android:windowSplashScreenBehavior">icon_preferred</item>
+        <item name="beSplashInk">@color/accent</item>
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+    <style name="Theme.Bem.Starting.MiuixLight">
+        <item name="windowSplashScreenBackground">@color/miuix_light_background</item>
+        <item name="beSplashInk">@color/miuix_light_control_active</item>
+        <item name="android:statusBarColor">@color/miuix_light_background</item>
+        <item name="android:navigationBarColor">@color/miuix_light_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="Theme.Bem.Starting.MiuixDark">
+        <item name="windowSplashScreenBackground">@color/miuix_dark_background</item>
+        <item name="beSplashInk">@color/miuix_dark_control_active</item>
+        <item name="android:statusBarColor">@color/miuix_dark_background</item>
+        <item name="android:navigationBarColor">@color/miuix_dark_background</item>
+    </style>
+</resources>

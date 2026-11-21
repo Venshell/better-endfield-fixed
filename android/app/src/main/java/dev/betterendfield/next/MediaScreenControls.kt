@@ -70,7 +70,7 @@ internal fun MediaScreenControls(preview: Boolean) {
     val playing = snapshot.phase() == MediaScreenControl.Phase.PLAYING || snapshot.phase() == MediaScreenControl.Phase.PAUSED
     OverlaySection(stringResource(R.string.media_runtime_title)) {
         Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(mediaScreenStatusText(snapshot), color = Be.Colors.textSecondary, fontSize = 12.sp)
+            Text(mediaScreenStatusText(snapshot), color = appColors.textSecondary, fontSize = 12.sp)
             if (landscape) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     OverlayAction(stringResource(R.string.media_runtime_start), Modifier.weight(1f), enabled) { send(0) }
@@ -88,7 +88,7 @@ internal fun MediaScreenControls(preview: Boolean) {
                 OverlayAction(stringResource(R.string.media_runtime_seek_back), enabled = enabled && playing && snapshot.detail() == "video") { send(3, -10.0) }
                 OverlayAction(stringResource(R.string.media_runtime_seek_forward), enabled = enabled && playing && snapshot.detail() == "video") { send(3, 10.0) }
             }
-            if (submission.isNotEmpty()) Text(submission, color = Be.Colors.textSecondary, fontSize = 10.sp)
+            if (submission.isNotEmpty()) Text(submission, color = appColors.textSecondary, fontSize = 10.sp)
         }
     }
 }

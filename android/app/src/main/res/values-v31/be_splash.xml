@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="be_splash_start_icon" type="drawable">@drawable/be_splash_animation</item>
+</resources>

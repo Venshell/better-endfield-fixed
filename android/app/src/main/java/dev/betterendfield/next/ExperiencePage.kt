@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,13 +28,10 @@ import androidx.compose.ui.unit.sp
  * general camera group, and the free camera group points at it. Two sliders
  * bound to one value would drift apart as soon as one was dragged.
  */
-@Composable
-fun ExperiencePage(state: SettingsState) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
-        InterfaceCard(state)
-        CameraCard(state)
-        DashCard(state)
-    }
+internal fun LazyListScope.experiencePage(state: SettingsState) {
+    item("interface") { InterfaceCard(state) }
+    item("camera") { CameraCard(state) }
+    item("dash") { DashCard(state) }
 }
 
 @Composable
@@ -249,7 +247,7 @@ fun SubPageRow(
             .pressScale(press.value)
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(pressedFill(press.value, Be.Colors.row, Be.Colors.rowHigh))
+            .background(pressedFill(press.value, appColors.row, appColors.rowHigh))
             .then(press.modifier)
             .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
         verticalAlignment = Alignment.CenterVertically,
@@ -257,26 +255,26 @@ fun SubPageRow(
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = Be.Colors.textPrimary,
+                color = appColors.textPrimary,
                 fontSize = Be.Type.rowTitle,
                 fontWeight = FontWeight.Medium,
             )
             Text(
                 text = hint,
-                color = Be.Colors.textSecondary,
+                color = appColors.textSecondary,
                 fontSize = Be.Type.bodySmall,
                 modifier = Modifier.padding(top = 3.dp),
             )
         }
         Text(
             text = stringResource(if (state) R.string.state_on else R.string.state_off),
-            color = if (state) Be.Colors.accent else Be.Colors.textMuted,
+            color = if (state) appColors.accent else appColors.textMuted,
             fontSize = Be.Type.bodySmall,
             fontWeight = FontWeight.Medium,
         )
         Text(
             text = "›",
-            color = Be.Colors.accent,
+            color = appColors.accentText,
             fontSize = 20.sp,
             modifier = Modifier.padding(start = Be.Space.m),
         )

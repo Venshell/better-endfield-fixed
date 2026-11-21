@@ -14,6 +14,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -21,9 +22,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,9 +48,13 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -55,6 +62,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -70,6 +78,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
@@ -91,6 +100,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -108,6 +118,13 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
+import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
+import top.yukonga.miuix.kmp.basic.SliderDefaults as MiuixSliderDefaults
+import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
+import top.yukonga.miuix.kmp.basic.SwitchDefaults as MiuixSwitchDefaults
+import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
 
 /**
  * The shared widget vocabulary.
@@ -129,6 +146,7 @@ import kotlin.math.sqrt
  * same damping and stiffness live here and every motion in the shell uses them.
  */
 internal object BeMotion {
+    fun <T> tabTravel(): FiniteAnimationSpec<T> = androidx.compose.animation.core.tween(250)
     fun <T> spatial(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 380f)
     fun <T> fastSpatial(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.6f, stiffness = 800f)
     fun <T> effects(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 1600f)
@@ -210,25 +228,19 @@ fun SectionCard(
     status: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Be.Radius.card))
-            .background(Be.Colors.panel)
-            .padding(Be.Space.cardInner),
-    ) {
+    PanelCard(modifier) {
         Eyebrow(eyebrow)
         Text(
             text = title,
-            color = Be.Colors.textPrimary,
-            fontSize = 19.sp,
+            color = appColors.textPrimary,
+            fontSize = if (usesMiuix) Be.Type.title else 19.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(top = Be.Space.xs),
         )
         if (subtitle != null) {
             Text(
                 text = subtitle,
-                color = Be.Colors.textMuted,
+                color = appColors.textMuted,
                 fontSize = Be.Type.bodySmall,
                 lineHeight = 16.sp,
                 modifier = Modifier.padding(top = Be.Space.s),
@@ -264,13 +276,13 @@ fun Disclosure(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.card))
-            .background(Be.Colors.panel),
+            .background(appColors.panel),
     ) {
         Row(
             Modifier
                 .pressScale(press.value)
                 .fillMaxWidth()
-                .background(pressedFill(press.value, Be.Colors.panel, Be.Colors.rowHigh))
+                .background(pressedFill(press.value, appColors.panel, appColors.rowHigh))
                 .then(press.modifier)
                 .padding(horizontal = Be.Space.cardInner, vertical = Be.Space.xl),
             verticalAlignment = Alignment.CenterVertically,
@@ -279,7 +291,7 @@ fun Disclosure(
                 if (!eyebrow.isNullOrEmpty()) Eyebrow(eyebrow)
                 Text(
                     text = title,
-                    color = Be.Colors.textPrimary,
+                    color = appColors.textPrimary,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(top = if (eyebrow.isNullOrEmpty()) 0.dp else Be.Space.xs),
@@ -287,7 +299,7 @@ fun Disclosure(
                 if (!hint.isNullOrEmpty()) {
                     Text(
                         text = hint,
-                        color = Be.Colors.textMuted,
+                        color = appColors.textMuted,
                         fontSize = Be.Type.bodySmall,
                         lineHeight = 16.sp,
                         maxLines = 2,
@@ -297,7 +309,7 @@ fun Disclosure(
                 }
             }
             Caret(
-                color = Be.Colors.textSecondary,
+                color = appColors.textSecondary,
                 modifier = Modifier
                     .padding(start = Be.Space.m)
                     .rotate(caret),
@@ -314,8 +326,9 @@ fun Disclosure(
                     end = Be.Space.cardInner,
                     bottom = Be.Space.cardInner,
                 ),
-                content = content,
-            )
+            ) {
+                CompositionLocalProvider(LocalMiuixCard provides usesMiuix) { content() }
+            }
         }
     }
 }
@@ -323,21 +336,75 @@ fun Disclosure(
 /** A plain panel for content that carries its own heading. */
 @Composable
 fun PanelCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    if (usesMiuix) {
+        MiuixPanelCard(modifier, PaddingValues(MiuixLayout.inset), content)
+        return
+    }
     Column(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.card))
-            .background(Be.Colors.panel)
+            .background(appColors.panel)
             .padding(Be.Space.cardInner),
         content = content,
     )
+}
+
+private val LocalMiuixCard = staticCompositionLocalOf { false }
+
+private val fieldSurface: Color
+    @Composable get() = if (LocalMiuixCard.current) appColors.insetControl else appColors.field
+
+@Composable
+private fun Modifier.controlOutline(shape: Shape, separated: Boolean = true): Modifier =
+    if (usesMiuix && separated && !LocalMiuixCard.current) border(1.dp, appColors.outline, shape) else this
+
+@Composable
+private fun MiuixPanelCard(
+    modifier: Modifier,
+    insideMargin: PaddingValues,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    MiuixCard(modifier.fillMaxWidth(), MiuixLayout.cardRadius, insideMargin) {
+        CompositionLocalProvider(LocalMiuixCard provides true) { content() }
+    }
+}
+
+@Composable
+internal fun SettingsPreferenceCard(content: @Composable ColumnScope.() -> Unit) {
+    if (usesMiuix) {
+        MiuixPanelCard(Modifier, PaddingValues(horizontal = MiuixLayout.inset), content)
+    } else {
+        PanelCard(content = content)
+    }
+}
+
+@Composable
+internal fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    if (usesMiuix) {
+        Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
+            Text(
+                text = title,
+                color = appColors.accentText,
+                fontSize = Be.Type.body,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = MiuixLayout.inset),
+            )
+            SettingsPreferenceCard(content)
+        }
+    } else {
+        PanelCard {
+            CardTitle(title)
+            content()
+        }
+    }
 }
 
 @Composable
 fun Eyebrow(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        color = Be.Colors.accent,
+        color = appColors.accentText,
         fontSize = Be.Type.eyebrow,
         fontWeight = FontWeight.Medium,
         letterSpacing = Be.EyebrowTracking.sp,
@@ -350,7 +417,7 @@ fun Eyebrow(text: String, modifier: Modifier = Modifier) {
 fun GroupLabel(text: String, modifier: Modifier = Modifier, top: Dp = Be.Space.xxl) {
     Text(
         text = text,
-        color = Be.Colors.textMuted,
+        color = appColors.textMuted,
         fontSize = Be.Type.caption,
         fontWeight = FontWeight.Medium,
         letterSpacing = Be.CaptionTracking.sp,
@@ -364,7 +431,7 @@ fun GroupLabel(text: String, modifier: Modifier = Modifier, top: Dp = Be.Space.x
 fun CardTitle(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        color = Be.Colors.textPrimary,
+        color = appColors.textPrimary,
         fontSize = Be.Type.cardTitle,
         fontWeight = FontWeight.Medium,
         modifier = modifier,
@@ -375,7 +442,7 @@ fun CardTitle(text: String, modifier: Modifier = Modifier) {
 fun FieldLabel(text: String, modifier: Modifier = Modifier, top: Dp = Be.Space.page) {
     Text(
         text = text,
-        color = Be.Colors.textSecondary,
+        color = appColors.textSecondary,
         fontSize = Be.Type.label,
         fontWeight = FontWeight.Medium,
         modifier = modifier.padding(top = top, bottom = Be.Space.m),
@@ -386,7 +453,7 @@ fun FieldLabel(text: String, modifier: Modifier = Modifier, top: Dp = Be.Space.p
 fun BodyText(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        color = Be.Colors.textSecondary,
+        color = appColors.textSecondary,
         fontSize = Be.Type.body,
         lineHeight = 18.sp,
         modifier = modifier,
@@ -402,14 +469,14 @@ fun ValueChip(
 ) {
     Text(
         text = text,
-        color = Be.Colors.accent,
+        color = appColors.accentText,
         fontSize = Be.Type.value,
         fontFamily = if (monospace) Monospace else FontFamily.Default,
         fontWeight = if (monospace) FontWeight.Normal else FontWeight.Medium,
         maxLines = 1,
         modifier = modifier
             .clip(RoundedCornerShape(Be.Radius.chip))
-            .background(Be.Colors.accentSoft)
+            .background(appColors.accentSoft)
             .padding(horizontal = Be.Space.m + 1.dp, vertical = 3.dp),
     )
 }
@@ -418,13 +485,13 @@ fun ValueChip(
 fun Badge(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        color = Be.Colors.accent,
+        color = appColors.accentText,
         fontSize = Be.Type.caption,
         fontWeight = FontWeight.Medium,
         maxLines = 1,
         modifier = modifier
             .clip(RoundedCornerShape(Be.Radius.badge))
-            .background(Be.Colors.accentSoft)
+            .background(appColors.accentSoft)
             .padding(horizontal = 9.dp, vertical = 4.dp),
     )
 }
@@ -438,14 +505,14 @@ fun StatusBlock(
 ) {
     Text(
         text = text,
-        color = Be.Colors.textSecondary,
+        color = appColors.textSecondary,
         fontSize = if (monospace) Be.Type.mono else Be.Type.bodySmall,
         fontFamily = if (monospace) Monospace else FontFamily.Default,
         lineHeight = if (monospace) 16.sp else 17.sp,
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.status))
-            .background(Be.Colors.field)
+            .background(appColors.field)
             .padding(horizontal = Be.Space.l, vertical = Be.Space.l),
     )
 }
@@ -457,7 +524,7 @@ fun Notice(text: String, modifier: Modifier = Modifier) {
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.button))
-            .background(Be.Colors.field)
+            .background(appColors.field)
             .padding(Be.Space.xl),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -465,7 +532,7 @@ fun Notice(text: String, modifier: Modifier = Modifier) {
         Spacer(Modifier.width(Be.Space.l))
         Text(
             text = text,
-            color = Be.Colors.textSecondary,
+            color = appColors.textSecondary,
             fontSize = Be.Type.body,
             lineHeight = 18.sp,
         )
@@ -474,20 +541,21 @@ fun Notice(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun InfoMark(modifier: Modifier = Modifier) {
+    val color = appColors.accentText
     Canvas(modifier.size(20.dp)) {
         val width = 1.8.dp.toPx()
         drawCircle(
-            color = Be.Colors.accent,
+            color = color,
             radius = size.minDimension / 2f - width,
             style = Stroke(width = width),
         )
         drawCircle(
-            color = Be.Colors.accent,
+            color = color,
             radius = 1.1.dp.toPx(),
             center = Offset(size.width / 2f, size.height * 0.33f),
         )
         drawLine(
-            color = Be.Colors.accent,
+            color = color,
             start = Offset(size.width / 2f, size.height * 0.47f),
             end = Offset(size.width / 2f, size.height * 0.74f),
             strokeWidth = width,
@@ -513,19 +581,21 @@ fun SwitchRow(
     enabled: Boolean = true,
 ) {
     val press = rememberToggleable(checked, enabled, onCheckedChange)
+    val grouped = LocalMiuixCard.current
+    val inset = if (grouped) 0.dp else Be.Space.xl
     Row(
         modifier
             .pressScale(press.value)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Be.Radius.row))
-            .background(pressedFill(press.value, Be.Colors.row, Be.Colors.rowHigh))
+            .clip(RoundedCornerShape(if (usesMiuix) MiuixLayout.controlRadius else Be.Radius.row))
+            .background(pressedFill(press.value, if (grouped) Color.Transparent else appColors.row, appColors.rowHigh))
             .then(press.modifier)
             .alpha(if (enabled) 1f else 0.42f)
-            .heightIn(min = Be.Size.rowMinHeight)
+            .heightIn(min = if (usesMiuix) MiuixLayout.rowHeight else Be.Size.rowMinHeight)
             .padding(
-                start = Be.Space.xl,
+                start = inset,
                 top = Be.Space.l,
-                end = Be.Space.m + 2.dp,
+                end = if (grouped) 0.dp else Be.Space.m + 2.dp,
                 bottom = Be.Space.l,
             ),
         verticalAlignment = Alignment.CenterVertically,
@@ -534,8 +604,8 @@ fun SwitchRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = title,
-                    color = if (checked) Be.Colors.textPrimary else Be.Colors.textSecondary,
-                    fontSize = Be.Type.rowTitle,
+                    color = if (checked || usesMiuix) appColors.textPrimary else appColors.textSecondary,
+                    fontSize = if (usesMiuix) 16.sp else Be.Type.rowTitle,
                     fontWeight = FontWeight.Medium,
                     maxLines = 3,
                     modifier = Modifier.weight(1f, fill = false),
@@ -551,32 +621,62 @@ fun SwitchRow(
             if (description.isNotEmpty()) {
                 Text(
                     text = description,
-                    color = Be.Colors.textSecondary,
-                    fontSize = Be.Type.bodySmall,
+                    color = appColors.textSecondary,
+                    fontSize = if (usesMiuix) 13.sp else Be.Type.bodySmall,
                     lineHeight = 16.sp,
-                    modifier = Modifier.padding(top = 3.dp),
+                    modifier = Modifier.padding(top = if (usesMiuix) 1.dp else 3.dp),
                 )
             }
         }
         Spacer(Modifier.width(Be.Space.l))
-        Switch(
+        AppSwitch(
             checked = checked,
             onCheckedChange = null,
             enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Be.Colors.accent,
-                checkedTrackColor = Be.Colors.accentSoft,
+            materialColors = SwitchDefaults.colors(
+                checkedThumbColor = appColors.accent,
+                checkedTrackColor = appColors.accentSoft,
                 checkedBorderColor = Color.Transparent,
-                uncheckedThumbColor = Be.Colors.switchThumbOff,
-                uncheckedTrackColor = Be.Colors.switchTrackOff,
+                uncheckedThumbColor = appColors.switchThumbOff,
+                uncheckedTrackColor = appColors.switchTrackOff,
                 uncheckedBorderColor = Color.Transparent,
-                disabledCheckedThumbColor = Be.Colors.accent,
-                disabledCheckedTrackColor = Be.Colors.accentSoft,
-                disabledUncheckedThumbColor = Be.Colors.switchThumbOff,
-                disabledUncheckedTrackColor = Be.Colors.switchTrackOff,
+                disabledCheckedThumbColor = appColors.accent,
+                disabledCheckedTrackColor = appColors.accentSoft,
+                disabledUncheckedThumbColor = appColors.switchThumbOff,
+                disabledUncheckedTrackColor = appColors.switchTrackOff,
             ),
         )
     }
+}
+
+@Composable
+internal fun AppSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    enabled: Boolean = true,
+    materialColors: SwitchColors = SwitchDefaults.colors(),
+) {
+    if (!usesMiuix) {
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled, colors = materialColors)
+        return
+    }
+
+    val colors = miuixControlColors
+    MiuixSwitch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        colors = MiuixSwitchDefaults.switchColors(
+            checkedTrackColor = colors.activeTrack,
+            checkedThumbColor = colors.activeThumb,
+            uncheckedTrackColor = colors.inactiveTrack,
+            uncheckedThumbColor = colors.inactiveThumb,
+            disabledCheckedTrackColor = colors.activeTrack.copy(alpha = 0.46f),
+            disabledCheckedThumbColor = colors.activeThumb.copy(alpha = 0.66f),
+            disabledUncheckedTrackColor = colors.inactiveTrack.copy(alpha = 0.46f),
+            disabledUncheckedThumbColor = colors.inactiveThumb.copy(alpha = 0.66f),
+        ),
+    )
 }
 
 /**
@@ -599,6 +699,7 @@ fun SliderRow(
     decimals: Int = -1,
     enabled: Boolean = true,
 ) {
+    val grouped = LocalMiuixCard.current
     val minimum = valueRange.start
     val span = (valueRange.endInclusive - minimum).takeIf { it > 0f } ?: 1f
     var precise by remember { mutableFloatStateOf(value.coerceIn(valueRange)) }
@@ -610,49 +711,72 @@ fun SliderRow(
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Be.Radius.row))
-            .background(Be.Colors.row)
+            .clip(RoundedCornerShape(if (usesMiuix) MiuixLayout.controlRadius else Be.Radius.row))
+            .background(if (grouped) Color.Transparent else appColors.row)
             .alpha(if (enabled) 1f else 0.42f)
             .padding(
-                start = Be.Space.xl,
+                start = if (grouped) 0.dp else Be.Space.xl,
                 top = Be.Space.m + 2.dp,
-                end = Be.Space.xl,
+                end = if (grouped) 0.dp else Be.Space.xl,
                 bottom = Be.Space.l,
             ),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = label,
-                color = Be.Colors.textSecondary,
+                color = appColors.textSecondary,
                 fontSize = Be.Type.value,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
             ValueChip(formatReading(reported(), unit, decimals))
         }
-        Slider(
-            value = slot(precise),
-            onValueChange = { next ->
-                precise = minimum + span * next / steps
-                onValueChange(reported())
-            },
-            valueRange = 0f..steps.toFloat(),
-            steps = (steps - 1).coerceAtLeast(0),
+        val sliderValue = slot(precise)
+        val updateSlider: (Float) -> Unit = { next ->
+            precise = minimum + span * next / steps
+            onValueChange(reported())
+        }
+        val sliderRange = 0f..steps.toFloat()
+        val sliderSteps = (steps - 1).coerceAtLeast(0)
+        val sliderModifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Be.Space.xs)
+            .height(Be.Size.sliderHeight)
+        if (usesMiuix) {
+            val colors = miuixControlColors
+            MiuixSlider(
+                value = sliderValue,
+                onValueChange = updateSlider,
+                valueRange = sliderRange,
+                steps = sliderSteps,
+                enabled = enabled,
+                modifier = sliderModifier,
+                colors = MiuixSliderDefaults.sliderColors(
+                    foregroundColor = colors.activeTrack,
+                    thumbColor = colors.activeThumb,
+                    backgroundColor = colors.inactiveTrack,
+                    disabledForegroundColor = colors.activeTrack.copy(alpha = 0.46f),
+                    disabledThumbColor = colors.activeThumb.copy(alpha = 0.66f),
+                    disabledBackgroundColor = colors.inactiveTrack.copy(alpha = 0.46f),
+                ),
+            )
+        } else Slider(
+            value = sliderValue,
+            onValueChange = updateSlider,
+            valueRange = sliderRange,
+            steps = sliderSteps,
             enabled = enabled,
             colors = SliderDefaults.colors(
-                thumbColor = Be.Colors.accent,
-                activeTrackColor = Be.Colors.accent,
+                thumbColor = appColors.accent,
+                activeTrackColor = appColors.accent,
                 activeTickColor = Color.Transparent,
-                inactiveTrackColor = Be.Colors.track,
+                inactiveTrackColor = appColors.track,
                 inactiveTickColor = Color.Transparent,
-                disabledThumbColor = Be.Colors.accent,
-                disabledActiveTrackColor = Be.Colors.accent,
-                disabledInactiveTrackColor = Be.Colors.track,
+                disabledThumbColor = appColors.accent,
+                disabledActiveTrackColor = appColors.accent,
+                disabledInactiveTrackColor = appColors.track,
             ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = Be.Space.xs)
-                .height(Be.Size.sliderHeight),
+            modifier = sliderModifier,
         )
     }
 }
@@ -680,45 +804,58 @@ fun SelectField(
     modifier: Modifier = Modifier,
     placeholder: String = "",
     enabled: Boolean = true,
+    title: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val safeIndex = selectedIndex.coerceIn(0, (options.size - 1).coerceAtLeast(0))
     val press = rememberPressed(enabled && options.isNotEmpty()) { expanded = true }
+    val shape = RoundedCornerShape(if (usesMiuix) MiuixLayout.controlRadius else Be.Radius.input)
     Box(modifier) {
         Row(
             Modifier
                 .pressScale(press.value)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(Be.Radius.input))
-                .background(pressedFill(press.value, Be.Colors.field, Be.Colors.rowHigh))
+                .clip(shape)
+                .background(pressedFill(press.value, if (title != null) Color.Transparent else fieldSurface, appColors.rowHigh))
+                .controlOutline(shape, separated = title == null)
                 .then(press.modifier)
-                .heightIn(min = Be.Size.fieldHeight)
+                .heightIn(min = if (usesMiuix) MiuixLayout.rowHeight else Be.Size.fieldHeight)
                 .alpha(if (enabled) 1f else 0.42f)
-                .padding(start = Be.Space.xl, end = Be.Space.m + 2.dp),
+                .padding(start = if (title == null) Be.Space.xl else 0.dp, end = if (title == null) Be.Space.m + 2.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (title != null) {
+                Text(
+                    text = title,
+                    color = appColors.textPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f).padding(end = Be.Space.m),
+                )
+            }
             Text(
                 text = options.getOrNull(safeIndex) ?: placeholder,
-                color = Be.Colors.textPrimary,
-                fontSize = Be.Type.rowTitle,
+                color = if (title != null) appColors.textSecondary else appColors.textPrimary,
+                fontSize = if (title == null) Be.Type.rowTitle else 16.sp,
+                textAlign = if (title == null) TextAlign.Start else TextAlign.End,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(Be.Space.s))
-            Caret(Be.Colors.accent)
+            Caret(if (title != null) appColors.textSecondary else appColors.accent)
         }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            containerColor = Be.Colors.panelHigh,
+            containerColor = appColors.panelHigh,
         ) {
             options.forEachIndexed { index, option ->
                 DropdownMenuItem(
                     text = {
                         Text(
                             text = option,
-                            color = if (index == safeIndex) Be.Colors.accent else Be.Colors.textPrimary,
+                            color = if (index == safeIndex) appColors.accentText else appColors.textPrimary,
                             fontSize = Be.Type.rowTitle,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -768,7 +905,7 @@ fun SearchableSelect(
                 .pressScale(press.value)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Be.Radius.input))
-                .background(pressedFill(press.value, Be.Colors.field, Be.Colors.rowHigh))
+                .background(pressedFill(press.value, fieldSurface, appColors.rowHigh))
                 .then(press.modifier)
                 .heightIn(min = Be.Size.fieldHeight)
                 .alpha(if (enabled) 1f else 0.42f)
@@ -777,7 +914,7 @@ fun SearchableSelect(
         ) {
             Text(
                 text = options.getOrNull(safeIndex) ?: placeholder,
-                color = Be.Colors.textPrimary,
+                color = appColors.textPrimary,
                 fontSize = Be.Type.rowTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -785,7 +922,7 @@ fun SearchableSelect(
             )
             Spacer(Modifier.width(Be.Space.s))
             Caret(
-                color = Be.Colors.accent,
+                color = appColors.accentText,
                 modifier = Modifier.rotate(caret),
             )
         }
@@ -861,7 +998,7 @@ private fun SearchSelectMenu(
             .width(width)
             .heightIn(max = 360.dp)
             .clip(RoundedCornerShape(Be.Radius.card))
-            .background(Be.Colors.panelHigh)
+            .background(appColors.panelHigh)
             .padding(Be.Space.m),
     ) {
         SearchField(
@@ -873,7 +1010,7 @@ private fun SearchSelectMenu(
         if (matches.isEmpty()) {
             Text(
                 text = stringResource(R.string.search_empty),
-                color = Be.Colors.textMuted,
+                color = appColors.textMuted,
                 fontSize = Be.Type.bodySmall,
                 modifier = Modifier.padding(horizontal = Be.Space.m, vertical = Be.Space.l),
             )
@@ -889,7 +1026,7 @@ private fun SearchSelectMenu(
                     val rowPress = rememberPressed(true) { onPick(index) }
                     Text(
                         text = options[index],
-                        color = if (selected) Be.Colors.accent else Be.Colors.textPrimary,
+                        color = if (selected) appColors.accentText else appColors.textPrimary,
                         fontSize = Be.Type.rowTitle,
                         fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                         maxLines = 1,
@@ -900,8 +1037,8 @@ private fun SearchSelectMenu(
                             .clip(RoundedCornerShape(Be.Radius.input))
                             .background(
                                 when {
-                                    rowPress.value -> Be.Colors.rowHigh
-                                    selected -> Be.Colors.accentSoft
+                                    rowPress.value -> appColors.rowHigh
+                                    selected -> appColors.accentSoft
                                     else -> Color.Transparent
                                 },
                             )
@@ -932,18 +1069,18 @@ fun SearchField(
             .fillMaxWidth()
             .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(Be.Radius.input))
-            .background(Be.Colors.field)
+            .background(appColors.field)
             .padding(horizontal = Be.Space.l),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SearchMark(Be.Colors.textMuted)
+        SearchMark(appColors.textMuted)
         Spacer(Modifier.width(Be.Space.m))
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
-            textStyle = TextStyle(color = Be.Colors.textPrimary, fontSize = Be.Type.rowTitle),
-            cursorBrush = SolidColor(Be.Colors.accent),
+            textStyle = TextStyle(color = appColors.textPrimary, fontSize = Be.Type.rowTitle),
+            cursorBrush = SolidColor(appColors.accent),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Text,
                 imeAction = ImeAction.Search,
@@ -956,7 +1093,7 @@ fun SearchField(
                     if (value.isEmpty()) {
                         Text(
                             text = hint,
-                            color = Be.Colors.textMuted,
+                            color = appColors.textMuted,
                             fontSize = Be.Type.rowTitle,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -969,7 +1106,7 @@ fun SearchField(
         if (value.isNotEmpty()) {
             Text(
                 text = "×",
-                color = Be.Colors.textSecondary,
+                color = appColors.textSecondary,
                 fontSize = 18.sp,
                 modifier = Modifier
                     .padding(start = Be.Space.s)
@@ -997,7 +1134,7 @@ fun SearchIconButton(
             .pressScale(press.value, 0.92f)
             .size(40.dp)
             .clip(RoundedCornerShape(Be.Radius.input))
-            .background(pressedFill(press.value || open, Be.Colors.field, Be.Colors.rowHigh))
+            .background(pressedFill(press.value || open, appColors.field, appColors.rowHigh))
             .then(press.modifier)
             .then(
                 if (contentDescription == null) {
@@ -1014,9 +1151,9 @@ fun SearchIconButton(
             label = "searchIcon",
         ) { opened ->
             if (opened) {
-                Text(text = "×", color = Be.Colors.textPrimary, fontSize = 18.sp)
+                Text(text = "×", color = appColors.textPrimary, fontSize = 18.sp)
             } else {
-                SearchMark(Be.Colors.textPrimary)
+                SearchMark(appColors.textPrimary)
             }
         }
     }
@@ -1097,13 +1234,13 @@ fun TextFieldRow(
         onValueChange = { next -> onValueChange(next.take(maxLength)) },
         enabled = enabled,
         singleLine = true,
-        textStyle = TextStyle(color = Be.Colors.textPrimary, fontSize = Be.Type.rowTitle),
-        cursorBrush = SolidColor(Be.Colors.accent),
+        textStyle = TextStyle(color = appColors.textPrimary, fontSize = Be.Type.rowTitle),
+        cursorBrush = SolidColor(appColors.accent),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.input))
-            .background(Be.Colors.field)
+            .background(appColors.field)
             .alpha(if (enabled) 1f else 0.42f)
             .onFocusChanged { state ->
                 if (focused && !state.isFocused) onCommit()
@@ -1113,7 +1250,7 @@ fun TextFieldRow(
         decorationBox = { inner ->
             Box(contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) {
-                    Text(text = hint, color = Be.Colors.textMuted, fontSize = Be.Type.rowTitle)
+                    Text(text = hint, color = appColors.textMuted, fontSize = Be.Type.rowTitle)
                 }
                 inner()
             }
@@ -1130,10 +1267,26 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    if (usesMiuix) {
+        val colors = miuixControlColors
+        MiuixTextButton(
+            text = text,
+            onClick = onClick,
+            modifier = modifier.fillMaxWidth(),
+            enabled = enabled,
+            cornerRadius = MiuixLayout.controlRadius,
+            minHeight = Be.Size.buttonHeight,
+            colors = MiuixButtonDefaults.textButtonColorsPrimary(
+                color = colors.activeTrack,
+                textColor = colors.onActiveTrack,
+            ),
+        )
+        return
+    }
     val press = rememberPressed(enabled) { onClick() }
     val fill = when {
-        !enabled -> Be.Colors.accent.copy(alpha = 0.35f)
-        else -> pressedFill(press.value, Be.Colors.accent, Be.Colors.accentPressed)
+        !enabled -> appColors.accent.copy(alpha = 0.35f)
+        else -> pressedFill(press.value, appColors.accent, appColors.accentPressed)
     }
     Box(
         modifier
@@ -1147,11 +1300,26 @@ fun PrimaryButton(
     ) {
         Text(
             text = text,
-            color = Be.Colors.accentInk,
+            color = appColors.accentInk,
             fontSize = Be.Type.rowTitle,
             fontWeight = FontWeight.Medium,
         )
     }
+}
+
+@Composable
+internal fun AppTextButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        colors = if (usesMiuix) ButtonDefaults.textButtonColors(contentColor = appActionText)
+        else ButtonDefaults.textButtonColors(),
+        content = content,
+    )
 }
 
 @Composable
@@ -1161,12 +1329,25 @@ fun GhostButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    if (usesMiuix) {
+        val fill = if (LocalMiuixCard.current) appColors.insetControl else appColors.row
+        MiuixTextButton(
+            text = text,
+            onClick = onClick,
+            modifier = modifier.controlOutline(RoundedCornerShape(MiuixLayout.controlRadius)),
+            enabled = enabled,
+            cornerRadius = MiuixLayout.controlRadius,
+            minHeight = Be.Size.buttonHeight,
+            colors = MiuixButtonDefaults.textButtonColors(color = fill),
+        )
+        return
+    }
     val press = rememberPressed(enabled) { onClick() }
     Box(
         modifier
             .pressScale(press.value, 0.96f)
             .clip(RoundedCornerShape(Be.Radius.button))
-            .background(pressedFill(press.value, Be.Colors.row, Be.Colors.rowHigh))
+            .background(pressedFill(press.value, appColors.row, appColors.rowHigh))
             .then(press.modifier)
             .alpha(if (enabled) 1f else 0.42f)
             .heightIn(min = Be.Size.buttonHeight),
@@ -1174,7 +1355,7 @@ fun GhostButton(
     ) {
         Text(
             text = text,
-            color = Be.Colors.textPrimary,
+            color = appColors.textPrimary,
             fontSize = Be.Type.value,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = Be.Space.xl),
@@ -1212,13 +1393,13 @@ fun PageTabs(
                 .fillMaxWidth()
                 .height(Be.Size.dockHeight)
                 .clip(RoundedCornerShape(Be.Radius.card))
-                .background(Be.Colors.panel)
+                .background(appColors.panel)
                 .padding(horizontal = 6.dp, vertical = 5.dp),
         ) {
             if (labels.isNotEmpty() && selectedIndex in labels.indices) {
                 val travel by animateFloatAsState(
                     targetValue = selectedIndex.toFloat(),
-                    animationSpec = BeMotion.spatial(),
+                    animationSpec = BeMotion.tabTravel(),
                     label = "dock",
                 )
                 Box(
@@ -1227,7 +1408,7 @@ fun PageTabs(
                         .fillMaxWidth(1f / labels.size)
                         .graphicsLayer { translationX = travel * size.width }
                         .clip(RoundedCornerShape(Be.Radius.compact))
-                        .background(Be.Colors.accent),
+                        .background(if (usesMiuix) miuixControlColors.activeTrack else appColors.accent),
                 )
             }
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
@@ -1252,16 +1433,18 @@ private fun TabItem(
     modifier: Modifier,
 ) {
     val press = rememberPressed(enabled = true) { onClick() }
+    val miuixDock = !vertical && usesMiuix
+    val selectedInk = if (miuixDock) miuixControlColors.onActiveTrack else appColors.accentInk
     val ink by animateColorAsState(
-        targetValue = if (selected) Be.Colors.accentInk else Be.Colors.textSecondary,
+        targetValue = if (selected) selectedInk else appColors.textSecondary,
         animationSpec = BeMotion.spatial(),
         label = "tabInk",
     )
     val fillTarget = when {
-        vertical && selected && press.value -> Be.Colors.accentPressed
-        vertical && selected -> Be.Colors.accent
-        !vertical && selected && press.value -> Be.Colors.accentPressed
-        press.value -> Be.Colors.rowHigh
+        vertical && selected && press.value -> appColors.accentPressed
+        vertical && selected -> appColors.accent
+        !vertical && selected && press.value -> if (miuixDock) Color.Transparent else appColors.accentPressed
+        press.value -> appColors.rowHigh
         else -> Color.Transparent
     }
     val fill by animateColorAsState(fillTarget, BeMotion.effects(), label = "tabFill")
@@ -1549,7 +1732,7 @@ fun ColorSwatch(
             .pressScale(press.value, 0.92f)
             .size(Be.Size.swatch)
             .clip(RoundedCornerShape(Be.Radius.chip))
-            .background(parseHex(hex) ?: Be.Colors.row)
+            .background(parseHex(hex) ?: appColors.row)
             .then(press.modifier),
         contentAlignment = Alignment.Center,
     ) {
@@ -1572,7 +1755,7 @@ fun ColorPreview(hex: String, modifier: Modifier = Modifier) {
         modifier
             .size(52.dp)
             .clip(RoundedCornerShape(Be.Radius.inner))
-            .background(parseHex(hex) ?: Be.Colors.row),
+            .background(parseHex(hex) ?: appColors.row),
     )
 }
 

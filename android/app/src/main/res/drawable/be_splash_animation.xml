@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/be_splash_vector">
+    <target android:name="b_upper" android:animation="@animator/be_b_upper" />
+    <target android:name="b_stem" android:animation="@animator/be_b_stem" />
+    <target android:name="b_lower" android:animation="@animator/be_b_lower" />
+    <target android:name="e_body" android:animation="@animator/be_e_body" />
+    <target android:name="b_final" android:animation="@animator/be_b_final" />
+    <target android:name="e_final" android:animation="@animator/be_e_final" />
+</animated-vector>

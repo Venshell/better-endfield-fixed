@@ -222,7 +222,7 @@ class MediaScreenActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
-        setContent { BetterEndfieldTheme { MediaScreenPage(onBack = ::finish) } }
+        setContent { AppUiTheme(window) { MediaScreenPage(onBack = ::finish) } }
     }
 }
 
@@ -274,14 +274,14 @@ private fun MediaScreenPage(onBack: () -> Unit) {
     }
     val manyFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> importFiles(uris) }
 
-    Surface(color = Be.Colors.background, modifier = Modifier.fillMaxSize()) {
+    Surface(color = appColors.background, modifier = Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = Be.Size.contentMaxWidth).fillMaxWidth()
                     .verticalScroll(rememberScrollState())
                     .padding(start = Be.Space.gutter, end = Be.Space.gutter,
                         top = Be.Space.m, bottom = Be.Space.footer),
-                verticalArrangement = Arrangement.spacedBy(Be.Space.l),
+                verticalArrangement = Arrangement.spacedBy(appSectionGap),
             ) {
                 BackButton(onBack)
                 SectionCard(

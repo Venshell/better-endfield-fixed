@@ -20,7 +20,7 @@ import androidx.compose.ui.res.stringResource
  */
 @Composable
 fun FirstPersonPage(state: SettingsState) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         SectionCard(
             eyebrow = stringResource(R.string.camera_card_eyebrow),
             title = stringResource(R.string.page_first_person),

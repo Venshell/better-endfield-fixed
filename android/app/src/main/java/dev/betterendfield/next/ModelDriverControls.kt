@@ -64,14 +64,14 @@ internal fun ModelDriverControls(preview: Boolean) {
         }
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.model_driver_title), color = Be.Colors.textPrimary)
+        Text(stringResource(R.string.model_driver_title), color = appColors.textPrimary)
         when {
-            preview -> Text(stringResource(R.string.model_driver_preview), color = Be.Colors.textSecondary)
-            !snapshot.available() -> Text(stringResource(R.string.model_driver_unavailable), color = Be.Colors.textSecondary)
-            snapshot.drivers().isEmpty() -> Text(stringResource(R.string.model_driver_empty), color = Be.Colors.textSecondary)
+            preview -> Text(stringResource(R.string.model_driver_preview), color = appColors.textSecondary)
+            !snapshot.available() -> Text(stringResource(R.string.model_driver_unavailable), color = appColors.textSecondary)
+            snapshot.drivers().isEmpty() -> Text(stringResource(R.string.model_driver_empty), color = appColors.textSecondary)
         }
         if (commandError != ModelDriverControl.Error.NONE) {
-            Text(stringResource(R.string.model_driver_rejected), color = Be.Colors.danger)
+            Text(stringResource(R.string.model_driver_rejected), color = appColors.danger)
         }
         snapshot.drivers().forEach { driver ->
             fun send(state: Int, speed: Int = driver.speed()) {
@@ -87,9 +87,9 @@ internal fun ModelDriverControls(preview: Boolean) {
                     else -> R.string.model_driver_stopped
                 }
                 Text(stringResource(R.string.model_driver_status, driver.name(), stringResource(status)),
-                    color = Be.Colors.textPrimary)
+                    color = appColors.textPrimary)
                 Text(stringResource(if (driver.once()) R.string.model_driver_once else R.string.model_driver_loop),
-                    color = Be.Colors.textSecondary)
+                    color = appColors.textSecondary)
                 val enabled = !preview && shown && resumed && snapshot.available()
                 Row(Modifier.fillMaxWidth()) {
                     TextButton(onClick = { send(1) }, enabled = enabled) {
@@ -105,7 +105,7 @@ internal fun ModelDriverControls(preview: Boolean) {
                 }
                 var speed by remember(driver.commandId(), driver.speed()) { mutableStateOf(driver.speed().toFloat()) }
                 Text(stringResource(R.string.model_driver_speed, String.format(Locale.ROOT, "%.2f", speed / 1000)),
-                    color = Be.Colors.textSecondary)
+                    color = appColors.textSecondary)
                 Slider(value = speed, onValueChange = { speed = it },
                     valueRange = 250f..4000f, steps = 74,
                     enabled = enabled && driver.state() != 3,

@@ -21,10 +21,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,8 +60,8 @@ fun BemInstallScreen(state: BemInstallState) {
     var backfillBaseline by remember { mutableStateOf(false) }
 
     Surface(
-        color = Be.Colors.background,
-        contentColor = Be.Colors.textPrimary,
+        color = appColors.background,
+        contentColor = appColors.textPrimary,
         modifier = Modifier.fillMaxSize(),
     ) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
@@ -78,7 +76,7 @@ fun BemInstallScreen(state: BemInstallState) {
                         top = Be.Space.page,
                         bottom = Be.Space.footer,
                     ),
-                verticalArrangement = Arrangement.spacedBy(Be.Space.l),
+                verticalArrangement = Arrangement.spacedBy(appSectionGap),
             ) {
                 SectionCard(
                     eyebrow = "BEM · PACKAGE MANAGER",
@@ -98,7 +96,7 @@ fun BemInstallScreen(state: BemInstallState) {
                         enabled = !state.busy,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text(stringResource(R.string.bem_pending_external_import), color = Be.Colors.textSecondary)
+                    Text(stringResource(R.string.bem_pending_external_import), color = appColors.textSecondary)
                 }
 
                 GhostButton(
@@ -156,10 +154,10 @@ fun BemInstallScreen(state: BemInstallState) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = stringResource(R.string.bem_keep_local_copies),
-                            color = Be.Colors.textPrimary,
+                            color = appColors.textPrimary,
                             modifier = Modifier.weight(1f),
                         )
-                        Switch(
+                        AppSwitch(
                             checked = state.keepLocalCopies,
                             onCheckedChange = state::changeLocalCopies,
                             enabled = !state.busy,
@@ -216,7 +214,7 @@ fun BemInstallScreen(state: BemInstallState) {
                     PanelCard {
                         Text(
                             text = "还没有模型包\n点击上方「导入 BEM / ZIP」添加模型。",
-                            color = Be.Colors.textSecondary,
+                            color = appColors.textSecondary,
                             fontSize = 14.sp,
                             lineHeight = 21.sp,
                             modifier = Modifier
@@ -257,11 +255,11 @@ fun BemInstallScreen(state: BemInstallState) {
             onDismissRequest = { astcTarget = null },
             title = { Text(stringResource(R.string.next_bem_astc_title, pkg.name)) },
             text = { Text(stringResource(R.string.next_bem_astc_confirm)) },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { AppTextButton(onClick = {
                 state.convertAstc(pkg.generation)
                 astcTarget = null
             }) { Text(stringResource(R.string.next_bem_convert_astc)) } },
-            dismissButton = { TextButton(onClick = { astcTarget = null }) { Text(stringResource(android.R.string.cancel)) } },
+            dismissButton = { AppTextButton(onClick = { astcTarget = null }) { Text(stringResource(android.R.string.cancel)) } },
         )
     }
     if (repairNormals) {
@@ -269,30 +267,30 @@ fun BemInstallScreen(state: BemInstallState) {
             onDismissRequest = { repairNormals = false },
             title = { Text(stringResource(R.string.next_bem_repair_normals)) },
             text = { Text(stringResource(R.string.next_bem_repair_confirm)) },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { AppTextButton(onClick = {
                 state.repairNormals()
                 repairNormals = false
             }) { Text(stringResource(android.R.string.ok)) } },
-            dismissButton = { TextButton(onClick = { repairNormals = false }) { Text(stringResource(android.R.string.cancel)) } },
+            dismissButton = { AppTextButton(onClick = { repairNormals = false }) { Text(stringResource(android.R.string.cancel)) } },
         )
     }
     if (backfillBaseline) {
         AlertDialog(
             onDismissRequest = { backfillBaseline = false },
-            containerColor = Be.Colors.panelHigh,
-            titleContentColor = Be.Colors.textPrimary,
-            textContentColor = Be.Colors.textSecondary,
+            containerColor = appColors.panelHigh,
+            titleContentColor = appColors.textPrimary,
+            textContentColor = appColors.textSecondary,
             title = { Text(stringResource(R.string.bem_backfill_baseline)) },
             text = { Text(stringResource(R.string.bem_backfill_confirm_message)) },
             confirmButton = {
-                TextButton(onClick = {
+                AppTextButton(onClick = {
                     state.backfillBaselines()
                     backfillBaseline = false
-                }) { Text(stringResource(R.string.bem_backfill_confirm), color = Be.Colors.accent) }
+                }) { Text(stringResource(R.string.bem_backfill_confirm), color = appActionText) }
             },
             dismissButton = {
-                TextButton(onClick = { backfillBaseline = false }) {
-                    Text(stringResource(android.R.string.cancel), color = Be.Colors.textSecondary)
+                AppTextButton(onClick = { backfillBaseline = false }) {
+                    Text(stringResource(android.R.string.cancel), color = appColors.textSecondary)
                 }
             },
         )
@@ -305,9 +303,9 @@ fun BemInstallScreen(state: BemInstallState) {
         } }
         AlertDialog(
             onDismissRequest = { state.cancelBundle(bundle) },
-            containerColor = Be.Colors.panelHigh,
-            titleContentColor = Be.Colors.textPrimary,
-            textContentColor = Be.Colors.textSecondary,
+            containerColor = appColors.panelHigh,
+            titleContentColor = appColors.textPrimary,
+            textContentColor = appColors.textSecondary,
             title = { Text("导入 ZIP 中的模型包") },
             text = {
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
@@ -319,26 +317,26 @@ fun BemInstallScreen(state: BemInstallState) {
                                 if (it) bundle.deselected.remove(generation) else bundle.deselected.add(generation)
                             })
                             Column(Modifier.weight(1f)) {
-                                Text(prepared.report.optString("name", prepared.item.name), color = Be.Colors.textPrimary)
+                                Text(prepared.report.optString("name", prepared.item.name), color = appColors.textPrimary)
                                 Text(prepared.report.optString("target_id", prepared.report.optString("character_id")),
-                                    color = Be.Colors.textSecondary, fontSize = 11.sp)
+                                    color = appColors.textSecondary, fontSize = 11.sp)
                             }
                         }
                     }
                     if (bundle.issues.isNotEmpty()) {
                         Text("未通过校验：\n" + bundle.issues.joinToString("\n"),
-                            color = Be.Colors.danger, fontSize = 11.sp)
+                            color = appColors.danger, fontSize = 11.sp)
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { state.importSelected(bundle, selected.toList()) }) {
-                    Text("导入所选", color = Be.Colors.accent)
+                AppTextButton(onClick = { state.importSelected(bundle, selected.toList()) }) {
+                    Text("导入所选", color = appActionText)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { state.cancelBundle(bundle) }) {
-                    Text("取消", color = Be.Colors.textSecondary)
+                AppTextButton(onClick = { state.cancelBundle(bundle) }) {
+                    Text("取消", color = appColors.textSecondary)
                 }
             },
         )
@@ -346,14 +344,14 @@ fun BemInstallScreen(state: BemInstallState) {
     if (discardDraft) {
         AlertDialog(
             onDismissRequest = { discardDraft = false },
-            containerColor = Be.Colors.panelHigh,
+            containerColor = appColors.panelHigh,
             title = { Text(stringResource(R.string.bem_reload_latest)) },
             text = { Text(stringResource(R.string.bem_discard_draft_hint)) },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { AppTextButton(onClick = {
                 state.discardDraftAndReload()
                 discardDraft = false
             }) { Text(stringResource(R.string.bem_discard_draft)) } },
-            dismissButton = { TextButton(onClick = { discardDraft = false }) {
+            dismissButton = { AppTextButton(onClick = { discardDraft = false }) {
                 Text(stringResource(R.string.bem_keep_draft))
             } },
         )
@@ -361,22 +359,22 @@ fun BemInstallScreen(state: BemInstallState) {
     if (target != null) {
         AlertDialog(
             onDismissRequest = { pendingRemoval = null },
-            containerColor = Be.Colors.panelHigh,
-            titleContentColor = Be.Colors.textPrimary,
-            textContentColor = Be.Colors.textSecondary,
+            containerColor = appColors.panelHigh,
+            titleContentColor = appColors.textPrimary,
+            textContentColor = appColors.textSecondary,
             title = { Text("移除「${target.name}」？") },
             text = {
                 Text("将删除此模型包的安装文件和配置。下载目录中的原始 BEM 文件会保留，可重新导入。游戏内已加载的模型需重启游戏后恢复。")
             },
             confirmButton = {
-                TextButton(onClick = {
+                AppTextButton(onClick = {
                     state.remove(target.generation)
                     pendingRemoval = null
-                }) { Text("移除", color = Be.Colors.danger) }
+                }) { Text("移除", color = appColors.danger) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRemoval = null }) {
-                    Text("取消", color = Be.Colors.textSecondary)
+                AppTextButton(onClick = { pendingRemoval = null }) {
+                    Text("取消", color = appColors.textSecondary)
                 }
             },
         )
@@ -396,21 +394,21 @@ private fun PackageCard(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = pkg.name,
-                color = Be.Colors.textPrimary,
+                color = appColors.textPrimary,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
-            Switch(
+            AppSwitch(
                 checked = pkg.enabled,
                 onCheckedChange = { pkg.enabled = it },
                 enabled = !busy,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Be.Colors.accent,
-                    checkedTrackColor = Be.Colors.accentSoft,
+                materialColors = SwitchDefaults.colors(
+                    checkedThumbColor = appColors.accent,
+                    checkedTrackColor = appColors.accentSoft,
                     checkedBorderColor = Color.Transparent,
-                    uncheckedThumbColor = Be.Colors.switchThumbOff,
-                    uncheckedTrackColor = Be.Colors.switchTrackOff,
+                    uncheckedThumbColor = appColors.switchThumbOff,
+                    uncheckedTrackColor = appColors.switchTrackOff,
                     uncheckedBorderColor = Color.Transparent,
                 ),
             )
@@ -418,7 +416,7 @@ private fun PackageCard(
 
         Text(
             text = if (pkg.convertedTextures) "手机纹理已就绪" else "原始纹理 · 可按需转换",
-            color = Be.Colors.textSecondary,
+            color = appColors.textSecondary,
             fontSize = Be.Type.bodySmall,
             modifier = Modifier.padding(top = Be.Space.hairline),
         )
@@ -479,7 +477,7 @@ private fun PackageCard(
         pkg.problem?.let { message ->
             Text(
                 text = message,
-                color = Be.Colors.danger,
+                color = appColors.danger,
                 fontSize = Be.Type.bodySmall,
                 lineHeight = 16.sp,
                 modifier = Modifier.padding(top = Be.Space.l),
@@ -518,7 +516,7 @@ private fun ProgressBar(fraction: Float?, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .height(8.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(Be.Colors.track),
+            .background(appColors.track),
     ) {
         val resolved = fraction?.coerceIn(0.004f, 1f) ?: 1f
         Box(
@@ -526,7 +524,7 @@ private fun ProgressBar(fraction: Float?, modifier: Modifier = Modifier) {
                 .fillMaxHeight()
                 .fillMaxWidth(resolved)
                 .background(
-                    if (fraction == null) Be.Colors.accent.copy(alpha = 0.45f) else Be.Colors.accent,
+                    if (fraction == null) appColors.accent.copy(alpha = 0.45f) else appColors.accent,
                 ),
         )
     }

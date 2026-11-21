@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 
 /**
  * Features the home search can open. A row is a name the user would type and
@@ -81,6 +82,8 @@ fun HomeSearchPanel(
     onOpenPage: (Int) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    topPadding: Dp = Be.Space.none,
+    bottomPadding: Dp = Be.Space.l,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
@@ -93,7 +96,7 @@ fun HomeSearchPanel(
     Column(
         modifier
             .fillMaxSize()
-            .padding(horizontal = Be.Space.gutter),
+            .padding(start = Be.Space.gutter, end = Be.Space.gutter, top = topPadding),
     ) {
         SearchField(
             value = query,
@@ -104,7 +107,7 @@ fun HomeSearchPanel(
         if (rows.isEmpty()) {
             Text(
                 text = stringResource(R.string.search_empty),
-                color = Be.Colors.textMuted,
+                color = appColors.textMuted,
                 fontSize = Be.Type.bodySmall,
                 modifier = Modifier.padding(top = Be.Space.l, start = Be.Space.s),
             )
@@ -114,7 +117,7 @@ fun HomeSearchPanel(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(top = Be.Space.m, bottom = Be.Space.l),
+                    .padding(top = Be.Space.m, bottom = bottomPadding),
                 verticalArrangement = Arrangement.spacedBy(Be.Space.m),
             ) {
                 rows.forEach { (entry, title, place) ->
@@ -142,7 +145,7 @@ private fun HomeSearchRow(title: String, place: String, onClick: () -> Unit) {
             .pressScale(press.value)
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(pressedFill(press.value, Be.Colors.row, Be.Colors.rowHigh))
+            .background(pressedFill(press.value, appColors.row, appColors.rowHigh))
             .then(press.modifier)
             .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
         verticalAlignment = Alignment.CenterVertically,
@@ -150,21 +153,21 @@ private fun HomeSearchRow(title: String, place: String, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = Be.Colors.textPrimary,
+                color = appColors.textPrimary,
                 fontSize = Be.Type.rowTitle,
                 fontWeight = FontWeight.Medium,
             )
             if (place.isNotEmpty() && place != title) {
                 Text(
                     text = place,
-                    color = Be.Colors.textMuted,
+                    color = appColors.textMuted,
                     fontSize = Be.Type.bodySmall,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
         Caret(
-            color = Be.Colors.textSecondary,
+            color = appColors.textSecondary,
             modifier = Modifier
                 .padding(start = Be.Space.m)
                 .rotate(-90f),

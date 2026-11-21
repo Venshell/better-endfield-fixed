@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun CharacterPage(state: SettingsState, onInstallBem: () -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         PanelCard {
             SubPageRow(
                 title = stringResource(R.string.custom_model_title),
@@ -72,7 +72,7 @@ fun CharacterPage(state: SettingsState, onInstallBem: () -> Unit) {
 @Composable
 fun AppearancePage(state: SettingsState, onInstallBem: () -> Unit) {
     val packages = state.appearancePackages
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         SectionCard(
             eyebrow = "BEM",
             title = stringResource(R.string.custom_model_title),
@@ -112,14 +112,14 @@ private fun PackageRow(pkg: BemPackage, onOpen: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(Be.Colors.row)
+            .background(appColors.row)
             .clickable(onClick = onOpen)
             .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = pkg.name,
-                color = Be.Colors.textPrimary,
+                color = appColors.textPrimary,
                 fontSize = Be.Type.rowTitle,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
@@ -127,7 +127,7 @@ private fun PackageRow(pkg: BemPackage, onOpen: () -> Unit) {
             )
             Text(
                 text = stringResource(if (pkg.enabled) R.string.state_on else R.string.state_off),
-                color = if (pkg.enabled) Be.Colors.accent else Be.Colors.textMuted,
+                color = if (pkg.enabled) appColors.accentText else appColors.textMuted,
                 fontSize = Be.Type.bodySmall,
                 fontWeight = FontWeight.Medium,
             )
@@ -138,7 +138,7 @@ private fun PackageRow(pkg: BemPackage, onOpen: () -> Unit) {
             } else {
                 "纹理：原始"
             },
-            color = Be.Colors.textSecondary,
+            color = appColors.textSecondary,
             fontSize = Be.Type.bodySmall,
             modifier = Modifier.padding(top = 4.dp),
         )
@@ -352,7 +352,7 @@ fun VoicePage(state: SettingsState) {
             if (visible.isEmpty()) {
                 Text(
                     text = stringResource(R.string.search_empty),
-                    color = Be.Colors.textMuted,
+                    color = appColors.textMuted,
                     fontSize = Be.Type.bodySmall,
                     modifier = Modifier.padding(horizontal = Be.Space.s, vertical = Be.Space.m),
                 )
@@ -386,7 +386,7 @@ private fun VoiceRuleRow(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(Be.Colors.row)
+            .background(appColors.row)
             .padding(start = Be.Space.xl, top = Be.Space.l, end = Be.Space.m + 2.dp, bottom = Be.Space.l),
     ) {
         val narrow = maxWidth < 340.dp || fontScale >= 1.3f
@@ -418,7 +418,7 @@ private fun VoiceRuleRow(
 private fun CharacterName(name: String, modifier: Modifier = Modifier) {
     Text(
         text = name,
-        color = Be.Colors.textPrimary,
+        color = appColors.textPrimary,
         fontSize = 14.sp,
         maxLines = 2,
         modifier = modifier,

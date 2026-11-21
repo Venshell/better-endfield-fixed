@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_theme_title">應用程式主題</string>
+    <string name="app_theme_industrial">工業風</string>
+    <string name="app_theme_miuix_light">Miuix 淺色</string>
+    <string name="app_theme_miuix_dark">Miuix 深色</string>
+</resources>

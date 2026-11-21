@@ -7,7 +7,6 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -50,7 +49,7 @@ class MmdImportActivity : ComponentActivity() {
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         model = MmdImportState(applicationContext, savedInstanceState?.getString("session"))
         model.pendingSlot = savedInstanceState?.getString("slot")
-        setContent { BetterEndfieldTheme { MmdImportPage(model, ::finish) } }
+        setContent { AppUiTheme(window) { MmdImportPage(model, ::finish) } }
     }
 
     override fun onResume() {
@@ -172,7 +171,6 @@ internal class MmdImportState(private val context: Context, saved: String?) {
 
 @Composable
 private fun MmdImportPage(model: MmdImportState, onBack: () -> Unit) {
-    BackHandler(onBack = onBack)
     val archive = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) model.prepare(uri, false)
     }
@@ -184,11 +182,11 @@ private fun MmdImportPage(model: MmdImportState, onBack: () -> Unit) {
         model.pendingSlot = null
         if (uri != null && slot != null) model.prepare(uri, false, slot)
     }
-    Surface(color = Be.Colors.background, contentColor = Be.Colors.textPrimary) {
+    Surface(color = appColors.background, contentColor = appColors.textPrimary) {
         Column(
             Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())
                 .padding(horizontal = Be.Space.gutter, vertical = Be.Space.page),
-            verticalArrangement = Arrangement.spacedBy(Be.Space.l),
+            verticalArrangement = Arrangement.spacedBy(appSectionGap),
         ) {
             GhostButton(stringResource(R.string.mmd_alignment_back), onBack, Modifier.fillMaxWidth())
             SectionCard(eyebrow = "MMD", title = stringResource(R.string.mmd_alignment_import_title)) {

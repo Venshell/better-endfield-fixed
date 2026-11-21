@@ -723,4 +723,8 @@
     <string name="media_index_failed">媒体索引保存失败</string>
     <string name="next_link_open_failed">无法打开链接</string>
     <string name="next_close">关闭</string>
+    <string name="app_theme_title">应用主题</string>
+    <string name="app_theme_industrial">工业风</string>
+    <string name="app_theme_miuix_light">Miuix 浅色</string>
+    <string name="app_theme_miuix_dark">Miuix 深色</string>
 </resources>

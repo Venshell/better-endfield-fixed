@@ -65,7 +65,7 @@ fun MmdPage(state: SettingsState) {
         state.refreshMmdLibraryAfterImport()
     }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         SectionCard(
             eyebrow = "MMD · CAMERA",
             title = "MMD 舞蹈与运镜",
@@ -321,13 +321,13 @@ private fun WorkRow(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(Be.Colors.row)
+            .background(appColors.row)
             .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = title,
-                color = Be.Colors.textPrimary,
+                color = appColors.textPrimary,
                 fontSize = Be.Type.rowTitle,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
@@ -335,7 +335,7 @@ private fun WorkRow(
             if (selected) {
                 Text(
                     text = "播放中",
-                    color = Be.Colors.accent,
+                    color = appColors.accentText,
                     fontSize = Be.Type.caption,
                     fontWeight = FontWeight.Medium,
                 )
@@ -343,7 +343,7 @@ private fun WorkRow(
         }
         Text(
             text = subtitle,
-            color = Be.Colors.textSecondary,
+            color = appColors.textSecondary,
             fontSize = Be.Type.bodySmall,
             modifier = Modifier.padding(top = 3.dp),
         )
@@ -455,25 +455,25 @@ private fun SlotRow(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(Be.Colors.row)
+            .background(appColors.row)
             .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
     ) {
         Text(
             text = title,
-            color = Be.Colors.textPrimary,
+            color = appColors.textPrimary,
             fontSize = Be.Type.rowTitle,
             fontWeight = FontWeight.Medium,
         )
         Text(
             text = description,
-            color = Be.Colors.textSecondary,
+            color = appColors.textSecondary,
             fontSize = Be.Type.bodySmall,
             lineHeight = 16.sp,
             modifier = Modifier.padding(top = 3.dp),
         )
         Text(
             text = if (importing) "正在导入…" else value,
-            color = if (imported) Be.Colors.accent else Be.Colors.textMuted,
+            color = if (imported) appColors.accent else appColors.textMuted,
             fontSize = Be.Type.bodySmall,
             modifier = Modifier.padding(top = Be.Space.s),
         )

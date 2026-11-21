@@ -34,7 +34,7 @@ fun CameraMotionPage(state: SettingsState) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) state.importVmd(uri)
     }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         SectionCard(
             eyebrow = stringResource(R.string.camera_card_eyebrow),
             title = stringResource(R.string.page_camera_motion),

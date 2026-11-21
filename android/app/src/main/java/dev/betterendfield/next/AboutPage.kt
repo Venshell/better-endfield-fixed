@@ -7,7 +7,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -17,9 +19,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,6 +37,8 @@ import java.io.IOException
 @Composable
 fun AboutPage() {
     val context = LocalContext.current
+    val appearance = LocalAppAppearance.current
+    val selectAppearance = LocalSelectAppAppearance.current
     val activity = context as Activity
     val scope = rememberCoroutineScope()
     val preferences = remember(context) { FrameworkSettings.open(context) }
@@ -101,38 +110,48 @@ fun AboutPage() {
         }
     }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
-        SectionCard(
-            eyebrow = stringResource(R.string.about_eyebrow),
-            title = stringResource(R.string.page_about),
-            subtitle = stringResource(R.string.about_description),
-        ) {}
+    val languageTags = listOf("system", "zh-CN", "en")
+    val languagePreference: @Composable () -> Unit = {
+        AboutPreference(
+            title = stringResource(R.string.next_language),
+            options = listOf(stringResource(R.string.next_language_system), stringResource(R.string.next_language_zh), "English"),
+            selectedIndex = languageTags.indexOf(UiLanguagePolicy.normalize(language)).coerceAtLeast(0),
+            onSelect = { index ->
+                val selected = languageTags[index]
+                AppLanguage.select(context, selected)
+                language = selected
+                activity.recreate()
+            },
+        )
+    }
 
-        PanelCard {
-            CardTitle(stringResource(R.string.about_version))
-            BodyText("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.padding(top = Be.Space.m))
-            BodyText(stringResource(R.string.about_platform), Modifier.padding(top = Be.Space.s))
-            BodyText(stringResource(R.string.about_license_value), Modifier.padding(top = Be.Space.s))
-            BodyText(stringResource(R.string.about_modules_value), Modifier.padding(top = Be.Space.s))
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
+        if (usesMiuix) {
+            Column(Modifier.padding(horizontal = MiuixLayout.inset, vertical = Be.Space.xxl)) {
+                Text(stringResource(R.string.page_about), fontSize = 30.sp, color = appColors.textPrimary)
+                Text(appVersion, fontSize = 14.sp, color = appColors.textSecondary)
+            }
+        } else {
+            SectionCard(
+                eyebrow = stringResource(R.string.about_eyebrow),
+                title = stringResource(R.string.page_about),
+                subtitle = stringResource(R.string.about_description),
+            ) {}
+            AboutVersion()
         }
 
-        PanelCard {
-            CardTitle(stringResource(R.string.next_language))
-            SelectField(
-                options = listOf(stringResource(R.string.next_language_system), stringResource(R.string.next_language_zh), "English"),
-                selectedIndex = listOf("system", "zh-CN", "en").indexOf(UiLanguagePolicy.normalize(language)).coerceAtLeast(0),
-                onSelect = { index ->
-                    val selected = listOf("system", "zh-CN", "en")[index]
-                    AppLanguage.select(context, selected)
-                    language = selected
-                    activity.recreate()
-                },
-                modifier = Modifier.padding(top = Be.Space.m),
+        SettingsPreferenceCard {
+            AboutPreference(
+                title = stringResource(R.string.app_theme_title),
+                options = AppAppearance.entries.map { stringResource(it.label) },
+                selectedIndex = appearance.ordinal,
+                onSelect = { selectAppearance(AppAppearance.entries[it]) },
             )
+            if (usesMiuix) languagePreference()
         }
+        if (!usesMiuix) PanelCard { languagePreference() }
 
-        PanelCard {
-            CardTitle(stringResource(R.string.next_software_update))
+        SettingsGroup(stringResource(R.string.next_software_update)) {
             SwitchRow(
                 title = stringResource(R.string.next_auto_check),
                 description = stringResource(R.string.next_auto_check_hint),
@@ -142,7 +161,7 @@ fun AboutPage() {
                     preferences.edit().putBoolean(ModuleSettings.AUTO_CHECK_UPDATES, it).apply()
                 },
             )
-            GhostButton(
+            AboutAction(
                 text = stringResource(if (checking) R.string.next_checking else R.string.next_check_update),
                 enabled = !checking,
                 onClick = {
@@ -156,35 +175,32 @@ fun AboutPage() {
                         checking = false
                     }
                 },
-                modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
             )
-            if (updateStatus.isNotBlank()) BodyText(updateStatus, Modifier.padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.next_open_releases), { open(releaseUrl) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
+            if (updateStatus.isNotBlank()) BodyText(updateStatus, Modifier.padding(vertical = Be.Space.m))
+            AboutAction(stringResource(R.string.next_open_releases), { open(releaseUrl) })
         }
 
-        PanelCard {
-            CardTitle(stringResource(R.string.next_resources))
-            GhostButton(stringResource(R.string.next_import_resource), { importResource.launch(arrayOf("application/zip")) }, Modifier.fillMaxWidth().padding(top = Be.Space.m), !updating)
-            GhostButton(stringResource(R.string.next_update_core), { updateResources(false, false) }, Modifier.fillMaxWidth().padding(top = Be.Space.m), !updating)
-            GhostButton(stringResource(R.string.next_update_preview), { updateResources(true, false) }, Modifier.fillMaxWidth().padding(top = Be.Space.m), !updating)
-            GhostButton(stringResource(R.string.next_resume_resources), { updateResources(false, true) }, Modifier.fillMaxWidth().padding(top = Be.Space.m), !updating)
-            if (updating) GhostButton(stringResource(R.string.next_cancel_download), { DistributionUpdater.cancelled.set(true) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            if (resourceStatus.isNotBlank()) BodyText(resourceStatus, Modifier.padding(top = Be.Space.m))
+        SettingsGroup(stringResource(R.string.next_resources)) {
+            AboutAction(stringResource(R.string.next_import_resource), { importResource.launch(arrayOf("application/zip")) }, enabled = !updating)
+            AboutAction(stringResource(R.string.next_update_core), { updateResources(false, false) }, enabled = !updating)
+            AboutAction(stringResource(R.string.next_update_preview), { updateResources(true, false) }, enabled = !updating)
+            AboutAction(stringResource(R.string.next_resume_resources), { updateResources(false, true) }, enabled = !updating)
+            if (updating) AboutAction(stringResource(R.string.next_cancel_download), { DistributionUpdater.cancelled.set(true) })
+            if (resourceStatus.isNotBlank()) BodyText(resourceStatus, Modifier.padding(vertical = Be.Space.m))
         }
 
-        PanelCard {
-            CardTitle(stringResource(R.string.next_project))
-            GhostButton(stringResource(R.string.next_github), { open(ProjectLinks.REPOSITORY) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.next_upstream_github), { open(ProjectLinks.UPSTREAM_REPOSITORY) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.next_open_releases), { open(AppUpdateChecker.RELEASES) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.about_license), { open(ProjectLinks.LICENSE) }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
+        SettingsGroup(stringResource(R.string.next_project)) {
+            AboutAction(stringResource(R.string.next_github), { open(ProjectLinks.REPOSITORY) })
+            AboutAction(stringResource(R.string.next_upstream_github), { open(ProjectLinks.UPSTREAM_REPOSITORY) })
+            AboutAction(stringResource(R.string.next_open_releases), { open(AppUpdateChecker.RELEASES) })
+            AboutAction(stringResource(R.string.about_license), { open(ProjectLinks.LICENSE) })
         }
 
-        PanelCard {
-            CardTitle(stringResource(R.string.next_disclaimer))
+        SettingsGroup(stringResource(R.string.next_disclaimer)) {
             BodyText(stringResource(R.string.next_disclaimer_short), Modifier.padding(top = Be.Space.m))
-            GhostButton(stringResource(R.string.next_disclaimer_full), { showDisclaimer = true }, Modifier.fillMaxWidth().padding(top = Be.Space.m))
+            AboutAction(stringResource(R.string.next_disclaimer_full), { showDisclaimer = true })
         }
+        if (usesMiuix) AboutVersion()
         if (linkError) BodyText(stringResource(R.string.next_link_open_failed))
     }
 
@@ -194,4 +210,60 @@ fun AboutPage() {
         text = { Text(stringResource(R.string.next_disclaimer_text)) },
         confirmButton = { GhostButton(stringResource(R.string.next_close), { showDisclaimer = false }) },
     )
+}
+
+private val appVersion get() = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
+@Composable
+private fun AboutVersion() {
+    SettingsGroup(stringResource(R.string.about_version)) {
+        Column(Modifier.padding(vertical = if (usesMiuix) MiuixLayout.inset else Be.Space.none)) {
+            if (usesMiuix) {
+                BodyText(stringResource(R.string.about_description))
+            } else {
+                BodyText(appVersion, Modifier.padding(top = Be.Space.m))
+            }
+            BodyText(stringResource(R.string.about_platform), Modifier.padding(top = Be.Space.s))
+            BodyText(stringResource(R.string.about_license_value), Modifier.padding(top = Be.Space.s))
+            BodyText(stringResource(R.string.about_modules_value), Modifier.padding(top = Be.Space.s))
+        }
+    }
+}
+
+@Composable
+private fun AboutAction(text: String, onClick: () -> Unit, enabled: Boolean = true) {
+    if (!usesMiuix) {
+        GhostButton(text, onClick, Modifier.fillMaxWidth().padding(top = Be.Space.m), enabled)
+        return
+    }
+
+    val press = rememberPressed(enabled, onClick)
+    val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) -90f else 90f
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = MiuixLayout.rowHeight)
+            .pressScale(press.value)
+            .then(press.modifier)
+            .padding(vertical = Be.Space.s),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            color = if (enabled) appColors.textPrimary else appColors.textMuted,
+            fontSize = 16.sp,
+            modifier = Modifier.weight(1f).padding(end = Be.Space.m),
+        )
+        Caret(appColors.textSecondary, Modifier.rotate(direction))
+    }
+}
+
+@Composable
+private fun AboutPreference(title: String, options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
+    if (usesMiuix) {
+        SelectField(options, selectedIndex, onSelect, title = title)
+    } else {
+        CardTitle(title)
+        SelectField(options, selectedIndex, onSelect, modifier = Modifier.padding(top = Be.Space.m))
+    }
 }

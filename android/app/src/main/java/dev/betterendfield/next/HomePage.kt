@@ -7,12 +7,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,13 +32,12 @@ import androidx.compose.ui.unit.sp
  * that is only knowable from the journal, so the wording stays at "will apply on
  * the next launch" rather than "applied".
  */
-@Composable
-fun HomePage(state: SettingsState) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
-        GameManagementCard()
-        EnabledFeaturesCard(state)
-        PendingCard(state)
+internal fun LazyListScope.homePage(state: SettingsState, gameControl: GameControlController) {
+    item("game_management") { GameManagementCard(gameControl) }
+    item("enabled_features") { EnabledFeaturesCard(state) }
+    item("pending_changes") { PendingCard(state) }
 
+    item("appearance_summary") {
         PanelCard {
             CardTitle(stringResource(R.string.home_appearance_title))
             BodyText(
@@ -52,7 +50,9 @@ fun HomePage(state: SettingsState) {
                 modifier = Modifier.fillMaxWidth().padding(top = Be.Space.l),
             )
         }
+    }
 
+    item("login_summary") {
         PanelCard {
             CardTitle(stringResource(R.string.home_login_display_title))
             BodyText(
@@ -65,7 +65,9 @@ fun HomePage(state: SettingsState) {
                 modifier = Modifier.fillMaxWidth().padding(top = Be.Space.l),
             )
         }
+    }
 
+    item("shortcuts") {
         PanelCard {
             CardTitle(stringResource(R.string.home_shortcuts_title))
             ShortcutRow(
@@ -101,7 +103,7 @@ private fun EnabledFeaturesCard(state: SettingsState) {
             features.forEach { feature ->
                 Column(
                     Modifier.fillMaxWidth().padding(top = Be.Space.m)
-                        .clip(RoundedCornerShape(Be.Radius.row)).background(Be.Colors.row)
+                        .clip(RoundedCornerShape(Be.Radius.row)).background(appColors.row)
                         .clickable {
                             when (feature.destination) {
                                 HomeFeatureSummary.Destination.CHARACTERS -> state.openPage(SettingsPage.CHARACTERS)
@@ -124,14 +126,8 @@ private fun EnabledFeaturesCard(state: SettingsState) {
 }
 
 @Composable
-private fun GameManagementCard() {
-    val activity = LocalContext.current as? android.app.Activity ?: return
-    val controller = remember(activity) { GameControlController(activity) }
+private fun GameManagementCard(controller: GameControlController) {
     val game = controller.state
-    DisposableEffect(controller) {
-        controller.start()
-        onDispose { controller.close() }
-    }
 
     SectionCard(
         eyebrow = stringResource(R.string.game_management_eyebrow),
@@ -251,21 +247,21 @@ private fun ShortcutRow(
             .fillMaxWidth()
             .padding(top = Be.Space.s)
             .clip(RoundedCornerShape(Be.Radius.row))
-            .background(Be.Colors.row)
+            .background(appColors.row)
             .clickable(onClick = onClick)
             .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = title,
-            color = Be.Colors.textPrimary,
+            color = appColors.textPrimary,
             fontSize = Be.Type.rowTitle,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )
         Text(
             text = "›",
-            color = Be.Colors.accent,
+            color = appColors.accentText,
             fontSize = 20.sp,
         )
     }

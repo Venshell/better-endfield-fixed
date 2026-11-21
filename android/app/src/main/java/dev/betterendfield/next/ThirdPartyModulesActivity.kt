@@ -52,7 +52,7 @@ class ThirdPartyModulesActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
-        setContent { BetterEndfieldTheme { Content() } }
+        setContent { AppUiTheme(window) { Content() } }
         refresh()
     }
 
@@ -120,11 +120,11 @@ class ThirdPartyModulesActivity : ComponentActivity() {
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             if (uri != null) import(uri)
         }
-        Surface(color = Be.Colors.background, modifier = Modifier.fillMaxSize()) {
+        Surface(color = appColors.background, modifier = Modifier.fillMaxSize()) {
             Column(
                 Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())
                     .padding(horizontal = Be.Space.gutter, vertical = Be.Space.page),
-                verticalArrangement = Arrangement.spacedBy(Be.Space.l),
+                verticalArrangement = Arrangement.spacedBy(appSectionGap),
             ) {
                 SectionCard(
                     eyebrow = stringResource(R.string.third_party_eyebrow),

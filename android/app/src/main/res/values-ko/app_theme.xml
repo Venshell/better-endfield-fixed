@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_theme_title">앱 테마</string>
+    <string name="app_theme_industrial">인더스트리얼</string>
+    <string name="app_theme_miuix_light">Miuix 라이트</string>
+    <string name="app_theme_miuix_dark">Miuix 다크</string>
+</resources>

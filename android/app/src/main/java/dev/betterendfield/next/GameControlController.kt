@@ -1,15 +1,14 @@
 package dev.betterendfield.next
 
-import android.app.Activity
 import android.content.ComponentName
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
 import android.os.IBinder
+import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -29,7 +28,7 @@ internal data class GameControlState(
 )
 
 /** Activity-lifecycle owner for launch, LSPosed scope, and separate Shizuku permission/action flows. */
-internal class GameControlController(private val activity: Activity) : AutoCloseable {
+internal class GameControlController(private val activity: ComponentActivity) : AutoCloseable {
     var state by mutableStateOf(GameControlState())
         private set
 
@@ -60,13 +59,10 @@ internal class GameControlController(private val activity: Activity) : AutoClose
     }
 
     fun start() {
-        val targets = findTargets()
-        state = state.copy(targets = targets, selectedPackage = targets.singleOrNull()?.packageName)
         Shizuku.addBinderReceivedListener(binderReceived)
         Shizuku.addBinderDeadListener(binderDead)
         Shizuku.addRequestPermissionResultListener(permissionListener)
-        (activity as? LifecycleOwner)?.lifecycle?.addObserver(lifecycleObserver)
-        refresh()
+        activity.lifecycle.addObserver(lifecycleObserver)
     }
 
     fun select(packageName: String) {
@@ -272,7 +268,7 @@ internal class GameControlController(private val activity: Activity) : AutoClose
         Shizuku.removeBinderReceivedListener(binderReceived)
         Shizuku.removeBinderDeadListener(binderDead)
         Shizuku.removeRequestPermissionResultListener(permissionListener)
-        (activity as? LifecycleOwner)?.lifecycle?.removeObserver(lifecycleObserver)
+        activity.lifecycle.removeObserver(lifecycleObserver)
         val args = serviceArgs
         val serviceConnection = connection
         bindTimeout?.let(mainHandler::removeCallbacks)

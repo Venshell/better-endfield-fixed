@@ -42,7 +42,7 @@ import androidx.compose.material3.Text
 @Composable
 fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
     val context = LocalContext.current
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         OverlayCard(state, onPreviewOverlay)
         DiagnosticsCard(state)
 
@@ -208,7 +208,7 @@ fun LogPage(state: SettingsState) {
         logScroll.scrollTo(logScroll.maxValue)
     }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.l)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
         SectionCard(
             eyebrow = stringResource(R.string.log_eyebrow),
             title = stringResource(R.string.page_log),
@@ -242,12 +242,12 @@ fun LogPage(state: SettingsState) {
             Box(
                 Modifier.fillMaxWidth().height(380.dp)
                     .clip(RoundedCornerShape(Be.Radius.status))
-                    .background(Be.Colors.field)
+                    .background(appColors.field)
                     .verticalScroll(logScroll),
             ) {
                 Text(
                     text = tail,
-                    color = Be.Colors.textSecondary,
+                    color = appColors.textSecondary,
                     fontSize = Be.Type.mono,
                     fontFamily = FontFamily.Monospace,
                     lineHeight = 16.sp,

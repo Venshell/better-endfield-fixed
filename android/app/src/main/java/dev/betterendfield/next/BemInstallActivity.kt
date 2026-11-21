@@ -44,7 +44,7 @@ class BemInstallActivity : ComponentActivity() {
         }
 
         setContent {
-            BetterEndfieldTheme {
+            AppUiTheme(window) {
                 BemInstallScreen(install)
             }
         }

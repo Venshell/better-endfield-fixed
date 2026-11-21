@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -15,10 +16,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The settings app.
@@ -32,23 +36,35 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
 
     private lateinit var settings: SettingsState
+    private lateinit var gameControl: GameControlController
     private var overlayPreview: GameOverlay? = null
     private var availableUpdate by mutableStateOf<AppUpdateChecker.Result?>(null)
+    private val splashFinished = CompletableDeferred<Unit>()
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppLanguage.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val appearance = readAppAppearance()
+        setTheme(appearance.splashTheme)
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        // The palette has exactly one theme, so the system bars are pinned to
-        // light-on-dark rather than following the phone's day/night setting. On
-        // API 35 the window is edge-to-edge whether or not this is called, and
-        // the shell pads itself out of the insets instead of drawing under them.
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-        )
+        rememberPlatformSplashTheme(appearance)
+        window.setBackgroundDrawable(ColorDrawable(getColor(appearance.background)))
+        if (savedInstanceState == null) {
+            splash.setOnExitAnimationListener { provider ->
+                finishLaunchSplash(provider, appearance) { splashFinished.complete(Unit) }
+            }
+        } else {
+            splashFinished.complete(Unit)
+        }
+        val bars = if (appearance.lightBars) {
+            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.dark(Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
 
         val initialPage = savedInstanceState?.getInt(KEY_PAGE, SettingsPage.HOME)
             ?: when (intent.getStringExtra(EXTRA_PAGE)) {
@@ -65,11 +81,13 @@ class MainActivity : ComponentActivity() {
         settings.prepareVoice(intent)
         settings.refreshDiagnostics()
         settings.refreshHome()
+        gameControl = GameControlController(this).also { it.start() }
 
         setContent {
-            BetterEndfieldTheme {
+            AppUiTheme(window, onAppearanceChanged = ::rememberPlatformSplashTheme) {
                 SettingsShell(
                     state = settings,
+                    gameControl = gameControl,
                     onPreviewOverlay = { showOverlayPreview() },
                     onInstallBem = {
                         startActivity(Intent(this@MainActivity, BemInstallActivity::class.java))
@@ -113,6 +131,11 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
     }
 
+    override fun onDestroy() {
+        gameControl.close()
+        super.onDestroy()
+    }
+
     /**
      * Shows the same experimental Compose panel inside this app. Preview skips
      * sending key events; it cannot verify composition in the hooked game process.
@@ -129,12 +152,23 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.IO) {
                 runCatching { DistributionUpdater.update(applicationContext, false, false) }
             }
-            if (missingCore && GameResourceStore.resolve(this@MainActivity, "core") != null) recreate()
+            if (missingCore && GameResourceStore.resolve(this@MainActivity, "core") != null) {
+                awaitLaunchTransition()
+                recreate()
+            }
         }
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { AppUpdateChecker.check() } }
-            result.getOrNull()?.takeIf { it.isUpdateAvailable }?.let { availableUpdate = it }
+            result.getOrNull()?.takeIf { it.isUpdateAvailable }?.let {
+                awaitLaunchTransition()
+                availableUpdate = it
+            }
         }
+    }
+
+    private suspend fun awaitLaunchTransition() {
+        // Some task launches have no starting surface and send no exit event.
+        withTimeoutOrNull(2_000L) { splashFinished.await() }
     }
 
     companion object {

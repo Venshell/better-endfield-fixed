@@ -15,6 +15,18 @@
   introduced here are listed in `CHANGELOG.md` and described in `README.md`
   ("Upstream & Project Origin").
 
+## Miuix
+
+- Source: https://github.com/compose-miuix-ui/miuix/tree/v0.9.4
+- License: Apache License 2.0.
+- Used by the Android settings application for optional Miuix themes and Compose controls.
+
+## QT Chancery Type Italic
+
+- Source: https://ctan.org/pkg/qualitype
+- License of the font distribution: SIL Open Font License 1.1 or GPL-2.0-or-later.
+- The Android splash uses the supplied `Be` vector glyph outlines and drawing guides. The app does not bundle the font.
+
 ## EIEM (Importing Endfield MMD)
 
 - Source: https://github.com/Sasye/EIEM
