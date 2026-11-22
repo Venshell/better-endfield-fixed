@@ -97,6 +97,7 @@ final class BemInstaller {
                     BemImportArchive.Item item=new BemImportArchive.Item("composition",new File(stage,generation));if(!item.directory.mkdir())throw new IOException("Cannot stage composition");
                     java.nio.file.Files.move(new File(outputs.getString(i)).toPath(),item.file.toPath());
                     JSONObject entry=new JSONObject(inspectNative(item.file.getAbsolutePath()));
+                    BemOptions.requireAndroid(entry);
                     entry.put("texture_mode","original").put("generation",generation).put("remote","bem-"+generation+".bem").put("enabled",true);
                     prepared.add(new PreparedPackage(item,entry));
                 }
@@ -362,6 +363,7 @@ final class BemInstaller {
             if(entry==null) throw new IOException(app.getString(R.string.next_bem_generation_changed));
             previousEntry=new JSONObject(entry.toString());
         }
+        BemOptions.requireAndroid(previousEntry);
         File root=new File(app.getFilesDir(),"bem-installed"),stage=null;
         final boolean[] committed={false};
         try {

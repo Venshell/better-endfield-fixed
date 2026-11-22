@@ -239,12 +239,35 @@ public final class BemInstallerTest extends Instrumentation {
         BemInstaller.loadCodec();
     }
     private File fixture() throws Exception {
-        File file=new File(directory,"input.bem");
-        try(InputStream in=getInstrumentation().getContext().getAssets().open("installer-fixture.bem");FileOutputStream out=new FileOutputStream(file)) {
+        return fixture("installer-fixture.bem", "input.bem");
+    }
+    private File fixture(String asset, String filename) throws Exception {
+        File file=new File(directory,filename);
+        try(InputStream in=getInstrumentation().getContext().getAssets().open(asset);FileOutputStream out=new FileOutputStream(file)) {
             byte[] buffer=new byte[8192];int count;
             while((count=in.read(buffer))!=-1) out.write(buffer,0,count);
         }
         return file;
+    }
+
+    public void testLegacyV15ImportAndTextureConversion() throws Exception {
+        File input=fixture("legacy-target-v15.bem", "legacy-target-v15.bem");
+        JSONObject original=new JSONObject(BemInstaller.inspectNative(input.getPath()));
+        assertEquals(5,original.getInt("bem_minor"));
+        assertEquals(1,original.getJSONArray("drivers").length());
+        BemOptions.requireAndroid(original);
+
+        File output=new File(directory,"legacy-target-v15-converted.bem");
+        java.nio.file.Files.deleteIfExists(output.toPath());
+        try {
+            BemInstaller.convertNative(input.getPath(),output.getPath(),"{}",false);
+            JSONObject converted=new JSONObject(BemInstaller.inspectNative(output.getPath()));
+            assertEquals(5,converted.getInt("bem_minor"));
+            assertEquals(1,converted.getJSONArray("drivers").length());
+            assertTrue(BemOptions.resourceKeys(original).equals(BemOptions.resourceKeys(converted)));
+        } finally {
+            java.nio.file.Files.deleteIfExists(output.toPath());
+        }
     }
     public void testAndroidComposer() throws Exception {
         JSONObject group=new JSONObject("{id:'part0',default:'s0',segments:[{id:'a',source_id:'s0',default:'on',count:6,body_draw:'s0.m0.d0',body_region:'neck',triangles:[0,1]},{id:'b',source_id:'s0',default:'on',count:0,body_draw:'s0.m0.d0',body_region:'head',triangles:[]},{id:'c',source_id:'s1',default:'off',count:3}]}" );

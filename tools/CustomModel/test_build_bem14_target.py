@@ -29,6 +29,7 @@ class BuildBem14TargetTests(unittest.TestCase):
             'schema': 1, 'kind': 'bem-resource-target-spec', 'id': 'char_body',
             'profile_id': 'char_body_profile', 'revision': 'draft_1',
             'snapshot': 'snapshot-1', 'target_kind': 'character',
+            'game': {'windows-x64': '1.6.3', 'android-arm64': '1.6.4', 'hotfix': 0},
             'resources': [{'id': 'body', 'asset_path': self.asset,
                            'platforms': ['android-arm64'], 'lod': 1}],
         }
@@ -39,6 +40,7 @@ class BuildBem14TargetTests(unittest.TestCase):
         self.assertEqual('Mesh_all/lod1/Body', profile['target']['components'][0]['renderer_path'])
         self.assertFalse(profile['runtime_verified'])
         self.assertFalse(profile['conversion_ready'])
+        self.assertEqual(self.spec['game'], manifest['game_baseline'])
         self.assertEqual([], manifest['meshes'])
         self.assertEqual('keep', manifest['component_rules'][0]['candidates'][0]['operation'])
         self.assertEqual(['android-arm64'], profile['source_snapshot']['platforms'])

@@ -4,20 +4,8 @@
 #include <jni.h>
 #include <atomic>
 #include <stdexcept>
-#include <algorithm>
 namespace { std::atomic_bool cancelled{false},busy{false};
 struct Utf {JNIEnv* env;jstring value;const char* data;Utf(JNIEnv* e,jstring v):env(e),value(v),data(e->GetStringUTFChars(v,nullptr)) {if(!data) throw std::runtime_error("Cannot read JNI string");}~Utf(){env->ReleaseStringUTFChars(value,data);}};
-void RequireAndroidResource(const BetterEndfieldNext::CustomModel::BemPackageInfo& info) {
-    if (info.minor < 4) return;
-    for (const auto& resource : info.resources) {
-        const auto supports = [&](const char* platform) {
-            return std::find(resource.platforms.begin(),resource.platforms.end(),platform)!=resource.platforms.end();
-        };
-        if (supports("android-arm64")) return;
-        if (info.target_kind=="weapon" && supports("windows-x64") && resource.name!="android_unavailable") return;
-    }
-    throw std::runtime_error("BEM package has no Android-compatible resource");
-}
 }
 extern "C" JNIEXPORT void JNICALL Java_dev_betterendfield_next_BemInstaller_cancelNative(JNIEnv*,jclass) {
     cancelled=true;betterendfieldnext::CancelTextureCompression();
@@ -29,11 +17,11 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_next_BemInstaller_i
         using namespace BetterEndfieldNext::CustomModel;
         BemPackageInfo info; std::string error;
         if(!ReadBemPackageInfo(input.data,info,error,skip_validation)) throw std::runtime_error(error);
-        RequireAndroidResource(info);
         auto selections=info.appearances;
         if(info.minor) selections.push_back(info.default_options);
         for(const auto& appearance:selections) {
-            if(info.minor>=4) {
+            // BEM 1.5 may retain legacy character targets without explicit resources.
+            if(!info.resources.empty()) {
                 for(const auto& resource:info.resources) {
                     BemPocData parsed;
                     if(!LoadBem(input.data,parsed,error,appearance,nullptr,skip_validation,false,{},UINT64_MAX,false,resource.id))
@@ -125,10 +113,6 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_next_BemInstaller_c
     struct Guard {~Guard(){busy=false;}} guard; cancelled=false;
     try {
         Utf input(env,src),output(env,dst),mapping(env,rules);
-        BetterEndfieldNext::CustomModel::BemPackageInfo info; std::string metadata_error;
-        if(!BetterEndfieldNext::CustomModel::ReadBemPackageInfo(input.data,info,metadata_error))
-            throw std::runtime_error(metadata_error);
-        RequireAndroidResource(info);
         auto table=BetterEndfieldNext::CustomModel::BemJson::parse(mapping.data);
         auto checkpoint=[] {if(cancelled.load()) throw std::runtime_error("Installation cancelled");};
         auto progressMethod=env->GetStaticMethodID(owner,"conversionProgress","(Ljava/lang/String;IIIIF)V");
@@ -156,10 +140,6 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_betterendfield_next_BemInstaller_r
     struct Guard {~Guard(){busy=false;}} guard; cancelled=false;
     try {
         Utf input(env,src),output(env,dst);
-        BetterEndfieldNext::CustomModel::BemPackageInfo info; std::string metadata_error;
-        if(!BetterEndfieldNext::CustomModel::ReadBemPackageInfo(input.data,info,metadata_error))
-            throw std::runtime_error(metadata_error);
-        RequireAndroidResource(info);
         auto checkpoint=[] {if(cancelled.load()) throw std::runtime_error("Operation cancelled");};
         auto progressMethod=env->GetStaticMethodID(owner,"conversionProgress","(Ljava/lang/String;IIIIF)V");
         if(!progressMethod) return nullptr;
