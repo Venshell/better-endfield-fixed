@@ -267,6 +267,7 @@ private fun LibraryCard(state: SettingsState, busy: Boolean, onImportFolder: () 
         eyebrow = "SOURCE · LIBRARY",
         title = "作品库",
         subtitle = stringResource(R.string.mmd_alignment_library_hint),
+        searchLabels = pageSearchLabels(*SettingsSearchLabels.mmdLibrary),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
             if (state.mmdWorks.isEmpty()) {

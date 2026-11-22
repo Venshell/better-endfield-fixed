@@ -129,6 +129,7 @@ fun LoginDisplayPage(state: SettingsState) {
     Disclosure(
         eyebrow = stringResource(R.string.model_eyebrow),
         title = stringResource(R.string.model_title),
+        searchLabels = pageSearchLabels(*SettingsSearchLabels.loginDisplay),
         hint = state.loginDisplaySummary,
     ) {
         if (state.modelTableStatus.isNotEmpty()) {

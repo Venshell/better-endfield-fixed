@@ -23,12 +23,14 @@ import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
@@ -68,6 +70,7 @@ internal fun Modifier.glassSurface(
     light: Boolean,
     pressProgress: () -> Float = { 0f },
     cornerRadius: Dp? = null,
+    focusScale: () -> ScaleFactor = { ScaleFactor(1f, 1f) },
     focusOrigin: ((Float) -> Offset)? = null,
 ): Modifier {
     val sampledLayer = rememberGraphicsLayer()
@@ -106,7 +109,6 @@ internal fun Modifier.glassSurface(
                 height = size.height,
                 edgeWidth = (if (focused) 10.dp else 24.dp).toPx(),
                 refraction = (if (focused) 14.dp else 24.dp).toPx(),
-                lensDepth = if (focused) 0.08f else 0f,
                 dispersion = if (focused) 0.5.dp.toPx() else 0f,
             ).asComposeRenderEffect()
             val focusTint = if (focused) Brush.verticalGradient(
@@ -121,9 +123,14 @@ internal fun Modifier.glassSurface(
                 val destination = focusOrigin?.invoke(size.width) ?: surfaceOrigin
                 if (origin.isSpecified && destination.isSpecified && backdrop.layer.size != IntSize.Zero) {
                     val offset = origin - destination + Offset(padding.toFloat(), padding.toFloat())
-                    // Rasterize only this surface and its sampling margin.
+                    val magnification = focusScale()
+                    val sampleCenter = center + Offset(padding.toFloat(), padding.toFloat())
+                    // Cancel the focus layer's scale around its center so the
+                    // expanding glass samples the same screen coordinates.
                     sampledLayer.record(size = sampleSize) {
-                        translate(offset.x, offset.y) { drawLayer(backdrop.layer) }
+                        scale(1f / magnification.scaleX, 1f / magnification.scaleY, pivot = sampleCenter) {
+                            translate(offset.x, offset.y) { drawLayer(backdrop.layer) }
+                        }
                     }
                     translate(-padding.toFloat(), -padding.toFloat()) { drawLayer(sampledLayer) }
                     if (focusTint != null) {
@@ -157,7 +164,6 @@ private fun glassEffect(
     height: Float,
     edgeWidth: Float,
     refraction: Float,
-    lensDepth: Float,
     dispersion: Float,
 ): RenderEffect {
     val blur = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
@@ -168,14 +174,12 @@ private fun glassEffect(
         setFloatUniform("corner", corner)
         setFloatUniform("edgeWidth", edgeWidth)
         setFloatUniform("refraction", refraction)
-        setFloatUniform("lensDepth", lensDepth)
         setFloatUniform("dispersion", dispersion)
     }
     return RenderEffect.createChainEffect(RenderEffect.createRuntimeShaderEffect(shader, "backdrop"), blur)
 }
 
-// Rounded-rectangle distance field. Bend samples inward near the rim and
-// magnify the center and add a narrow amount of dispersion at the focus rim.
+// Rounded-rectangle distance field. Refract and disperse samples near the rim.
 private const val GlassLens = """
     uniform shader backdrop;
     uniform float2 halfSize;
@@ -183,7 +187,6 @@ private const val GlassLens = """
     uniform float corner;
     uniform float edgeWidth;
     uniform float refraction;
-    uniform float lensDepth;
     uniform float dispersion;
 
     half4 main(float2 p) {
@@ -197,7 +200,7 @@ private const val GlassLens = """
             : (q.x > q.y ? float2(1.0, 0.0) : float2(0.0, 1.0));
         float bend = 1.0 - smoothstep(0.0, edgeWidth, abs(distance));
         float2 direction = normal * sign(local);
-        float2 warped = p - local * lensDepth - direction * bend * bend * refraction;
+        float2 warped = p - direction * bend * bend * refraction;
         half4 color = backdrop.eval(warped);
         if (dispersion > 0.0 && bend > 0.01) {
             float2 spread = direction * bend * bend * dispersion;

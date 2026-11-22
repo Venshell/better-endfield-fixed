@@ -2,10 +2,10 @@ package dev.betterendfield.next
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.SeekableTransitionState
+import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -42,20 +42,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val DockTopGap = Be.Space.m
 private val DockBottomGap = Be.Space.l
@@ -115,6 +117,51 @@ internal fun SettingsShell(
         if (showSearch) closeSearch() else searchPage = state.page
     }
 
+    val destination = SettingsDestination(state.page, showSearch)
+    val previous = destination.previous()
+    val motion = remember { SeekableTransitionState(destination) }
+    val transition = rememberTransition(motion, label = "settingsDestination")
+    var backProgress by remember(destination) { mutableStateOf<Float?>(null) }
+
+    PredictiveBackHandler(enabled = previous != null) { events ->
+        if (previous == null) return@PredictiveBackHandler
+        try {
+            events.collect { event -> backProgress = event.progress }
+            if (destination.searching) closeSearch() else state.back()
+        } finally {
+            backProgress = null
+        }
+    }
+    LaunchedEffect(destination, backProgress) {
+        val progress = backProgress
+        when {
+            progress != null && previous != null -> {
+                if (motion.currentState != destination) motion.snapTo(destination)
+                motion.seekTo(progress, previous)
+            }
+            motion.currentState != destination -> motion.animateTo(destination)
+            motion.targetState != destination -> {
+                coroutineScope {
+                    animate(motion.fraction, 0f, animationSpec = tween(160)) { fraction, _ ->
+                        launch { motion.seekTo(fraction) }
+                    }
+                }
+                motion.snapTo(destination)
+            }
+        }
+    }
+
+    val searchExpansion = transition.animateFloat(
+        transitionSpec = { tween(240) },
+        label = "searchWidth",
+    ) { if (it.searching) 1f else 0f }
+    val previewPage by remember(destination) {
+        derivedStateOf { (backProgress ?: 0f) >= 0.5f }
+    }
+    val dockVisible by remember(searchExpansion) {
+        derivedStateOf { searchExpansion.value < 1f }
+    }
+
     Surface(
         color = appColors.background,
         contentColor = appColors.textPrimary,
@@ -139,25 +186,29 @@ internal fun SettingsShell(
                     }
                     Box(Modifier.weight(1f).fillMaxSize()) {
                         ShellBody(
-                            state, gameControl, onPreviewOverlay, onInstallBem, showSearch, query, { query = it },
+                            transition, state, gameControl, onPreviewOverlay, onInstallBem,
+                            showSearch, previewPage, searchExpansion, query, { query = it },
                             closeSearch, toggleSearch, Modifier.fillMaxSize(),
                         )
                     }
                 }
             } else {
                 ShellBody(
-                    state, gameControl, onPreviewOverlay, onInstallBem, showSearch, query, { query = it },
+                    transition, state, gameControl, onPreviewOverlay, onInstallBem,
+                    showSearch, previewPage, searchExpansion, query, { query = it },
                     closeSearch, toggleSearch,
                     Modifier.fillMaxSize().captureGlassBackdrop(dockBackdrop),
                     dockClearance = DockClearance,
                 )
-                AnimatedVisibility(
-                    visible = !showSearch,
-                    enter = fadeIn(tween(220)),
-                    exit = fadeOut(tween(180)),
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                ) {
-                    BottomDock(state.page, openPage, backdrop = dockBackdrop)
+                if (dockVisible) {
+                    BottomDock(
+                        state.page,
+                        openPage,
+                        modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer {
+                            alpha = 1f - searchExpansion.value
+                        },
+                        backdrop = dockBackdrop,
+                    )
                 }
             }
         }
@@ -196,11 +247,14 @@ private data class SettingsDestination(val page: Int, val searching: Boolean = f
 
 @Composable
 private fun ShellBody(
+    transition: Transition<SettingsDestination>,
     state: SettingsState,
     gameControl: GameControlController,
     onPreviewOverlay: () -> Unit,
     onInstallBem: () -> Unit,
     showSearch: Boolean,
+    previewPage: Boolean,
+    searchExpansion: State<Float>,
     query: String,
     onQueryChange: (String) -> Unit,
     onCloseSearch: () -> Unit,
@@ -208,40 +262,6 @@ private fun ShellBody(
     modifier: Modifier = Modifier,
     dockClearance: Dp = Be.Space.none,
 ) {
-    val destination = SettingsDestination(state.page, showSearch)
-    val previous = destination.previous()
-    val motion = remember { SeekableTransitionState(destination) }
-    val transition = rememberTransition(motion, label = "settingsDestination")
-    var backProgress by remember(destination) { mutableStateOf<Float?>(null) }
-
-    PredictiveBackHandler(enabled = previous != null) { events ->
-        if (previous == null) return@PredictiveBackHandler
-        try {
-            events.collect { event -> backProgress = event.progress }
-            if (destination.searching) onCloseSearch() else state.back()
-        } finally {
-            backProgress = null
-        }
-    }
-    LaunchedEffect(destination, backProgress) {
-        val progress = backProgress
-        when {
-            progress != null && previous != null -> {
-                if (motion.currentState != destination) motion.snapTo(destination)
-                motion.seekTo(progress, previous)
-            }
-            motion.currentState != destination -> motion.animateTo(destination)
-            motion.targetState != destination -> {
-                coroutineScope {
-                    animate(motion.fraction, 0f, animationSpec = tween(160)) { fraction, _ ->
-                        launch { motion.seekTo(fraction) }
-                    }
-                }
-                motion.snapTo(destination)
-            }
-        }
-    }
-
     transition.AnimatedContent(
         modifier = modifier.clipToBounds(),
         contentAlignment = Alignment.TopCenter,
@@ -271,41 +291,49 @@ private fun ShellBody(
         },
     ) { page ->
         val pageId = page.page
-        var headerHeightPx by remember(pageId) { mutableIntStateOf(0) }
-        val headerClearance = with(LocalDensity.current) { headerHeightPx.toDp() }
         val headerBackdrop = rememberGlassBackdrop(LocalAppearanceSettings.current.glass)
-        Box(Modifier.fillMaxSize()) {
-            Box(
-                Modifier.fillMaxSize()
-                    .captureGlassBackdrop(headerBackdrop)
-                    .background(appColors.background),
-            ) {
-                val filtering = showSearch && pageId == state.page
-                if (filtering && pageId == SettingsPage.HOME) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val currentPage = state.page == pageId
+        val filtering = showSearch && currentPage && !previewPage
+        val back: (() -> Unit)? = if (SettingsPage.isSubPage(pageId)) {
+            { if (currentPage) { if (showSearch) onCloseSearch() else state.back() } }
+        } else null
+        SubcomposeLayout(Modifier.fillMaxSize()) { constraints ->
+            val header = subcompose("header") {
+                PageHeader(
+                    page = pageId,
+                    searchOpen = showSearch && currentPage,
+                    searchExpansion = searchExpansion.takeIf { currentPage },
+                    query = query,
+                    onQueryChange = onQueryChange,
+                    onSearch = { if (currentPage) onToggleSearch() },
+                    onBack = back,
+                    backdrop = headerBackdrop,
+                )
+            }.single().measure(constraints.copy(minHeight = 0))
+            val headerClearance = header.height.toDp()
+            val contents = subcompose("contents") {
+                Box(
+                    Modifier.fillMaxSize()
+                        .captureGlassBackdrop(headerBackdrop)
+                        .background(appColors.background),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    if (filtering && pageId == SettingsPage.HOME) {
                         HomeSearchResults(query, headerClearance + Be.Space.m, state::openPage, onCloseSearch)
-                    }
-                } else {
-                    CompositionLocalProvider(LocalPageFilter provides if (filtering) query.trim() else "") {
-                        SettingsPageContent(
-                            pageId, state, gameControl, onPreviewOverlay, onInstallBem, headerClearance,
-                            if (filtering) Be.Space.none else dockClearance,
-                        )
+                    } else {
+                        CompositionLocalProvider(LocalPageFilter provides if (filtering) query.trim() else "") {
+                            SettingsPageContent(
+                                pageId, state, gameControl, onPreviewOverlay, onInstallBem, headerClearance,
+                                if (filtering) Be.Space.none else dockClearance,
+                            )
+                        }
                     }
                 }
+            }.single().measure(constraints)
+            layout(contents.width, contents.height) {
+                contents.placeRelative(0, 0)
+                header.placeRelative(0, 0)
             }
-            PageHeader(
-                page = pageId,
-                searchOpen = showSearch && state.page == pageId,
-                query = query,
-                onQueryChange = onQueryChange,
-                onSearch = { if (state.page == pageId) onToggleSearch() },
-                onBack = if (SettingsPage.isSubPage(pageId)) {
-                    { if (state.page == pageId) { if (showSearch) onCloseSearch() else state.back() } }
-                } else null,
-                modifier = Modifier.onSizeChanged { headerHeightPx = it.height },
-                backdrop = headerBackdrop,
-            )
         }
     }
 }
@@ -418,14 +446,14 @@ fun BackButton(onBack: () -> Unit) {
 private fun PageHeader(
     page: Int,
     searchOpen: Boolean,
+    searchExpansion: State<Float>?,
     query: String,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onBack: (() -> Unit)?,
-    modifier: Modifier = Modifier,
     backdrop: GlassBackdrop? = null,
 ) {
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .widthIn(max = Be.Size.contentMaxWidth)
@@ -437,7 +465,7 @@ private fun PageHeader(
                     bottom = DockTopGap,
                 ),
         ) {
-            AppHeader(page, searchOpen, query, onQueryChange, onSearch, onBack, backdrop)
+            AppHeader(page, searchOpen, searchExpansion, query, onQueryChange, onSearch, onBack, backdrop)
         }
     }
 }
@@ -446,6 +474,7 @@ private fun PageHeader(
 private fun AppHeader(
     page: Int,
     searchOpen: Boolean,
+    searchExpansion: State<Float>?,
     query: String,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
@@ -459,7 +488,6 @@ private fun AppHeader(
             backdrop, panel, LocalAppAppearance.current?.lightBars == true, cornerRadius = radius,
         )
     }
-    val expansion by animateFloatAsState(if (searchOpen) 1f else 0f, tween(240), label = "searchWidth")
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
@@ -469,7 +497,9 @@ private fun AppHeader(
         contentAlignment = Alignment.CenterEnd,
     ) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 44.dp).alpha(1f - expansion),
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).graphicsLayer {
+                alpha = 1f - (searchExpansion?.value ?: 0f)
+            },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (page == SettingsPage.HOME) {
@@ -521,17 +551,31 @@ private fun AppHeader(
             }
             Spacer(Modifier.width(40.dp + Be.Space.m))
         }
-        if (searchOpen || expansion > 0f) {
+        val expanded by remember(searchExpansion) {
+            derivedStateOf { (searchExpansion?.value ?: 0f) > 0f }
+        }
+        val focusReady by remember(searchExpansion) {
+            derivedStateOf { (searchExpansion?.value ?: 0f) >= 0.85f }
+        }
+        if (searchOpen || expanded) {
             val collapsedWidth = minOf(40.dp, maxWidth)
-            val fieldWidth = collapsedWidth + (maxWidth - collapsedWidth) * expansion
+            val fullWidth = maxWidth
+            val shape = RoundedCornerShape(Be.Radius.input)
             SearchField(
                 value = query,
                 onValueChange = onQueryChange,
                 hint = stringResource(R.string.search_features),
-                modifier = Modifier.width(fieldWidth),
-                requestFocus = searchOpen && expansion >= 0.85f,
+                modifier = Modifier.clip(shape).layout { measurable, constraints ->
+                    val fieldWidth = fullWidth.roundToPx()
+                    val compactWidth = collapsedWidth.roundToPx()
+                    val placeable = measurable.measure(constraints.copy(minWidth = fieldWidth, maxWidth = fieldWidth))
+                    val expansion = searchExpansion?.value ?: 0f
+                    val visibleWidth = compactWidth + ((fieldWidth - compactWidth) * expansion).roundToInt()
+                    layout(visibleWidth, placeable.height) { placeable.placeRelative(0, 0) }
+                },
+                requestFocus = searchOpen && focusReady,
                 onClose = onSearch,
-                contentAlpha = expansion,
+                contentAlpha = { searchExpansion?.value ?: 0f },
             )
         } else {
             SearchIconButton(

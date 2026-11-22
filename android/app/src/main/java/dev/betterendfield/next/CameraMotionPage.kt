@@ -38,6 +38,7 @@ fun CameraMotionPage(state: SettingsState) {
         SectionCard(
             eyebrow = stringResource(R.string.camera_card_eyebrow),
             title = stringResource(R.string.page_camera_motion),
+            searchLabels = pageSearchLabels(*SettingsSearchLabels.cameraMotion),
             subtitle = stringResource(R.string.camera_motion_subtitle),
             status = state.cameraCardStatus,
         ) {

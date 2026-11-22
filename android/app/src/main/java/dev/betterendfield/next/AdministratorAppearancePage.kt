@@ -18,14 +18,21 @@ fun AdministratorAppearancePage(onSaved: () -> Unit = {}) {
         if (state.update(next)) onSaved()
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
-        SectionCard(eyebrow = stringResource(R.string.admin_appearance_eyebrow),
-            title = stringResource(R.string.appearance_card_title)) {
+        SectionCard(
+            eyebrow = stringResource(R.string.admin_appearance_eyebrow),
+            title = stringResource(R.string.appearance_card_title),
+            searchLabels = pageSearchLabels(*SettingsSearchLabels.administrator),
+        ) {
             SwitchRow(stringResource(R.string.appearance_enable), "", selection.enabled,
                 { save(selection.copy(enabled = it)) })
             BodyText(stringResource(R.string.admin_appearance_next_launch))
             if (state.saveFailed) BodyText(stringResource(R.string.admin_appearance_save_failed))
         }
-        SectionCard(eyebrow = "", title = stringResource(R.string.appearance_weapon_section_title)) {
+        SectionCard(
+            eyebrow = "",
+            title = stringResource(R.string.appearance_weapon_section_title),
+            searchLabels = pageSearchLabels(*SettingsSearchLabels.administratorWeapons),
+        ) {
             SwitchRow(stringResource(R.string.appearance_weapon_toggle), "", selection.weapon,
                 { save(selection.copy(weapon = it)) }, enabled = selection.enabled)
             FieldLabel(stringResource(R.string.appearance_weapon_mode_label))
@@ -36,7 +43,11 @@ fun AdministratorAppearancePage(onSaved: () -> Unit = {}) {
                     else ModuleSettings.APPEARANCE_MODE_DEFAULT)) },
                 enabled = selection.enabled && selection.weapon)
         }
-        SectionCard(eyebrow = "", title = stringResource(R.string.appearance_character_section_title)) {
+        SectionCard(
+            eyebrow = "",
+            title = stringResource(R.string.appearance_character_section_title),
+            searchLabels = pageSearchLabels(*SettingsSearchLabels.administratorCharacter),
+        ) {
             SwitchRow(stringResource(R.string.appearance_character_toggle), "", selection.character,
                 { save(selection.copy(character = it)) }, enabled = selection.enabled)
             FieldLabel(stringResource(R.string.appearance_character_mode_label))
@@ -49,7 +60,11 @@ fun AdministratorAppearancePage(onSaved: () -> Unit = {}) {
                 { save(selection.copy(characterMode = modes[it])) },
                 enabled = selection.enabled && selection.character)
         }
-        SectionCard(eyebrow = "", title = stringResource(R.string.appearance_effects_section_title)) {
+        SectionCard(
+            eyebrow = "",
+            title = stringResource(R.string.appearance_effects_section_title),
+            searchLabels = pageSearchLabels(*SettingsSearchLabels.administratorEffects),
+        ) {
             SwitchRow(stringResource(R.string.appearance_effects_toggle), "", selection.effects,
                 { save(selection.copy(effects = it)) }, enabled = selection.enabled)
         }

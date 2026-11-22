@@ -208,6 +208,8 @@ internal object MiuixLayout {
     val cardRadius = 18.dp
     val controlRadius = 12.dp
     val rowHeight = 56.dp
+    val rowFeedbackOutset = 6.dp
+    val rowFeedbackVerticalInset = 4.dp
 }
 
 internal val appSectionGap

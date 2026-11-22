@@ -24,6 +24,7 @@ fun FirstPersonPage(state: SettingsState) {
         SectionCard(
             eyebrow = stringResource(R.string.camera_card_eyebrow),
             title = stringResource(R.string.page_first_person),
+            searchLabels = pageSearchLabels(*SettingsSearchLabels.firstPerson),
             status = state.cameraCardStatus,
         ) {
             GroupLabel(stringResource(R.string.fp_group_basic), top = Be.Space.l)

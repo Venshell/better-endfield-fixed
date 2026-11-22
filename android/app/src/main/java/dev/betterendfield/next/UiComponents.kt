@@ -71,11 +71,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -116,6 +119,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
@@ -190,6 +194,55 @@ internal fun pressedFill(pressed: Boolean, idle: Color, down: Color): Color {
     )
     return color
 }
+
+@Composable
+private fun Modifier.preferencePressSurface(
+    pressed: Boolean,
+    idle: Color,
+    radius: Dp,
+    horizontalInset: Dp = 0.dp,
+    verticalInset: Dp = 0.dp,
+): Modifier {
+    val color = animateColorAsState(
+        targetValue = if (pressed) appColors.rowHigh else idle,
+        animationSpec = BeMotion.effects(),
+        label = "preferencePress",
+    )
+    return drawBehind {
+        val x = horizontalInset.toPx()
+        val y = verticalInset.toPx()
+        val width = size.width - 2f * x
+        val height = size.height - 2f * y
+        if (color.value.alpha > 0f && width > 0f && height > 0f) {
+            drawRoundRect(
+                color = color.value,
+                topLeft = Offset(x, y),
+                size = Size(width, height),
+                cornerRadius = CornerRadius(radius.toPx()),
+            )
+        }
+    }
+}
+
+@Composable
+private fun Modifier.groupedPreferencePress(pressed: Boolean): Modifier = preferencePressSurface(
+    pressed,
+    Color.Transparent,
+    MiuixLayout.controlRadius,
+    horizontalInset = -MiuixLayout.rowFeedbackOutset,
+    verticalInset = MiuixLayout.rowFeedbackVerticalInset,
+)
+
+// Native Miuix preferences draw their own press state. Expand their surface
+// within the card's existing gutter and compensate in the preference padding.
+internal fun Modifier.insetNativePreference(): Modifier = layout { measurable, constraints ->
+    val outset = MiuixLayout.rowFeedbackOutset.roundToPx()
+    val vertical = MiuixLayout.rowFeedbackVerticalInset.roundToPx()
+    val child = measurable.measure(constraints.offset(horizontal = 2 * outset, vertical = -2 * vertical))
+    layout(child.width - 2 * outset, child.height + 2 * vertical) {
+        child.placeRelative(-outset, vertical)
+    }
+}.clip(RoundedCornerShape(MiuixLayout.controlRadius))
 
 /** Whole-row press feedback with the ripple suppressed. */
 @Composable
@@ -301,9 +354,14 @@ fun Disclosure(
     ) {
         Row(
             Modifier
-                .pressScale(press.value)
                 .fillMaxWidth()
-                .background(pressedFill(press.value, appColors.panel, appColors.rowHigh))
+                .preferencePressSurface(
+                    press.value,
+                    Color.Transparent,
+                    MiuixLayout.controlRadius,
+                    horizontalInset = MiuixLayout.rowFeedbackOutset,
+                    verticalInset = MiuixLayout.rowFeedbackVerticalInset,
+                )
                 .then(press.modifier)
                 .padding(horizontal = Be.Space.cardInner, vertical = Be.Space.xl),
             verticalAlignment = Alignment.CenterVertically,
@@ -620,12 +678,18 @@ fun SwitchRow(
     val press = rememberToggleable(checked, enabled, onCheckedChange)
     val grouped = LocalMiuixCard.current
     val inset = if (grouped) 0.dp else Be.Space.xl
+    val surface = if (grouped) {
+        Modifier.groupedPreferencePress(press.value)
+    } else {
+        val shape = RoundedCornerShape(if (usesMiuix) MiuixLayout.controlRadius else Be.Radius.row)
+        Modifier.pressScale(press.value && !usesMiuix)
+            .clip(shape)
+            .background(pressedFill(press.value, appColors.row, appColors.rowHigh))
+    }
     Row(
         modifier
-            .pressScale(press.value)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(if (usesMiuix) MiuixLayout.controlRadius else Be.Radius.row))
-            .background(pressedFill(press.value, if (grouped) Color.Transparent else appColors.row, appColors.rowHigh))
+            .then(surface)
             .then(press.modifier)
             .alpha(if (enabled) 1f else 0.42f)
             .heightIn(min = if (usesMiuix) MiuixLayout.rowHeight else Be.Size.rowMinHeight)
@@ -833,11 +897,7 @@ private fun formatReading(value: Float, unit: String, decimals: Int): String {
     return text + unit
 }
 
-/**
- * A picker that opens in place. Material's exposed dropdown would work, but this
- * keeps the closed state identical to a field's fill and puts the accent on the
- * caret rather than on a floating label.
- */
+/** A navigation entry whose small heading, text and trailing state share one press surface. */
 @Composable
 internal fun SubPageRow(
     title: String,
@@ -850,12 +910,20 @@ internal fun SubPageRow(
 ) {
     if (!matchesPageFilter(title, hint, eyebrow)) return
     val grouped = LocalMiuixCard.current
-    val surface = if (grouped) Modifier else Modifier
-        .clip(RoundedCornerShape(Be.Radius.card))
-        .background(appColors.panel)
     val inset = if (grouped) 0.dp else MiuixLayout.inset
     val hasEyebrow = !eyebrow.isNullOrBlank()
-    Column(modifier.fillMaxWidth().then(surface)) {
+    val press = rememberPressed(enabled, onClick)
+    val surface = if (grouped) {
+        Modifier.groupedPreferencePress(press.value)
+    } else {
+        Modifier.clip(RoundedCornerShape(Be.Radius.card))
+            .preferencePressSurface(press.value, appColors.panel, Be.Radius.card)
+    }
+    Column(
+        modifier.fillMaxWidth()
+            .then(surface)
+            .then(press.modifier),
+    ) {
         if (hasEyebrow) {
             Eyebrow(
                 eyebrow,
@@ -873,7 +941,6 @@ internal fun SubPageRow(
                 bottom = MiuixLayout.inset,
             ),
             enabled = enabled,
-            onClick = onClick,
             endActions = {
                 if (state != null) {
                     Text(
@@ -904,7 +971,7 @@ fun SelectField(
     Box(modifier) {
         val press = rememberPressed(canSelect) { expanded = true }
         Row(
-            Modifier.pressScale(press.value)
+            Modifier.pressScale(press.value && !usesMiuix)
                 .fillMaxWidth()
                 .clip(shape)
                 .background(pressedFill(press.value, fieldSurface, appColors.rowHigh))
@@ -977,7 +1044,7 @@ fun SearchableSelect(
     Box(modifier.onSizeChanged { anchorWidth = it.width }) {
         Row(
             Modifier
-                .pressScale(press.value)
+                .pressScale(press.value && !usesMiuix)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Be.Radius.input))
                 .background(pressedFill(press.value, fieldSurface, appColors.rowHigh))
@@ -1107,7 +1174,7 @@ private fun SearchSelectMenu(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
-                            .pressScale(rowPress.value)
+                            .pressScale(rowPress.value && !usesMiuix)
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(Be.Radius.input))
                             .background(
@@ -1135,7 +1202,7 @@ fun SearchField(
     modifier: Modifier = Modifier,
     requestFocus: Boolean = false,
     onClose: (() -> Unit)? = null,
-    contentAlpha: Float = 1f,
+    contentAlpha: () -> Float = { 1f },
 ) {
     val closeDescription = stringResource(R.string.next_close)
     val focus = remember { FocusRequester() }
@@ -1165,7 +1232,7 @@ fun SearchField(
             ),
             modifier = Modifier
                 .weight(1f)
-                .alpha(contentAlpha)
+                .graphicsLayer { alpha = contentAlpha() }
                 .then(if (requestFocus) Modifier.focusRequester(focus) else Modifier),
             decorationBox = { inner ->
                 Box(Modifier.padding(vertical = Be.Space.l)) {
@@ -1188,7 +1255,7 @@ fun SearchField(
                 color = appColors.textSecondary,
                 fontSize = 18.sp,
                 modifier = Modifier
-                    .alpha(contentAlpha)
+                    .graphicsLayer { alpha = contentAlpha() }
                     .then(if (onClose != null) Modifier.semantics {
                         contentDescription = closeDescription
                     } else Modifier)
@@ -1581,7 +1648,13 @@ private fun DockTabTrack(
         if (selectedIndex in labels.indices) {
             val tint = if (miuix) miuixControlColors.activeTrack else appColors.accent
             val material = if (backdrop == null) Modifier.background(tint) else {
-                Modifier.glassSurface(backdrop, tint, light, pressProgress = { pressProgress }) { cellWidth ->
+                Modifier.glassSurface(
+                    backdrop,
+                    tint,
+                    light,
+                    pressProgress = { pressProgress },
+                    focusScale = { ScaleFactor(focusScaleX, focusScaleY) },
+                ) { cellWidth ->
                     val position = fingerPosition ?: travel.value
                     trackOrigin + Offset((if (rtl) last - position else position) * cellWidth, 0f)
                 }
@@ -1629,9 +1702,10 @@ private fun TabItem(
         label = "tabInk",
     )
     val fillTarget = when {
+        miuixDock -> Color.Transparent
         vertical && selected && press.value -> appColors.accentPressed
         vertical && selected -> appColors.accent
-        !vertical && selected && press.value -> if (miuixDock) Color.Transparent else appColors.accentPressed
+        selected && press.value -> appColors.accentPressed
         press.value -> appColors.rowHigh
         else -> Color.Transparent
     }

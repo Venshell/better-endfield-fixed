@@ -181,9 +181,10 @@ internal fun AppThemeSettingsPage() {
             )
             if (matchesPageFilter(stringResource(R.string.app_theme_glass))) SwitchPreference(
                 title = stringResource(R.string.app_theme_glass),
+                modifier = Modifier.insetNativePreference(),
                 checked = appearance.glass && glassAvailable,
                 enabled = glassAvailable,
-                insideMargin = PaddingValues(vertical = MiuixLayout.inset),
+                insideMargin = preferenceInsideMargin(),
                 switchColors = appMiuixSwitchColors(),
                 onCheckedChange = { saveAppearance(appearance.copy(glass = it)) },
             )
@@ -260,9 +261,15 @@ private fun AboutAction(text: String, onClick: () -> Unit, enabled: Boolean = tr
 private fun AboutPreference(title: String, options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
     WindowDropdownPreference(
         title = title,
+        modifier = Modifier.insetNativePreference(),
         items = options,
         selectedIndex = selectedIndex,
-        insideMargin = PaddingValues(vertical = MiuixLayout.inset),
+        insideMargin = preferenceInsideMargin(),
         onSelectedIndexChange = { if (it != selectedIndex) onSelect(it) },
     )
 }
+
+private fun preferenceInsideMargin() = PaddingValues(
+    horizontal = MiuixLayout.rowFeedbackOutset,
+    vertical = MiuixLayout.inset - MiuixLayout.rowFeedbackVerticalInset,
+)
