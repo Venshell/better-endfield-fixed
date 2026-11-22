@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -40,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -56,10 +58,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -72,6 +76,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
@@ -89,10 +94,14 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -112,6 +121,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -124,6 +134,7 @@ import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
 import top.yukonga.miuix.kmp.basic.SliderDefaults as MiuixSliderDefaults
 import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
 import top.yukonga.miuix.kmp.basic.SwitchDefaults as MiuixSwitchDefaults
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
 
 /**
@@ -226,16 +237,19 @@ fun SectionCard(
     subtitle: String? = null,
     modifier: Modifier = Modifier,
     status: String? = null,
+    searchLabels: List<String> = emptyList(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    if (!matchesPageFilter(title, eyebrow, subtitle, *searchLabels.toTypedArray())) return
     PanelCard(modifier) {
-        Eyebrow(eyebrow)
+        val hasEyebrow = eyebrow.isNotBlank()
+        if (hasEyebrow) Eyebrow(eyebrow)
         Text(
             text = title,
             color = appColors.textPrimary,
             fontSize = if (usesMiuix) Be.Type.title else 19.sp,
             fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(top = Be.Space.xs),
+            modifier = Modifier.padding(top = if (hasEyebrow) Be.Space.xs else 0.dp),
         )
         if (subtitle != null) {
             Text(
@@ -263,12 +277,19 @@ fun Disclosure(
     modifier: Modifier = Modifier,
     eyebrow: String? = null,
     hint: String? = null,
+    searchLabels: List<String> = emptyList(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val press = rememberPressed(true) { expanded = !expanded }
+    val headingMatches = matchesPageFilter(title, eyebrow, hint)
+    if (!headingMatches && !matchesPageFilter(*searchLabels.toTypedArray())) return
+    var searchExpansion by remember(LocalPageFilter.current) { mutableStateOf(!headingMatches) }
+    val visible = if (headingMatches) expanded else searchExpansion
+    val press = rememberPressed(true) {
+        if (headingMatches) expanded = !expanded else searchExpansion = !searchExpansion
+    }
     val caret by animateFloatAsState(
-        targetValue = if (expanded) 0f else -90f,
+        targetValue = if (visible) 0f else -90f,
         animationSpec = BeMotion.fastSpatial(),
         label = "disclosure",
     )
@@ -288,13 +309,14 @@ fun Disclosure(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                if (!eyebrow.isNullOrEmpty()) Eyebrow(eyebrow)
+                val hasEyebrow = !eyebrow.isNullOrBlank()
+                if (hasEyebrow) Eyebrow(eyebrow)
                 Text(
                     text = title,
                     color = appColors.textPrimary,
                     fontSize = 19.sp,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(top = if (eyebrow.isNullOrEmpty()) 0.dp else Be.Space.xs),
+                    modifier = Modifier.padding(top = if (hasEyebrow) Be.Space.xs else 0.dp),
                 )
                 if (!hint.isNullOrEmpty()) {
                     Text(
@@ -316,7 +338,7 @@ fun Disclosure(
             )
         }
         AnimatedVisibility(
-            visible = expanded,
+            visible = visible,
             enter = expandVertically(BeMotion.spatial(), expandFrom = Alignment.Top) + fadeIn(BeMotion.effects()),
             exit = shrinkVertically(BeMotion.spatial(), shrinkTowards = Alignment.Top) + fadeOut(BeMotion.effects()),
         ) {
@@ -335,7 +357,12 @@ fun Disclosure(
 
 /** A plain panel for content that carries its own heading. */
 @Composable
-fun PanelCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun PanelCard(
+    modifier: Modifier = Modifier,
+    searchLabels: List<String>? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    if (searchLabels != null && !matchesPageFilter(*searchLabels.toTypedArray())) return
     if (usesMiuix) {
         MiuixPanelCard(modifier, PaddingValues(MiuixLayout.inset), content)
         return
@@ -371,7 +398,11 @@ private fun MiuixPanelCard(
 }
 
 @Composable
-internal fun SettingsPreferenceCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsPreferenceCard(
+    searchLabels: List<String>? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    if (searchLabels != null && !matchesPageFilter(*searchLabels.toTypedArray())) return
     if (usesMiuix) {
         MiuixPanelCard(Modifier, PaddingValues(horizontal = MiuixLayout.inset), content)
     } else {
@@ -380,7 +411,13 @@ internal fun SettingsPreferenceCard(content: @Composable ColumnScope.() -> Unit)
 }
 
 @Composable
-internal fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsGroup(
+    title: String,
+    searchLabels: List<String> = emptyList(),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    if (!matchesPageFilter(title, *searchLabels.toTypedArray())) return
+    val query = if (matchesPageFilter(title)) "" else LocalPageFilter.current
     if (usesMiuix) {
         Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
             Text(
@@ -390,7 +427,7 @@ internal fun SettingsGroup(title: String, content: @Composable ColumnScope.() ->
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = MiuixLayout.inset),
             )
-            SettingsPreferenceCard(content)
+            SettingsPreferenceCard { CompositionLocalProvider(LocalPageFilter provides query) { content() } }
         }
     } else {
         PanelCard {
@@ -661,21 +698,26 @@ internal fun AppSwitch(
         return
     }
 
-    val colors = miuixControlColors
     MiuixSwitch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         enabled = enabled,
-        colors = MiuixSwitchDefaults.switchColors(
-            checkedTrackColor = colors.activeTrack,
-            checkedThumbColor = colors.activeThumb,
-            uncheckedTrackColor = colors.inactiveTrack,
-            uncheckedThumbColor = colors.inactiveThumb,
-            disabledCheckedTrackColor = colors.activeTrack.copy(alpha = 0.46f),
-            disabledCheckedThumbColor = colors.activeThumb.copy(alpha = 0.66f),
-            disabledUncheckedTrackColor = colors.inactiveTrack.copy(alpha = 0.46f),
-            disabledUncheckedThumbColor = colors.inactiveThumb.copy(alpha = 0.66f),
-        ),
+        colors = appMiuixSwitchColors(),
+    )
+}
+
+@Composable
+internal fun appMiuixSwitchColors(): top.yukonga.miuix.kmp.basic.SwitchColors {
+    val colors = miuixControlColors
+    return MiuixSwitchDefaults.switchColors(
+        checkedTrackColor = colors.activeTrack,
+        checkedThumbColor = colors.activeThumb,
+        uncheckedTrackColor = colors.inactiveTrack,
+        uncheckedThumbColor = colors.inactiveThumb,
+        disabledCheckedTrackColor = colors.activeTrack.copy(alpha = 0.46f),
+        disabledCheckedThumbColor = colors.activeThumb.copy(alpha = 0.66f),
+        disabledUncheckedTrackColor = colors.inactiveTrack.copy(alpha = 0.46f),
+        disabledUncheckedThumbColor = colors.inactiveThumb.copy(alpha = 0.66f),
     )
 }
 
@@ -797,6 +839,55 @@ private fun formatReading(value: Float, unit: String, decimals: Int): String {
  * caret rather than on a floating label.
  */
 @Composable
+internal fun SubPageRow(
+    title: String,
+    hint: String? = null,
+    state: Boolean? = null,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    eyebrow: String? = null,
+    onClick: () -> Unit,
+) {
+    if (!matchesPageFilter(title, hint, eyebrow)) return
+    val grouped = LocalMiuixCard.current
+    val surface = if (grouped) Modifier else Modifier
+        .clip(RoundedCornerShape(Be.Radius.card))
+        .background(appColors.panel)
+    val inset = if (grouped) 0.dp else MiuixLayout.inset
+    val hasEyebrow = !eyebrow.isNullOrBlank()
+    Column(modifier.fillMaxWidth().then(surface)) {
+        if (hasEyebrow) {
+            Eyebrow(
+                eyebrow,
+                Modifier.padding(start = inset, end = inset, top = MiuixLayout.inset),
+            )
+        }
+        ArrowPreference(
+            title = title,
+            summary = hint?.takeIf { it.isNotBlank() },
+            modifier = Modifier.fillMaxWidth(),
+            insideMargin = PaddingValues(
+                start = inset,
+                end = inset,
+                top = if (hasEyebrow) Be.Space.xs else MiuixLayout.inset,
+                bottom = MiuixLayout.inset,
+            ),
+            enabled = enabled,
+            onClick = onClick,
+            endActions = {
+                if (state != null) {
+                    Text(
+                        stringResource(if (state) R.string.state_on else R.string.state_off),
+                        color = if (state) appColors.accentText else appColors.textMuted,
+                        fontSize = Be.Type.bodySmall,
+                    )
+                }
+            },
+        )
+    }
+}
+
+@Composable
 fun SelectField(
     options: List<String>,
     selectedIndex: Int,
@@ -804,46 +895,30 @@ fun SelectField(
     modifier: Modifier = Modifier,
     placeholder: String = "",
     enabled: Boolean = true,
-    title: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val safeIndex = selectedIndex.coerceIn(0, (options.size - 1).coerceAtLeast(0))
-    val press = rememberPressed(enabled && options.isNotEmpty()) { expanded = true }
+    val canSelect = enabled && options.isNotEmpty()
+    val value = options.getOrNull(safeIndex) ?: placeholder
     val shape = RoundedCornerShape(if (usesMiuix) MiuixLayout.controlRadius else Be.Radius.input)
     Box(modifier) {
+        val press = rememberPressed(canSelect) { expanded = true }
         Row(
-            Modifier
-                .pressScale(press.value)
+            Modifier.pressScale(press.value)
                 .fillMaxWidth()
                 .clip(shape)
-                .background(pressedFill(press.value, if (title != null) Color.Transparent else fieldSurface, appColors.rowHigh))
-                .controlOutline(shape, separated = title == null)
+                .background(pressedFill(press.value, fieldSurface, appColors.rowHigh))
+                .controlOutline(shape, separated = true)
                 .then(press.modifier)
                 .heightIn(min = if (usesMiuix) MiuixLayout.rowHeight else Be.Size.fieldHeight)
                 .alpha(if (enabled) 1f else 0.42f)
-                .padding(start = if (title == null) Be.Space.xl else 0.dp, end = if (title == null) Be.Space.m + 2.dp else 0.dp),
+                .padding(start = Be.Space.xl, end = Be.Space.m + 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (title != null) {
-                Text(
-                    text = title,
-                    color = appColors.textPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f).padding(end = Be.Space.m),
-                )
-            }
-            Text(
-                text = options.getOrNull(safeIndex) ?: placeholder,
-                color = if (title != null) appColors.textSecondary else appColors.textPrimary,
-                fontSize = if (title == null) Be.Type.rowTitle else 16.sp,
-                textAlign = if (title == null) TextAlign.Start else TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            Text(value, color = appColors.textPrimary, fontSize = Be.Type.rowTitle,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(Be.Space.s))
-            Caret(if (title != null) appColors.textSecondary else appColors.accent)
+            Caret(appColors.accent)
         }
         DropdownMenu(
             expanded = expanded,
@@ -1059,7 +1134,10 @@ fun SearchField(
     hint: String,
     modifier: Modifier = Modifier,
     requestFocus: Boolean = false,
+    onClose: (() -> Unit)? = null,
+    contentAlpha: Float = 1f,
 ) {
+    val closeDescription = stringResource(R.string.next_close)
     val focus = remember { FocusRequester() }
     if (requestFocus) {
         LaunchedEffect(Unit) { focus.requestFocus() }
@@ -1087,6 +1165,7 @@ fun SearchField(
             ),
             modifier = Modifier
                 .weight(1f)
+                .alpha(contentAlpha)
                 .then(if (requestFocus) Modifier.focusRequester(focus) else Modifier),
             decorationBox = { inner ->
                 Box(Modifier.padding(vertical = Be.Space.l)) {
@@ -1103,17 +1182,21 @@ fun SearchField(
                 }
             },
         )
-        if (value.isNotEmpty()) {
+        if (value.isNotEmpty() || onClose != null) {
             Text(
                 text = "×",
                 color = appColors.textSecondary,
                 fontSize = 18.sp,
                 modifier = Modifier
+                    .alpha(contentAlpha)
+                    .then(if (onClose != null) Modifier.semantics {
+                        contentDescription = closeDescription
+                    } else Modifier)
                     .padding(start = Be.Space.s)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { onValueChange("") },
+                        onClick = onClose ?: { onValueChange("") },
                     ),
             )
         }
@@ -1370,13 +1453,14 @@ enum class DockGlyph { Home, Experience, Characters, Tools, User }
 
 /** The tab strip. On a phone it is the bottom dock; on a wide screen it is the side rail. */
 @Composable
-fun PageTabs(
+internal fun PageTabs(
     labels: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     vertical: Boolean = false,
     glyphs: List<DockGlyph> = emptyList(),
+    backdrop: GlassBackdrop? = null,
 ) {
     if (vertical) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(Be.Space.s)) {
@@ -1388,36 +1472,140 @@ fun PageTabs(
             }
         }
     } else {
+        val panel = appColors.panel
+        val miuix = usesMiuix
+        val light = LocalAppAppearance.current?.lightBars == true
+        val shape = if (miuix) CircleShape else RoundedCornerShape(Be.Radius.card)
+        val material = if (backdrop == null) Modifier.background(panel) else {
+            Modifier.glassSurface(backdrop, panel, light)
+        }
         Box(
             modifier
                 .fillMaxWidth()
                 .height(Be.Size.dockHeight)
-                .clip(RoundedCornerShape(Be.Radius.card))
-                .background(appColors.panel)
-                .padding(horizontal = 6.dp, vertical = 5.dp),
         ) {
-            if (labels.isNotEmpty() && selectedIndex in labels.indices) {
-                val travel by animateFloatAsState(
-                    targetValue = selectedIndex.toFloat(),
-                    animationSpec = BeMotion.tabTravel(),
-                    label = "dock",
-                )
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(1f / labels.size)
-                        .graphicsLayer { translationX = travel * size.width }
-                        .clip(RoundedCornerShape(Be.Radius.compact))
-                        .background(if (usesMiuix) miuixControlColors.activeTrack else appColors.accent),
-                )
+            Box(Modifier.matchParentSize().clip(shape).then(material))
+            Box(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 5.dp)) {
+                DockTabTrack(labels, glyphs, selectedIndex, onSelect, miuix, light, backdrop)
             }
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                labels.forEachIndexed { index, label ->
-                    TabItem(
-                        label, glyphs.getOrNull(index), index == selectedIndex, false,
-                        { onSelect(index) }, Modifier.weight(1f).fillMaxHeight(),
-                    )
+        }
+    }
+}
+
+@Composable
+private fun DockTabTrack(
+    labels: List<String>,
+    glyphs: List<DockGlyph>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    miuix: Boolean,
+    light: Boolean,
+    backdrop: GlassBackdrop?,
+) {
+    if (labels.isEmpty()) return
+    val last = labels.lastIndex
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val activeIndex by rememberUpdatedState(selectedIndex)
+    val select by rememberUpdatedState(onSelect)
+    val travel = remember { Animatable(selectedIndex.coerceIn(0, last).toFloat()) }
+    var fingerPosition by remember { mutableStateOf<Float?>(null) }
+    var dragging by remember { mutableStateOf(false) }
+    var pressedIndex by remember { mutableStateOf<Int?>(null) }
+    var trackOrigin by remember { mutableStateOf(Offset.Unspecified) }
+    val previewIndex by remember {
+        derivedStateOf { fingerPosition?.roundToInt() ?: pressedIndex ?: activeIndex }
+    }
+    // Miuix LiquidGlassNavigationBar uses independent spring axes and 78/56 press magnification.
+    val engaged = miuix && (pressedIndex != null || travel.isRunning)
+    val pressedScale = if (engaged) 78f / 56f else 1f
+    val focusScaleX by animateFloatAsState(pressedScale, spring(0.6f, 250f, 0.001f), label = "dockFocusX")
+    val focusScaleY by animateFloatAsState(pressedScale, spring(0.7f, 250f, 0.001f), label = "dockFocusY")
+    val pressProgress by animateFloatAsState(
+        if (engaged) 1f else 0f, spring(1f, 1000f, 0.001f), label = "dockFocusPress",
+    )
+
+    val targetIndex = pressedIndex ?: selectedIndex
+    LaunchedEffect(targetIndex, dragging, last) {
+        if (!dragging) {
+            fingerPosition?.let { travel.snapTo(it) }
+            fingerPosition = null
+            val motion = if (miuix) spring(1f, 1000f, 0.001f) else BeMotion.tabTravel()
+            travel.animateTo(targetIndex.coerceIn(0, last).toFloat(), motion)
+        }
+    }
+
+    val gestures = if (miuix && last > 0) {
+        Modifier.pointerInput(last, rtl) {
+            fun positionAt(x: Float): Float {
+                val physical = x / (size.width.toFloat() / (last + 1)) - 0.5f
+                return (if (rtl) last - physical else physical).coerceIn(0f, last.toFloat())
+            }
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val slop = viewConfiguration.touchSlop
+                pressedIndex = positionAt(down.position.x).roundToInt()
+                try {
+                    while (true) {
+                        val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                            .firstOrNull { it.id == down.id } ?: break
+                        if (change.isConsumed) break
+                        if (!change.pressed) {
+                            change.consume()
+                            val position = positionAt(change.position.x)
+                            if (dragging) fingerPosition = position
+                            val target = position.roundToInt()
+                            if (!dragging || target != activeIndex) select(target)
+                            break
+                        }
+                        if (!dragging) {
+                            val delta = change.position - down.position
+                            if (abs(delta.y) > slop && abs(delta.y) > abs(delta.x)) break
+                            if (abs(delta.x) < slop) continue
+                            dragging = true
+                        }
+                        change.consume()
+                        fingerPosition = positionAt(change.position.x)
+                    }
+                } finally {
+                    dragging = false
+                    pressedIndex = null
                 }
+            }
+        }
+    } else Modifier
+
+    Box(
+        Modifier.fillMaxSize().then(gestures)
+            .onGloballyPositioned { trackOrigin = it.localToRoot(Offset.Zero) },
+    ) {
+        if (selectedIndex in labels.indices) {
+            val tint = if (miuix) miuixControlColors.activeTrack else appColors.accent
+            val material = if (backdrop == null) Modifier.background(tint) else {
+                Modifier.glassSurface(backdrop, tint, light, pressProgress = { pressProgress }) { cellWidth ->
+                    val position = fingerPosition ?: travel.value
+                    trackOrigin + Offset((if (rtl) last - position else position) * cellWidth, 0f)
+                }
+            }
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(1f / labels.size)
+                    .graphicsLayer {
+                        val position = fingerPosition ?: travel.value
+                        translationX = (if (rtl) -position else position) * size.width
+                        scaleX = focusScaleX
+                        scaleY = focusScaleY
+                    }
+                    .clip(if (miuix) CircleShape else RoundedCornerShape(Be.Radius.compact))
+                    .then(material),
+            )
+        }
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            labels.forEachIndexed { index, label ->
+                TabItem(
+                    label, glyphs.getOrNull(index), index == previewIndex, false,
+                    { onSelect(index) }, Modifier.weight(1f).fillMaxHeight(),
+                )
             }
         }
     }
@@ -1450,10 +1638,14 @@ private fun TabItem(
     val fill by animateColorAsState(fillTarget, BeMotion.effects(), label = "tabFill")
     Box(
         modifier
-            .pressScale(press.value, 0.94f)
+            .pressScale(press.value && !miuixDock, 0.94f)
             .clip(RoundedCornerShape(if (vertical) Be.Radius.button else Be.Radius.compact))
             .background(fill)
             .then(press.modifier)
+            .semantics {
+                this.selected = selected
+                role = Role.Tab
+            }
             .heightIn(min = if (vertical) Be.Size.touchTarget else Be.Size.dockItemHeight),
         contentAlignment = Alignment.Center,
     ) {

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_theme_title">アプリのテーマ</string>
-    <string name="app_theme_industrial">インダストリアル</string>
-    <string name="app_theme_miuix_light">Miuix ライト</string>
-    <string name="app_theme_miuix_dark">Miuix ダーク</string>
+    <string name="app_theme_title">テーマ設定</string>
+    <string name="app_theme_mode">テーマ</string>
+    <string name="app_theme_system">システムに従う</string>
+    <string name="app_theme_light">ライト</string>
+    <string name="app_theme_dark">ダーク</string>
+    <string name="app_theme_glass">リキッドガラス</string>
 </resources>

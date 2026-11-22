@@ -46,11 +46,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val appearance = readAppAppearance()
-        setTheme(appearance.splashTheme)
+        val appearanceSettings = readAppearanceSettings()
+        val appearance = appearanceSettings.resolve(systemUsesDarkTheme())
+        val startingTheme = appearanceSettings.splashTheme(appearance)
+        setTheme(startingTheme)
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
-        rememberPlatformSplashTheme(appearance)
+        rememberPlatformSplashTheme(startingTheme)
         window.setBackgroundDrawable(ColorDrawable(getColor(appearance.background)))
         if (savedInstanceState == null) {
             splash.setOnExitAnimationListener { provider ->

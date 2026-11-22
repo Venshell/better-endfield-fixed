@@ -1,25 +1,17 @@
 package dev.betterendfield.next
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * The home page: what the game will load, what is waiting for a restart, what
@@ -44,8 +36,8 @@ internal fun LazyListScope.homePage(state: SettingsState, gameControl: GameContr
                 text = state.appearanceSummary,
                 modifier = Modifier.padding(top = Be.Space.m),
             )
-            GhostButton(
-                text = stringResource(R.string.page_appearance),
+            SubPageRow(
+                title = stringResource(R.string.page_appearance),
                 onClick = { state.openPage(SettingsPage.APPEARANCE) },
                 modifier = Modifier.fillMaxWidth().padding(top = Be.Space.l),
             )
@@ -59,8 +51,8 @@ internal fun LazyListScope.homePage(state: SettingsState, gameControl: GameContr
                 text = state.loginDisplaySummary,
                 modifier = Modifier.padding(top = Be.Space.m),
             )
-            GhostButton(
-                text = stringResource(R.string.page_characters),
+            SubPageRow(
+                title = stringResource(R.string.page_characters),
                 onClick = { state.openPage(SettingsPage.CHARACTERS) },
                 modifier = Modifier.fillMaxWidth().padding(top = Be.Space.l),
             )
@@ -70,15 +62,15 @@ internal fun LazyListScope.homePage(state: SettingsState, gameControl: GameContr
     item("shortcuts") {
         PanelCard {
             CardTitle(stringResource(R.string.home_shortcuts_title))
-            ShortcutRow(
+            SubPageRow(
                 title = stringResource(R.string.home_shortcut_overlay),
                 onClick = { state.openPage(SettingsPage.TOOLS) },
             )
-            ShortcutRow(
+            SubPageRow(
                 title = stringResource(R.string.home_shortcut_first_person),
                 onClick = { state.openPage(SettingsPage.FIRST_PERSON) },
             )
-            ShortcutRow(
+            SubPageRow(
                 title = stringResource(R.string.home_shortcut_appearance),
                 onClick = { state.openPage(SettingsPage.APPEARANCE) },
             )
@@ -101,25 +93,23 @@ private fun EnabledFeaturesCard(state: SettingsState) {
         } else {
             BodyText(stringResource(R.string.home_count, features.size), Modifier.padding(top = Be.Space.m))
             features.forEach { feature ->
-                Column(
-                    Modifier.fillMaxWidth().padding(top = Be.Space.m)
-                        .clip(RoundedCornerShape(Be.Radius.row)).background(appColors.row)
-                        .clickable {
-                            when (feature.destination) {
-                                HomeFeatureSummary.Destination.CHARACTERS -> state.openPage(SettingsPage.CHARACTERS)
-                                HomeFeatureSummary.Destination.EXPERIENCE -> state.openPage(SettingsPage.EXPERIENCE)
-                                HomeFeatureSummary.Destination.ADMINISTRATOR -> state.openPage(SettingsPage.ADMINISTRATOR_APPEARANCE)
-                                HomeFeatureSummary.Destination.FIRST_PERSON -> state.openPage(SettingsPage.FIRST_PERSON)
-                                HomeFeatureSummary.Destination.MMD -> state.openPage(SettingsPage.MMD)
-                                HomeFeatureSummary.Destination.TOOLS -> state.openPage(SettingsPage.TOOLS)
-                                HomeFeatureSummary.Destination.MEDIA -> context.startActivity(
-                                    android.content.Intent(context, MediaScreenActivity::class.java))
-                            }
-                        }.padding(Be.Space.l),
-                ) {
-                    CardTitle(stringResource(feature.title))
-                    BodyText(feature.detail, Modifier.padding(top = Be.Space.s))
-                }
+                SubPageRow(
+                    title = stringResource(feature.title),
+                    hint = feature.detail,
+                    modifier = Modifier.padding(top = Be.Space.m),
+                    onClick = {
+                        when (feature.destination) {
+                            HomeFeatureSummary.Destination.CHARACTERS -> state.openPage(SettingsPage.CHARACTERS)
+                            HomeFeatureSummary.Destination.EXPERIENCE -> state.openPage(SettingsPage.EXPERIENCE)
+                            HomeFeatureSummary.Destination.ADMINISTRATOR -> state.openPage(SettingsPage.ADMINISTRATOR_APPEARANCE)
+                            HomeFeatureSummary.Destination.FIRST_PERSON -> state.openPage(SettingsPage.FIRST_PERSON)
+                            HomeFeatureSummary.Destination.MMD -> state.openPage(SettingsPage.MMD)
+                            HomeFeatureSummary.Destination.TOOLS -> state.openPage(SettingsPage.TOOLS)
+                            HomeFeatureSummary.Destination.MEDIA -> context.startActivity(
+                                android.content.Intent(context, MediaScreenActivity::class.java))
+                        }
+                    },
+                )
             }
         }
     }
@@ -228,41 +218,6 @@ private fun PendingCard(state: SettingsState) {
                 stringResource(R.string.home_pending_none)
             },
             modifier = Modifier.padding(top = Be.Space.m),
-        )
-    }
-}
-
-/**
- * One shortcut. The whole row is the target rather than a trailing button, which
- * is what makes the block scannable; the chevron carries the affordance that a
- * borderless row would otherwise lack.
- */
-@Composable
-private fun ShortcutRow(
-    title: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = Be.Space.s)
-            .clip(RoundedCornerShape(Be.Radius.row))
-            .background(appColors.row)
-            .clickable(onClick = onClick)
-            .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = title,
-            color = appColors.textPrimary,
-            fontSize = Be.Type.rowTitle,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = "›",
-            color = appColors.accentText,
-            fontSize = 20.sp,
         )
     }
 }

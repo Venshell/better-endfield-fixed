@@ -46,50 +46,37 @@ fun ToolsPage(state: SettingsState, onPreviewOverlay: () -> Unit) {
         OverlayCard(state, onPreviewOverlay)
         DiagnosticsCard(state)
 
-        PanelCard {
-            CardTitle(stringResource(R.string.third_party_title))
-            BodyText(stringResource(R.string.third_party_hint), modifier = Modifier.padding(top = Be.Space.m))
-            GhostButton(
-                text = stringResource(R.string.third_party_manage),
+        SettingsPreferenceCard(searchLabels = pageSearchLabels(
+            R.string.third_party_manage, R.string.third_party_hint, R.string.media_screen_title,
+            R.string.media_screen_hint, R.string.next_workshop,
+        )) {
+            SubPageRow(
+                title = stringResource(R.string.third_party_manage),
+                hint = stringResource(R.string.third_party_hint),
                 onClick = { context.startActivity(android.content.Intent(context, ThirdPartyModulesActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth().padding(top = Be.Space.l),
             )
-        }
-
-        PanelCard {
-            CardTitle(stringResource(R.string.media_screen_title))
-            BodyText(stringResource(R.string.media_screen_hint), modifier = Modifier.padding(top = Be.Space.m))
-            GhostButton(
-                text = stringResource(R.string.media_screen_open),
+            SubPageRow(
+                title = stringResource(R.string.media_screen_title),
+                hint = stringResource(R.string.media_screen_hint),
                 onClick = { context.startActivity(android.content.Intent(context, MediaScreenActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth().padding(top = Be.Space.l),
             )
-        }
-
-        PanelCard {
-            CardTitle(stringResource(R.string.next_workshop))
-            GhostButton(
-                text = stringResource(R.string.next_workshop),
+            SubPageRow(
+                title = stringResource(R.string.next_workshop),
                 onClick = { state.openPage(SettingsPage.WORKSHOP) },
-                modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
             )
         }
 
-        PanelCard {
-            Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
-                SubPageRow(
-                    title = stringResource(R.string.page_log),
-                    hint = stringResource(R.string.log_caption),
-                    state = state.journalText.isNotEmpty(),
-                    onClick = { state.openPage(SettingsPage.LOG) },
-                )
-                SubPageRow(
-                    title = stringResource(R.string.page_about),
-                    hint = stringResource(R.string.about_license_value),
-                    state = true,
-                    onClick = { state.openPage(SettingsPage.ABOUT) },
-                )
-            }
+        SettingsPreferenceCard(searchLabels = pageSearchLabels(R.string.page_log, R.string.log_caption, R.string.page_app_settings)) {
+            SubPageRow(
+                title = stringResource(R.string.page_log),
+                hint = stringResource(R.string.log_caption),
+                state = state.journalText.isNotEmpty(),
+                onClick = { state.openPage(SettingsPage.LOG) },
+            )
+            SubPageRow(
+                title = stringResource(R.string.page_app_settings),
+                onClick = { state.openPage(SettingsPage.SETTINGS) },
+            )
         }
     }
 }
@@ -98,6 +85,12 @@ private fun OverlayCard(state: SettingsState, onPreviewOverlay: () -> Unit) {
     SectionCard(
         eyebrow = stringResource(R.string.overlay_card_eyebrow),
         title = stringResource(R.string.overlay_card_title),
+        searchLabels = pageSearchLabels(
+            R.string.overlay_enable, R.string.overlay_enable_hint,
+            R.string.overlay_auto_snap, R.string.overlay_auto_snap_hint,
+            R.string.overlay_log_visible, R.string.overlay_log_visible_hint,
+            R.string.overlay_transparency, R.string.overlay_preview,
+        ),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
             SwitchRow(
@@ -146,6 +139,7 @@ private fun DiagnosticsCard(state: SettingsState) {
     SectionCard(
         eyebrow = stringResource(R.string.diagnostics_eyebrow),
         title = stringResource(R.string.diagnostics_title),
+        searchLabels = pageSearchLabels(R.string.diagnostics_framework),
     ) {
         BodyText(
             text = stringResource(R.string.diagnostics_framework),
@@ -213,6 +207,7 @@ fun LogPage(state: SettingsState) {
             eyebrow = stringResource(R.string.log_eyebrow),
             title = stringResource(R.string.page_log),
             subtitle = stringResource(R.string.log_description),
+            searchLabels = pageSearchLabels(R.string.log_refresh, R.string.log_export),
         ) {
             Row(Modifier.fillMaxWidth().padding(top = Be.Space.s)) {
                 GhostButton(

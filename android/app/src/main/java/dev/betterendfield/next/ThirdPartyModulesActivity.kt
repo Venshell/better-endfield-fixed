@@ -156,8 +156,8 @@ class ThirdPartyModulesActivity : ComponentActivity() {
                             modifier = Modifier.padding(top = Be.Space.m),
                         )
                         if (entry.hasUi) {
-                            GhostButton(
-                                text = stringResource(R.string.third_party_open_ui),
+                            SubPageRow(
+                                title = stringResource(R.string.third_party_open_ui),
                                 onClick = { openUi(entry.id) },
                                 modifier = Modifier.fillMaxWidth().padding(top = Be.Space.m),
                             )

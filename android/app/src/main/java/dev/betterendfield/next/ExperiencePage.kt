@@ -1,22 +1,13 @@
 package dev.betterendfield.next
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * The experience tab: interface, camera and actions.
@@ -39,6 +30,7 @@ private fun InterfaceCard(state: SettingsState) {
     SectionCard(
         eyebrow = stringResource(R.string.ui_card_eyebrow),
         title = stringResource(R.string.ui_card_title),
+        searchLabels = pageSearchLabels(R.string.ui_hide_uid, R.string.ui_hide_hud, R.string.ui_pc),
         status = state.interfaceCardStatus,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
@@ -70,6 +62,10 @@ private fun CameraCard(state: SettingsState) {
     Disclosure(
         eyebrow = stringResource(R.string.camera_card_eyebrow),
         title = stringResource(R.string.camera_card_title),
+        searchLabels = pageSearchLabels(
+            R.string.camera_dither, R.string.camera_free, R.string.camera_pause, R.string.camera_global_fov,
+            R.string.page_camera_motion, R.string.camera_first_person, R.string.mmd_title,
+        ),
     ) {
         GroupLabel(stringResource(R.string.camera_group_general), top = Be.Space.l)
         Column(verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
@@ -177,6 +173,7 @@ private fun DashCard(state: SettingsState) {
     SectionCard(
         eyebrow = stringResource(R.string.dash_card_eyebrow),
         title = stringResource(R.string.dash_card_title),
+        searchLabels = pageSearchLabels(R.string.dash_enable, R.string.dash_aglina, R.string.dash_liino, R.string.dash_jsspsi),
         status = state.dashCardStatus,
     ) {
         SwitchRow(
@@ -225,58 +222,6 @@ private fun DashCard(state: SettingsState) {
             checked = state.liinoCleanDash,
             onCheckedChange = state::updateLiinoCleanDash,
             enabled = state.liinoCleanDashAvailable,
-        )
-    }
-}
-
-/**
- * A card that leads to a sub-page. It carries the on/off state of the feature it
- * opens, because a row that only says "advanced" makes the user tap in to find
- * out whether the thing is even on.
- */
-@Composable
-fun SubPageRow(
-    title: String,
-    hint: String,
-    state: Boolean,
-    onClick: () -> Unit,
-) {
-    val press = rememberPressed(true, onClick)
-    Row(
-        Modifier
-            .pressScale(press.value)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Be.Radius.row))
-            .background(pressedFill(press.value, appColors.row, appColors.rowHigh))
-            .then(press.modifier)
-            .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = appColors.textPrimary,
-                fontSize = Be.Type.rowTitle,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = hint,
-                color = appColors.textSecondary,
-                fontSize = Be.Type.bodySmall,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-        }
-        Text(
-            text = stringResource(if (state) R.string.state_on else R.string.state_off),
-            color = if (state) appColors.accent else appColors.textMuted,
-            fontSize = Be.Type.bodySmall,
-            fontWeight = FontWeight.Medium,
-        )
-        Text(
-            text = "›",
-            color = appColors.accentText,
-            fontSize = 20.sp,
-            modifier = Modifier.padding(start = Be.Space.m),
         )
     }
 }

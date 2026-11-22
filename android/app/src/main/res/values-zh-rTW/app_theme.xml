@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_theme_title">應用程式主題</string>
-    <string name="app_theme_industrial">工業風</string>
-    <string name="app_theme_miuix_light">Miuix 淺色</string>
-    <string name="app_theme_miuix_dark">Miuix 深色</string>
+    <string name="app_theme_title">主題設定</string>
+    <string name="app_theme_mode">主題</string>
+    <string name="app_theme_system">跟隨系統</string>
+    <string name="app_theme_light">淺色</string>
+    <string name="app_theme_dark">深色</string>
+    <string name="app_theme_glass">液態玻璃</string>
 </resources>

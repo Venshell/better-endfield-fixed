@@ -236,6 +236,7 @@
     <string name="page_appearance">角色外观</string>
     <string name="page_log">运行日志</string>
     <string name="page_about">关于</string>
+    <string name="page_app_settings">设置</string>
     <string name="action_back">返回</string>
 
     <!-- 首页 -->
@@ -723,8 +724,13 @@
     <string name="media_index_failed">媒体索引保存失败</string>
     <string name="next_link_open_failed">无法打开链接</string>
     <string name="next_close">关闭</string>
-    <string name="app_theme_title">应用主题</string>
-    <string name="app_theme_industrial">工业风</string>
-    <string name="app_theme_miuix_light">Miuix 浅色</string>
-    <string name="app_theme_miuix_dark">Miuix 深色</string>
+    <string name="app_theme_title">主题设置</string>
+    <string name="app_theme_mode">主题</string>
+    <string name="app_theme_system">跟随系统</string>
+    <string name="app_theme_light">浅色</string>
+    <string name="app_theme_dark">深色</string>
+    <string name="app_theme_glass">液态玻璃</string>
+    <string name="package_texture_converted">纹理：手机版（已转换）</string>
+    <string name="package_texture_original">纹理：原始</string>
+    <string name="bem_manager_eyebrow">BEM · PACKAGE MANAGER</string>
 </resources>

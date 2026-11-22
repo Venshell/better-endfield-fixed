@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_theme_title">앱 테마</string>
-    <string name="app_theme_industrial">인더스트리얼</string>
-    <string name="app_theme_miuix_light">Miuix 라이트</string>
-    <string name="app_theme_miuix_dark">Miuix 다크</string>
+    <string name="app_theme_title">테마 설정</string>
+    <string name="app_theme_mode">테마</string>
+    <string name="app_theme_system">시스템 설정 따르기</string>
+    <string name="app_theme_light">라이트</string>
+    <string name="app_theme_dark">다크</string>
+    <string name="app_theme_glass">리퀴드 글래스</string>
 </resources>

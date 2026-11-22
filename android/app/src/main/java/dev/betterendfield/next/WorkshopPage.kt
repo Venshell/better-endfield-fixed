@@ -42,7 +42,7 @@ fun WorkshopPage() {
             else context.getString(R.string.next_workshop_copy_failed)
     }
 
-    PanelCard {
+    PanelCard(searchLabels = pageSearchLabels(R.string.next_workshop)) {
         CardTitle(stringResource(R.string.next_workshop))
     }
     WorkshopEndpointCard(stringResource(R.string.next_workshop_direct), WORKSHOP_DIRECT_URL,
@@ -59,7 +59,9 @@ private fun WorkshopEndpointCard(
     onOpen: (String) -> Unit,
     onCopy: (String) -> Unit,
 ) {
-    PanelCard {
+    PanelCard(searchLabels = listOf(title, url) + pageSearchLabels(
+        R.string.next_workshop, R.string.next_workshop_open, R.string.next_workshop_copy,
+    )) {
         CardTitle(title)
         SelectionContainer {
             BodyText(url, Modifier.padding(top = Be.Space.m))

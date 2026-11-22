@@ -1,176 +1,116 @@
 package dev.betterendfield.next
 
 import android.content.Intent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-
-/**
- * Features the home search can open. A row is a name the user would type and
- * the screen that name lives on.
- */
-private sealed interface HomeSearchTarget {
-    data class Page(val page: Int) : HomeSearchTarget
-    data object Media : HomeSearchTarget
-    data object ThirdParty : HomeSearchTarget
-}
 
 private data class HomeSearchEntry(
     val title: Int,
-    val place: Int?,
-    val target: HomeSearchTarget,
+    val page: Int,
+    val activity: Class<*>? = null,
 )
 
-private val HomeSearchCatalog = listOf(
-    HomeSearchEntry(R.string.page_experience, null, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.ui_card_title, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.ui_hide_uid, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.ui_hide_hud, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.ui_pc, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.camera_card_title, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.camera_dither, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.camera_free, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.camera_pause, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.camera_global_fov, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
-    HomeSearchEntry(R.string.page_first_person, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.FIRST_PERSON)),
-    HomeSearchEntry(R.string.page_camera_motion, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.CAMERA_MOTION)),
-    HomeSearchEntry(R.string.mmd_title, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.MMD)),
-    HomeSearchEntry(R.string.dash_card_title, R.string.page_experience, HomeSearchTarget.Page(SettingsPage.EXPERIENCE)),
+private fun featuresOn(page: Int, vararg titles: Int) = titles.map { HomeSearchEntry(it, page) }
 
-    HomeSearchEntry(R.string.page_characters, null, HomeSearchTarget.Page(SettingsPage.CHARACTERS)),
-    HomeSearchEntry(R.string.custom_model_title, R.string.page_characters, HomeSearchTarget.Page(SettingsPage.APPEARANCE)),
-    HomeSearchEntry(R.string.appearance_card_title, R.string.page_characters, HomeSearchTarget.Page(SettingsPage.ADMINISTRATOR_APPEARANCE)),
-    HomeSearchEntry(R.string.model_title, R.string.page_characters, HomeSearchTarget.Page(SettingsPage.CHARACTERS)),
-    HomeSearchEntry(R.string.settings_title, R.string.page_characters, HomeSearchTarget.Page(SettingsPage.CHARACTERS)),
-
-    HomeSearchEntry(R.string.page_tools, null, HomeSearchTarget.Page(SettingsPage.TOOLS)),
-    HomeSearchEntry(R.string.overlay_card_title, R.string.page_tools, HomeSearchTarget.Page(SettingsPage.TOOLS)),
-    HomeSearchEntry(R.string.diagnostics_title, R.string.page_tools, HomeSearchTarget.Page(SettingsPage.TOOLS)),
-    HomeSearchEntry(R.string.third_party_title, R.string.page_tools, HomeSearchTarget.ThirdParty),
-    HomeSearchEntry(R.string.media_screen_title, R.string.page_tools, HomeSearchTarget.Media),
-    HomeSearchEntry(R.string.next_workshop, R.string.page_tools, HomeSearchTarget.Page(SettingsPage.WORKSHOP)),
-    HomeSearchEntry(R.string.page_log, R.string.page_tools, HomeSearchTarget.Page(SettingsPage.LOG)),
-    HomeSearchEntry(R.string.page_about, R.string.page_tools, HomeSearchTarget.Page(SettingsPage.ABOUT)),
-
-    HomeSearchEntry(R.string.game_management_title, R.string.page_home, HomeSearchTarget.Page(SettingsPage.HOME)),
-)
+private val HomeSearchEntries = buildList {
+    addAll(featuresOn(SettingsPage.HOME,
+        R.string.game_management_title, R.string.home_title, R.string.home_shortcuts_title))
+    addAll(featuresOn(SettingsPage.EXPERIENCE,
+        R.string.page_experience, R.string.ui_card_title, R.string.ui_hide_uid,
+        R.string.ui_hide_hud, R.string.ui_pc, R.string.camera_card_title, R.string.camera_dither,
+        R.string.camera_free, R.string.camera_pause, R.string.camera_global_fov,
+        R.string.dash_card_title, R.string.dash_enable, R.string.dash_aglina,
+        R.string.dash_liino, R.string.dash_jsspsi))
+    addAll(featuresOn(SettingsPage.FIRST_PERSON,
+        R.string.page_first_person, R.string.fp_enable, R.string.fp_group_display,
+        R.string.fp_group_control, R.string.camera_fp_fov_label, R.string.camera_fp_eye_height,
+        R.string.camera_fp_near_clip))
+    addAll(featuresOn(SettingsPage.CAMERA_MOTION,
+        R.string.page_camera_motion, R.string.motion_group_look, R.string.motion_group_preset,
+        R.string.motion_group_keyframe, R.string.motion_group_vmd, R.string.motion_vmd_import))
+    addAll(featuresOn(SettingsPage.MMD, R.string.mmd_title, R.string.mmd_alignment_open_import))
+    addAll(featuresOn(SettingsPage.CHARACTERS,
+        R.string.page_characters, R.string.model_title, R.string.settings_title,
+        R.string.home_login_display_title))
+    addAll(featuresOn(SettingsPage.APPEARANCE,
+        R.string.custom_model_title, R.string.home_appearance_title, R.string.custom_model_install))
+    addAll(featuresOn(SettingsPage.ADMINISTRATOR_APPEARANCE,
+        R.string.appearance_card_title, R.string.appearance_enable, R.string.appearance_weapon_section_title,
+        R.string.appearance_character_section_title, R.string.appearance_effects_section_title))
+    addAll(featuresOn(SettingsPage.TOOLS,
+        R.string.page_tools, R.string.overlay_card_title, R.string.overlay_enable,
+        R.string.overlay_auto_snap, R.string.overlay_log_visible, R.string.overlay_transparency,
+        R.string.overlay_preview, R.string.diagnostics_title))
+    add(HomeSearchEntry(R.string.third_party_manage, SettingsPage.TOOLS, ThirdPartyModulesActivity::class.java))
+    add(HomeSearchEntry(R.string.media_screen_title, SettingsPage.TOOLS, MediaScreenActivity::class.java))
+    addAll(featuresOn(SettingsPage.WORKSHOP,
+        R.string.next_workshop, R.string.next_workshop_direct, R.string.next_workshop_domain))
+    addAll(featuresOn(SettingsPage.LOG, R.string.page_log, R.string.log_refresh, R.string.log_export))
+    addAll(featuresOn(SettingsPage.SETTINGS,
+        R.string.page_app_settings, R.string.next_language, R.string.next_software_update,
+        R.string.next_auto_check, R.string.next_check_update, R.string.next_resources,
+        R.string.next_import_resource, R.string.next_update_core, R.string.next_update_preview,
+        R.string.next_resume_resources))
+    addAll(featuresOn(SettingsPage.THEME_SETTINGS,
+        R.string.app_theme_title, R.string.app_theme_mode, R.string.app_theme_glass))
+    addAll(featuresOn(SettingsPage.ABOUT,
+        R.string.page_about, R.string.next_project, R.string.next_github,
+        R.string.next_upstream_github, R.string.about_license, R.string.next_disclaimer, R.string.about_version))
+}
 
 @Composable
-fun HomeSearchPanel(
+internal fun HomeSearchResults(
+    query: String,
+    topPadding: Dp,
     onOpenPage: (Int) -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-    topPadding: Dp = Be.Space.none,
-    bottomPadding: Dp = Be.Space.l,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    val context = LocalContext.current
     val needle = query.trim()
-    val rows = HomeSearchCatalog.map { entry ->
-        Triple(entry, stringResource(entry.title), entry.place?.let { stringResource(it) }.orEmpty())
-    }.filter { (_, title, place) ->
-        needle.isEmpty() || title.contains(needle, ignoreCase = true) || place.contains(needle, ignoreCase = true)
+    val gap = appSectionGap
+    val context = LocalContext.current
+    val rows = HomeSearchEntries.map { entry ->
+        Triple(entry, stringResource(entry.title), stringResource(SettingsPage.titleOf(entry.page)))
+    }.filter { (_, title, page) ->
+        title.contains(needle, ignoreCase = true) || page.contains(needle, ignoreCase = true)
     }
-    Column(
-        modifier
-            .fillMaxSize()
-            .padding(start = Be.Space.gutter, end = Be.Space.gutter, top = topPadding),
+    LazyColumn(
+        Modifier.widthIn(max = Be.Size.contentMaxWidth).fillMaxSize(),
+        contentPadding = PaddingValues(appPageGutter, topPadding, appPageGutter, Be.Space.footer),
+        verticalArrangement = Arrangement.spacedBy(gap),
     ) {
-        SearchField(
-            value = query,
-            onValueChange = { query = it },
-            hint = stringResource(R.string.search_features),
-            requestFocus = true,
-        )
         if (rows.isEmpty()) {
-            Text(
-                text = stringResource(R.string.search_empty),
-                color = appColors.textMuted,
-                fontSize = Be.Type.bodySmall,
-                modifier = Modifier.padding(top = Be.Space.l, start = Be.Space.s),
-            )
-        } else {
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = Be.Space.m, bottom = bottomPadding),
-                verticalArrangement = Arrangement.spacedBy(Be.Space.m),
-            ) {
-                rows.forEach { (entry, title, place) ->
-                    HomeSearchRow(title, place) {
-                        onClose()
-                        when (val target = entry.target) {
-                            is HomeSearchTarget.Page -> onOpenPage(target.page)
-                            HomeSearchTarget.Media ->
-                                context.startActivity(Intent(context, MediaScreenActivity::class.java))
-                            HomeSearchTarget.ThirdParty ->
-                                context.startActivity(Intent(context, ThirdPartyModulesActivity::class.java))
-                        }
-                    }
+            item { BodyText(stringResource(R.string.search_empty)) }
+        }
+        items(rows.size, key = { rows[it].first.title }) { index ->
+            val (entry, title, page) = rows[index]
+            SubPageRow(title = title, hint = page.takeUnless { it == title }, onClick = {
+                onClose()
+                if (entry.activity == null) {
+                    if (entry.page != SettingsPage.HOME) onOpenPage(entry.page)
+                } else {
+                    context.startActivity(Intent(context, entry.activity))
                 }
-            }
+            })
         }
     }
 }
 
+internal val LocalPageFilter = staticCompositionLocalOf { "" }
+
 @Composable
-private fun HomeSearchRow(title: String, place: String, onClick: () -> Unit) {
-    val press = rememberPressed(true, onClick)
-    Row(
-        Modifier
-            .pressScale(press.value)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Be.Radius.row))
-            .background(pressedFill(press.value, appColors.row, appColors.rowHigh))
-            .then(press.modifier)
-            .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = appColors.textPrimary,
-                fontSize = Be.Type.rowTitle,
-                fontWeight = FontWeight.Medium,
-            )
-            if (place.isNotEmpty() && place != title) {
-                Text(
-                    text = place,
-                    color = appColors.textMuted,
-                    fontSize = Be.Type.bodySmall,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-        Caret(
-            color = appColors.textSecondary,
-            modifier = Modifier
-                .padding(start = Be.Space.m)
-                .rotate(-90f),
-        )
-    }
+internal fun matchesPageFilter(vararg labels: String?): Boolean {
+    val query = LocalPageFilter.current
+    return query.isBlank() || labels.any { it?.contains(query, ignoreCase = true) == true }
 }
+
+@Composable
+internal fun pageSearchLabels(vararg labels: Int): List<String> = labels.map { stringResource(it) }

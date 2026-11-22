@@ -5,9 +5,9 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -37,6 +39,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,12 +49,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -77,7 +82,7 @@ private val DockClearance = Be.Size.dockHeight + DockTopGap + DockBottomGap
  * so a setting can never exist on one layout and be missing from the other.
  *
  * A sub-page is not a fifth tab. It is reached from a card inside its parent and
- * keeps that parent's tab lit by going through [SettingsPage.parentOf], so the
+ * keeps that parent's tab lit by going through [SettingsPage.tabOf], so the
  * strip always answers "which tab am I in" even two levels down.
  */
 @Composable
@@ -89,16 +94,25 @@ internal fun SettingsShell(
 ) {
     val configuration = LocalConfiguration.current
     val wide = configuration.screenWidthDp >= 720 && configuration.fontScale < 1.5f
-    val miuix = usesMiuix
-    val home = state.page == SettingsPage.HOME
-    val openPage = { index: Int -> state.openPage(index) }
-    var homeSearch by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(state.page) {
-        if (state.page != SettingsPage.HOME) homeSearch = false
+    val dockBackdrop = rememberGlassBackdrop(!wide && LocalAppearanceSettings.current.glass)
+    var searchPage by rememberSaveable { mutableStateOf<Int?>(null) }
+    var query by rememberSaveable(state.page) { mutableStateOf("") }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val closeSearch: () -> Unit = {
+        keyboard?.hide()
+        searchPage = null
+        query = ""
     }
-    val showSearch = home && homeSearch
+    val openPage = { index: Int ->
+        if (searchPage != null) closeSearch()
+        state.openPage(index)
+    }
+    LaunchedEffect(state.page) {
+        if (searchPage != state.page) searchPage = null
+    }
+    val showSearch = searchPage == state.page
     val toggleSearch: () -> Unit = {
-        if (state.page == SettingsPage.HOME) homeSearch = !homeSearch
+        if (showSearch) closeSearch() else searchPage = state.page
     }
 
     Surface(
@@ -115,13 +129,9 @@ internal fun SettingsShell(
                             .fillMaxSize()
                             .padding(start = Be.Space.l, top = Be.Space.xxl, end = Be.Space.l, bottom = Be.Space.l),
                     ) {
-                        if (!miuix) {
-                            AppHeader(searchOpen = showSearch, onSearch = toggleSearch.takeIf { home })
-                            Spacer(Modifier.height(Be.Space.xxl))
-                        }
                         PageTabs(
                             labels = SettingsPage.TAB_LABELS.map { stringResource(it) },
-                            selectedIndex = SettingsPage.TAB_ORDER.indexOf(SettingsPage.parentOf(state.page)),
+                            selectedIndex = SettingsPage.TAB_ORDER.indexOf(SettingsPage.tabOf(state.page)),
                             onSelect = { tab -> openPage(SettingsPage.TAB_ORDER[tab]) },
                             vertical = true,
                             glyphs = DockGlyphs,
@@ -129,36 +139,44 @@ internal fun SettingsShell(
                     }
                     Box(Modifier.weight(1f).fillMaxSize()) {
                         ShellBody(
-                            state, gameControl, onPreviewOverlay, onInstallBem, showSearch, openPage,
-                            { homeSearch = false }, toggleSearch, Modifier.fillMaxSize(),
+                            state, gameControl, onPreviewOverlay, onInstallBem, showSearch, query, { query = it },
+                            closeSearch, toggleSearch, Modifier.fillMaxSize(),
                         )
                     }
                 }
             } else {
-                Column(Modifier.fillMaxSize()) {
-                    if (!miuix && !SettingsPage.isSubPage(state.page)) {
-                        PageHeader(searchOpen = showSearch, onSearch = toggleSearch.takeIf { home })
-                    }
-                    ShellBody(
-                        state, gameControl, onPreviewOverlay, onInstallBem, showSearch, openPage,
-                        { homeSearch = false }, toggleSearch, Modifier.weight(1f),
-                        dockClearance = if (miuix) DockClearance else Be.Space.none,
-                    )
-                    if (!miuix) BottomDock(state.page, openPage)
+                ShellBody(
+                    state, gameControl, onPreviewOverlay, onInstallBem, showSearch, query, { query = it },
+                    closeSearch, toggleSearch,
+                    Modifier.fillMaxSize().captureGlassBackdrop(dockBackdrop),
+                    dockClearance = DockClearance,
+                )
+                AnimatedVisibility(
+                    visible = !showSearch,
+                    enter = fadeIn(tween(220)),
+                    exit = fadeOut(tween(180)),
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    BottomDock(state.page, openPage, backdrop = dockBackdrop)
                 }
-                if (miuix) BottomDock(state.page, openPage, Modifier.align(Alignment.BottomCenter))
             }
         }
     }
 }
 
 @Composable
-private fun BottomDock(page: Int, onOpenPage: (Int) -> Unit, modifier: Modifier = Modifier) {
+private fun BottomDock(
+    page: Int,
+    onOpenPage: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    backdrop: GlassBackdrop? = null,
+) {
     PageTabs(
         labels = SettingsPage.TAB_LABELS.map { stringResource(it) },
-        selectedIndex = SettingsPage.TAB_ORDER.indexOf(SettingsPage.parentOf(page)),
+        selectedIndex = SettingsPage.TAB_ORDER.indexOf(SettingsPage.tabOf(page)),
         onSelect = { tab -> onOpenPage(SettingsPage.TAB_ORDER[tab]) },
         glyphs = DockGlyphs,
+        backdrop = backdrop,
         modifier = modifier.padding(
             start = Be.Space.gutter,
             end = Be.Space.gutter,
@@ -183,7 +201,8 @@ private fun ShellBody(
     onPreviewOverlay: () -> Unit,
     onInstallBem: () -> Unit,
     showSearch: Boolean,
-    onOpenPage: (Int) -> Unit,
+    query: String,
+    onQueryChange: (String) -> Unit,
     onCloseSearch: () -> Unit,
     onToggleSearch: () -> Unit,
     modifier: Modifier = Modifier,
@@ -194,7 +213,6 @@ private fun ShellBody(
     val motion = remember { SeekableTransitionState(destination) }
     val transition = rememberTransition(motion, label = "settingsDestination")
     var backProgress by remember(destination) { mutableStateOf<Float?>(null) }
-    var headerHeightPx by remember { mutableIntStateOf(0) }
 
     PredictiveBackHandler(enabled = previous != null) { events ->
         if (previous == null) return@PredictiveBackHandler
@@ -230,7 +248,7 @@ private fun ShellBody(
         contentKey = { it.page },
         transitionSpec = {
             when {
-                SettingsPage.parentOf(initialState.page) != SettingsPage.parentOf(targetState.page) -> {
+                SettingsPage.tabOf(initialState.page) != SettingsPage.tabOf(targetState.page) -> {
                     val travel = pageTravel(initialState.page, targetState.page)
                     val slide = BeMotion.tabTravel<IntOffset>()
                     slideInHorizontally(slide) { travel * it }
@@ -252,44 +270,42 @@ private fun ShellBody(
             }.using(null)
         },
     ) { page ->
-        Box(Modifier.fillMaxSize().background(appColors.background)) {
-            if (page.page == SettingsPage.HOME) {
-                val floatingHeader = usesMiuix
-                val headerClearance = with(LocalDensity.current) { headerHeightPx.toDp() }
-                transition.AnimatedVisibility(
-                    visible = { !it.searching },
-                    enter = fadeIn(BeMotion.effects()),
-                    exit = fadeOut(BeMotion.effects()),
-                ) {
-                    SettingsPageContent(
-                        page.page, state, gameControl, onPreviewOverlay, onInstallBem, headerClearance, dockClearance,
-                    )
+        val pageId = page.page
+        var headerHeightPx by remember(pageId) { mutableIntStateOf(0) }
+        val headerClearance = with(LocalDensity.current) { headerHeightPx.toDp() }
+        val headerBackdrop = rememberGlassBackdrop(LocalAppearanceSettings.current.glass)
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.fillMaxSize()
+                    .captureGlassBackdrop(headerBackdrop)
+                    .background(appColors.background),
+            ) {
+                val filtering = showSearch && pageId == state.page
+                if (filtering && pageId == SettingsPage.HOME) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        HomeSearchResults(query, headerClearance + Be.Space.m, state::openPage, onCloseSearch)
+                    }
+                } else {
+                    CompositionLocalProvider(LocalPageFilter provides if (filtering) query.trim() else "") {
+                        SettingsPageContent(
+                            pageId, state, gameControl, onPreviewOverlay, onInstallBem, headerClearance,
+                            if (filtering) Be.Space.none else dockClearance,
+                        )
+                    }
                 }
-                transition.AnimatedVisibility(
-                    visible = { it.searching },
-                    enter = fadeIn(BeMotion.effects()) + expandVertically(BeMotion.spatial(), expandFrom = Alignment.Top),
-                    exit = slideOutHorizontally(tween(240)) { it },
-                ) {
-                    HomeSearchPanel(
-                        onOpenPage = onOpenPage,
-                        onClose = onCloseSearch,
-                        modifier = Modifier.fillMaxSize().background(appColors.background),
-                        topPadding = headerClearance,
-                        bottomPadding = Be.Space.l + dockClearance,
-                    )
-                }
-                if (floatingHeader) {
-                    PageHeader(
-                        searchOpen = showSearch,
-                        onSearch = onToggleSearch,
-                        modifier = Modifier.onSizeChanged { headerHeightPx = it.height },
-                    )
-                }
-            } else {
-                SettingsPageContent(
-                    page.page, state, gameControl, onPreviewOverlay, onInstallBem, Be.Space.none, dockClearance,
-                )
             }
+            PageHeader(
+                page = pageId,
+                searchOpen = showSearch && state.page == pageId,
+                query = query,
+                onQueryChange = onQueryChange,
+                onSearch = { if (state.page == pageId) onToggleSearch() },
+                onBack = if (SettingsPage.isSubPage(pageId)) {
+                    { if (state.page == pageId) { if (showSearch) onCloseSearch() else state.back() } }
+                } else null,
+                modifier = Modifier.onSizeChanged { headerHeightPx = it.height },
+                backdrop = headerBackdrop,
+            )
         }
     }
 }
@@ -304,11 +320,11 @@ private fun SettingsPageContent(
     headerClearance: Dp,
     dockClearance: Dp,
 ) {
-    val topPadding = Be.Space.m + if (page == SettingsPage.HOME) headerClearance else Be.Space.none
+    val topPadding = Be.Space.m + headerClearance
     val bottomPadding = Be.Space.footer + dockClearance
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         if (page == SettingsPage.HOME || page == SettingsPage.EXPERIENCE) {
-            val status = state.status
+            val status = if (LocalPageFilter.current.isBlank()) state.status else ""
             val gap = appSectionGap
             LazyColumn(
                 modifier = Modifier.widthIn(max = Be.Size.contentMaxWidth).fillMaxWidth(),
@@ -342,15 +358,6 @@ private fun SettingsPageContent(
                     bottom = bottomPadding,
                 ),
         ) {
-            if (SettingsPage.isSubPage(page)) {
-                // The rail layout keeps the header instead of a title row, so the
-                // back affordance has to exist there too or a sub-page would be a
-                // one-way trip on a tablet.
-                Box(Modifier.fillMaxWidth().padding(bottom = Be.Space.l)) {
-                    BackButton(state::back)
-                }
-            }
-
             when (page) {
                 SettingsPage.CHARACTERS -> CharacterPage(state, onInstallBem)
                 SettingsPage.TOOLS -> ToolsPage(state, onPreviewOverlay)
@@ -360,22 +367,27 @@ private fun SettingsPageContent(
                 SettingsPage.APPEARANCE -> AppearancePage(state, onInstallBem)
                 SettingsPage.ADMINISTRATOR_APPEARANCE -> AdministratorAppearancePage(state::markAdministratorAppearanceSaved)
                 SettingsPage.LOG -> LogPage(state)
+                SettingsPage.SETTINGS -> AppSettingsPage(
+                    onThemeSettings = { state.openPage(SettingsPage.THEME_SETTINGS) },
+                    onAbout = { state.openPage(SettingsPage.ABOUT) },
+                )
+                SettingsPage.THEME_SETTINGS -> AppThemeSettingsPage()
                 SettingsPage.ABOUT -> AboutPage()
                 SettingsPage.WORKSHOP -> WorkshopPage()
             }
             Spacer(Modifier.height(Be.Space.xxl))
-            if (state.status.isNotBlank()) Notice(state.status)
+            if (LocalPageFilter.current.isBlank() && state.status.isNotBlank()) Notice(state.status)
         }
     }
 }
 
 /** Which way a page change travels: 1 enters from the right, -1 from the left. */
 private fun pageTravel(from: Int, to: Int): Int {
-    val fromTab = SettingsPage.parentOf(from)
-    val toTab = SettingsPage.parentOf(to)
+    val fromTab = SettingsPage.tabOf(from)
+    val toTab = SettingsPage.tabOf(to)
     return when {
         SettingsPage.isSubPage(to) && from == SettingsPage.parentOf(to) -> 1
-        SettingsPage.isSubPage(from) && to == fromTab -> -1
+        SettingsPage.isSubPage(from) && to == SettingsPage.parentOf(from) -> -1
         toTab != fromTab -> if (toTab > fromTab) 1 else -1
         else -> 1
     }
@@ -403,8 +415,16 @@ fun BackButton(onBack: () -> Unit) {
 }
 
 @Composable
-private fun PageHeader(searchOpen: Boolean, onSearch: (() -> Unit)?, modifier: Modifier = Modifier) {
-    val miuix = usesMiuix
+private fun PageHeader(
+    page: Int,
+    searchOpen: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onBack: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    backdrop: GlassBackdrop? = null,
+) {
     Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             Modifier
@@ -413,66 +433,109 @@ private fun PageHeader(searchOpen: Boolean, onSearch: (() -> Unit)?, modifier: M
                 .padding(
                     start = Be.Space.gutter,
                     end = Be.Space.gutter,
-                    top = if (miuix) DockBottomGap else Be.Space.page,
-                    bottom = if (miuix) DockTopGap else Be.Space.page,
+                    top = DockBottomGap,
+                    bottom = DockTopGap,
                 ),
         ) {
-            AppHeader(searchOpen, onSearch)
+            AppHeader(page, searchOpen, query, onQueryChange, onSearch, onBack, backdrop)
         }
     }
 }
 
 @Composable
 private fun AppHeader(
-    searchOpen: Boolean = false,
-    onSearch: (() -> Unit)? = null,
+    page: Int,
+    searchOpen: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onBack: (() -> Unit)?,
+    backdrop: GlassBackdrop?,
 ) {
-    val miuix = usesMiuix
-    val avatarFrame = if (miuix) Modifier else Modifier.background(appColors.accent)
-    Row(
+    val radius = Be.Radius.card
+    val panel = appColors.panel
+    val material = if (backdrop == null) Modifier.background(panel) else {
+        Modifier.glassSurface(
+            backdrop, panel, LocalAppAppearance.current?.lightBars == true, cornerRadius = radius,
+        )
+    }
+    val expansion by animateFloatAsState(if (searchOpen) 1f else 0f, tween(240), label = "searchWidth")
+    BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(if (miuix) Be.Radius.card else Be.Radius.header))
-            .background(appColors.panel)
-            .padding(if (miuix) MiuixLayout.inset else 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(RoundedCornerShape(radius))
+            .then(material)
+            .padding(MiuixLayout.inset),
+        contentAlignment = Alignment.CenterEnd,
     ) {
-        Box(
-            Modifier
-                .size(Be.Size.avatar)
-                .clip(RoundedCornerShape(Be.Radius.badge))
-                .then(avatarFrame),
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).alpha(1f - expansion),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painter = painterResource(R.drawable.gilberta),
-                contentDescription = stringResource(R.string.app_icon_description),
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().padding(if (miuix) 0.dp else 3.dp),
-            )
+            if (page == SettingsPage.HOME) {
+                Box(
+                    Modifier
+                        .size(Be.Size.avatar)
+                        .clip(RoundedCornerShape(Be.Radius.badge))
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.be_wordmark),
+                        contentDescription = stringResource(R.string.app_icon_description),
+                        colorFilter = ColorFilter.tint(miuixControlColors.activeTrack),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Spacer(Modifier.width(Be.Space.xxl))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        color = appColors.textPrimary,
+                        fontSize = Be.Type.appName,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_subtitle),
+                        color = appColors.textSecondary,
+                        fontSize = Be.Type.body,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                    Badge(
+                        text = stringResource(R.string.runtime_badge),
+                        modifier = Modifier.padding(top = Be.Space.m + 2.dp),
+                    )
+                }
+            } else {
+                if (onBack != null) {
+                    BackButton(onBack)
+                    Spacer(Modifier.width(Be.Space.m))
+                }
+                Text(
+                    text = stringResource(SettingsPage.titleOf(page)),
+                    color = appColors.textPrimary,
+                    fontSize = Be.Type.title,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(40.dp + Be.Space.m))
         }
-        Spacer(Modifier.width(Be.Space.xxl))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.app_name),
-                color = appColors.textPrimary,
-                fontSize = Be.Type.appName,
-                fontWeight = FontWeight.Medium,
+        if (searchOpen || expansion > 0f) {
+            val collapsedWidth = minOf(40.dp, maxWidth)
+            val fieldWidth = collapsedWidth + (maxWidth - collapsedWidth) * expansion
+            SearchField(
+                value = query,
+                onValueChange = onQueryChange,
+                hint = stringResource(R.string.search_features),
+                modifier = Modifier.width(fieldWidth),
+                requestFocus = searchOpen && expansion >= 0.85f,
+                onClose = onSearch,
+                contentAlpha = expansion,
             )
-            Text(
-                text = stringResource(R.string.settings_subtitle),
-                color = appColors.textSecondary,
-                fontSize = Be.Type.body,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-            Badge(
-                text = stringResource(R.string.runtime_badge),
-                modifier = Modifier.padding(top = Be.Space.m + 2.dp),
-            )
-        }
-        if (onSearch != null) {
-            Spacer(Modifier.width(Be.Space.m))
+        } else {
             SearchIconButton(
-                open = searchOpen,
+                open = false,
                 onClick = onSearch,
                 contentDescription = stringResource(R.string.search_features),
             )

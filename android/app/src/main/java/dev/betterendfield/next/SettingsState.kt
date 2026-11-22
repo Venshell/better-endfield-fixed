@@ -44,7 +44,7 @@ data class MmdWorkRow(
  *
  * Four tabs, and sub-pages that are reached from a card inside a tab. Both
  * kinds are addressed by the same integer because the shell switches on one
- * value; [parentOf] is what keeps the tab strip highlighted while a sub-page is
+ * value; [tabOf] is what keeps the tab strip highlighted while a sub-page is
  * open, so "which tab am I in" stays answerable on every screen.
  *
  * The sub-page ids start well above the tab ids so [isSubPage] is a range check
@@ -60,12 +60,7 @@ object SettingsPage {
 
     val TAB_ORDER = intArrayOf(HOME, EXPERIENCE, CHARACTERS, TOOLS)
 
-    val TAB_LABELS = intArrayOf(
-        R.string.page_home,
-        R.string.page_experience,
-        R.string.page_characters,
-        R.string.page_tools,
-    )
+    val TAB_LABELS = TAB_ORDER.map(::titleOf).toIntArray()
 
     /* --- sub-pages, reached from a card --- */
 
@@ -77,15 +72,43 @@ object SettingsPage {
     const val MMD = 15
     const val ADMINISTRATOR_APPEARANCE = 16
     const val WORKSHOP = 17
+    const val SETTINGS = 18
+    const val THEME_SETTINGS = 19
+
+    @androidx.annotation.StringRes
+    fun titleOf(page: Int): Int = when (page) {
+        HOME -> R.string.page_home
+        EXPERIENCE -> R.string.page_experience
+        CHARACTERS -> R.string.page_characters
+        TOOLS -> R.string.page_tools
+        FIRST_PERSON -> R.string.page_first_person
+        APPEARANCE -> R.string.custom_model_title
+        LOG -> R.string.page_log
+        ABOUT -> R.string.page_about
+        CAMERA_MOTION -> R.string.page_camera_motion
+        MMD -> R.string.mmd_title
+        ADMINISTRATOR_APPEARANCE -> R.string.appearance_card_title
+        WORKSHOP -> R.string.next_workshop
+        SETTINGS -> R.string.page_app_settings
+        THEME_SETTINGS -> R.string.app_theme_title
+        else -> R.string.app_name
+    }
 
     fun isSubPage(page: Int): Boolean = page >= FIRST_PERSON
 
-    /** The tab a page belongs to, so a sub-page keeps its parent highlighted. */
+    /** The immediate destination for both button and gesture back. */
     fun parentOf(page: Int): Int = when (page) {
         FIRST_PERSON, CAMERA_MOTION, MMD -> EXPERIENCE
         APPEARANCE, ADMINISTRATOR_APPEARANCE -> CHARACTERS
-        LOG, ABOUT, WORKSHOP -> TOOLS
+        LOG, SETTINGS, WORKSHOP -> TOOLS
+        ABOUT, THEME_SETTINGS -> SETTINGS
         else -> page
+    }
+
+    /** The top-level tab owning this page, including nested destinations. */
+    tailrec fun tabOf(page: Int): Int {
+        val parent = parentOf(page)
+        return if (parent == page) page else tabOf(parent)
     }
 }
 

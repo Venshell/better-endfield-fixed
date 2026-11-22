@@ -93,8 +93,9 @@ private val industrialMaterialColors = materialColors(IndustrialPalette, light =
 fun BetterEndfieldTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalUiPalette provides IndustrialPalette,
-        LocalAppAppearance provides AppAppearance.Industrial,
-        LocalSelectAppAppearance provides {},
+        LocalAppAppearance provides null,
+        LocalAppearanceSettings provides AppAppearanceSettings(theme = AppThemeMode.Dark, glass = false),
+        LocalSetAppearanceSettings provides {},
     ) {
         MaterialUiTheme(industrialMaterialColors, content)
     }

@@ -10,15 +10,16 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.annotation.StyleRes
 import androidx.core.splashscreen.SplashScreenViewProvider
 import androidx.core.view.doOnPreDraw
 
 private const val LogoHoldMillis = 50L
 private const val SplashFadeMillis = 140L
 
-internal fun Activity.rememberPlatformSplashTheme(appearance: AppAppearance) {
+internal fun Activity.rememberPlatformSplashTheme(@StyleRes startingTheme: Int) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        splashScreen.setSplashScreenTheme(appearance.splashTheme)
+        splashScreen.setSplashScreenTheme(startingTheme)
     }
 }
 

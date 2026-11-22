@@ -79,7 +79,7 @@ fun BemInstallScreen(state: BemInstallState) {
                 verticalArrangement = Arrangement.spacedBy(appSectionGap),
             ) {
                 SectionCard(
-                    eyebrow = "BEM · PACKAGE MANAGER",
+                    eyebrow = stringResource(R.string.bem_manager_eyebrow),
                     title = stringResource(R.string.custom_model_title),
                     subtitle = stringResource(R.string.bem_install_restart_hint),
                 ) {}
@@ -112,8 +112,8 @@ fun BemInstallScreen(state: BemInstallState) {
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                GhostButton(
-                    text = stringResource(R.string.next_bem_compose),
+                SubPageRow(
+                    title = stringResource(R.string.next_bem_compose),
                     onClick = { BemComposeActivity.open(activity) },
                     enabled = state.canTransform,
                     modifier = Modifier.fillMaxWidth(),

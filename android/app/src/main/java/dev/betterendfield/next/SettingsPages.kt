@@ -1,7 +1,6 @@
 package dev.betterendfield.next
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,23 +40,19 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun CharacterPage(state: SettingsState, onInstallBem: () -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(appSectionGap)) {
-        PanelCard {
-            SubPageRow(
-                title = stringResource(R.string.custom_model_title),
-                hint = state.appearanceSummary,
-                state = state.appearancePackages.any { it.enabled },
-                onClick = { state.openPage(SettingsPage.APPEARANCE) },
-            )
-        }
-
-        PanelCard {
-            SubPageRow(
-                title = stringResource(R.string.appearance_card_title),
-                hint = "",
-                state = ModuleSettings.isAppearanceEnabled(androidx.compose.ui.platform.LocalContext.current),
-                onClick = { state.openPage(SettingsPage.ADMINISTRATOR_APPEARANCE) },
-            )
-        }
+        SubPageRow(
+            title = stringResource(R.string.custom_model_title),
+            hint = state.appearanceSummary,
+            state = state.appearancePackages.any { it.enabled },
+            eyebrow = stringResource(R.string.bem_manager_eyebrow),
+            onClick = { state.openPage(SettingsPage.APPEARANCE) },
+        )
+        SubPageRow(
+            title = stringResource(R.string.appearance_card_title),
+            state = ModuleSettings.isAppearanceEnabled(androidx.compose.ui.platform.LocalContext.current),
+            eyebrow = stringResource(R.string.admin_appearance_eyebrow),
+            onClick = { state.openPage(SettingsPage.ADMINISTRATOR_APPEARANCE) },
+        )
         LoginDisplayPage(state)
         VoicePage(state)
     }
@@ -76,6 +70,7 @@ fun AppearancePage(state: SettingsState, onInstallBem: () -> Unit) {
         SectionCard(
             eyebrow = "BEM",
             title = stringResource(R.string.custom_model_title),
+            searchLabels = pageSearchLabels(R.string.custom_model_install),
             status = if (packages.isEmpty()) {
                 stringResource(R.string.home_appearance_none)
             } else {
@@ -89,13 +84,14 @@ fun AppearancePage(state: SettingsState, onInstallBem: () -> Unit) {
             )
         }
 
-        if (packages.isNotEmpty()) {
+        val matchingPackages = packages.filter { pkg -> matchesPageFilter(pkg.name, packageTextureLabel(pkg)) }
+        if (matchingPackages.isNotEmpty()) {
             ListCaption(
                 text = stringResource(R.string.home_appearance_title),
                 modifier = Modifier.padding(start = Be.Space.hairline, top = Be.Space.xs),
             )
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Be.Space.m)) {
-                packages.forEach { pkg -> PackageRow(pkg, onInstallBem) }
+                matchingPackages.forEach { pkg -> PackageRow(pkg, onInstallBem) }
             }
         }
     }
@@ -108,42 +104,17 @@ fun AppearancePage(state: SettingsState, onInstallBem: () -> Unit) {
  */
 @Composable
 private fun PackageRow(pkg: BemPackage, onOpen: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(Be.Radius.row))
-            .background(appColors.row)
-            .clickable(onClick = onOpen)
-            .padding(horizontal = Be.Space.xl, vertical = Be.Space.l),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = pkg.name,
-                color = appColors.textPrimary,
-                fontSize = Be.Type.rowTitle,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = stringResource(if (pkg.enabled) R.string.state_on else R.string.state_off),
-                color = if (pkg.enabled) appColors.accentText else appColors.textMuted,
-                fontSize = Be.Type.bodySmall,
-                fontWeight = FontWeight.Medium,
-            )
-        }
-        Text(
-            text = if (pkg.convertedTextures) {
-                "纹理：手机版（已转换）"
-            } else {
-                "纹理：原始"
-            },
-            color = appColors.textSecondary,
-            fontSize = Be.Type.bodySmall,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-    }
+    SubPageRow(
+        title = pkg.name,
+        hint = packageTextureLabel(pkg),
+        state = pkg.enabled,
+        onClick = onOpen,
+    )
 }
+
+@Composable
+private fun packageTextureLabel(pkg: BemPackage): String =
+    stringResource(if (pkg.convertedTextures) R.string.package_texture_converted else R.string.package_texture_original)
 
 /**
  * The login display.
