@@ -22,7 +22,7 @@ Better Endfield 是面向《明日方舟：终末地》Android 端的 LSPosed �
 - **内置头饰资源**：APK 随包提供 898 份 v3/v61 头饰资源，供第一人称隐藏或替换遮挡视野的网格。资源对应游戏 versionCode 61，逐角色效果以实机验收为准。
 - **实验性分支**：缓降和联机在 [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive)，实验 APK 从 [该分支的 Actions](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fdestructive) 下载。正式版 `main` 不含这两项，并保留原有持续冲刺。
 
-Android 设置应用和游戏内悬浮面板沿用本仓库的 Compose 入口，保留第一人称、BEM 管理、MMD 导入和会客室媒体屏操作。具体入口见 [Android 使用说明](android/README.md)，版本变更见 [更新日志](CHANGELOG.md)。
+Android 设置应用采用 Miuix，提供深浅色主题、可选液态玻璃和 Be 图标及手写启动动画。首页支持全局搜索，其他页面可就地筛选。应用仍提供第一人称、BEM 管理、MMD 导入和会客室媒体屏入口。具体用法见 [Android 使用说明](android/README.md)，版本变更见 [更新日志](CHANGELOG.md)。
 
 ## 功能一览
 

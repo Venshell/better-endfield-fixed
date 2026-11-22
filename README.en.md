@@ -22,7 +22,7 @@ This repository targets Android ARM64 releases. These features and branch choice
 - **Bundled headwear assets**: the APK contains 898 v3/v61 assets for hiding or replacing meshes that obstruct first-person vision. They target game versionCode 61. Character-by-character results require device validation.
 - **Experimental branch**: glide and multiplayer are on [`experimental/destructive`](https://github.com/Venshell/better-endfield-fixed/tree/experimental/destructive). [Download the experimental APK from that branch's Actions](https://github.com/Venshell/better-endfield-fixed/actions/workflows/android-build.yml?query=branch%3Aexperimental%2Fdestructive). Stable `main` does not include either, and it keeps sustained dash.
 
-The Android settings app and in-game panel use this repository's Compose screens for first person, BEM management, MMD import and reception-room display controls. See the [Android guide](android/README.md) for entry points and the [changelog](CHANGELOG.md) for version changes.
+The Android settings app uses Miuix with light and dark themes, optional liquid glass, a Be icon, and a handwritten startup animation. Search from Home to find features across the app, or filter the current page from its search bar. The app also provides access to first-person settings, BEM management, MMD import, and reception-room display controls. See the [Android guide](android/README.md) for instructions and the [changelog](CHANGELOG.md) for version changes.
 
 ## Features
 
