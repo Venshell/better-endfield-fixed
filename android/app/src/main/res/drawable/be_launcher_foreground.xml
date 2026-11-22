@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.175"
+        android:scaleY="0.175"
+        android:translateX="8.5"
+        android:translateY="26">
+        <path android:fillColor="@android:color/white" android:pathData="@string/be_wordmark_b_path" />
+        <path android:fillColor="@android:color/white" android:pathData="@string/be_wordmark_e_path" />
+    </group>
+</vector>

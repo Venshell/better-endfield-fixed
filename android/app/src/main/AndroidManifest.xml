@@ -12,9 +12,9 @@
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
         android:hasCode="true"
-        android:icon="@drawable/gilberta"
+        android:icon="@mipmap/be_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/gilberta"
+        android:roundIcon="@mipmap/be_launcher"
         android:supportsRtl="true">
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
