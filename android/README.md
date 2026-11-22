@@ -1,6 +1,6 @@
 # Better Endfield Next Android
 
-本目录提供 Android ARM64 的 LSPosed 模块、设置应用和游戏内悬浮面板。当前 Android 源码版本为 `4.1.9`（versionCode `40109`），选择性接入上游 4.1.9 的创意工坊入口，应用包名为 `dev.betterendfield.next`；本地派生分支继续保留内置第一人称、陀螺仪、第三方模块入口和 Compose 设置界面。当前产品边界见[产品边界](../docs/PRODUCT_BOUNDARY.md)。
+本目录提供 Android ARM64 的 LSPosed 模块、设置应用和游戏内悬浮面板。当前 Android 源码版本为 `4.2.0`（versionCode `40200`），应用包名为 `dev.betterendfield.next`。派生版保留创意工坊、内置第一人称、陀螺仪和第三方模块管理，设置应用使用 Compose 与 Miuix。当前产品边界见[产品边界](../docs/PRODUCT_BOUNDARY.md)。
 
 本次上游合并使用 Next 身份。旧包名 `dev.betterendfield.android` 与 Next 是两个独立应用，安装不会迁移旧应用设置或框架作用域；请在框架中启用 Next 并重新选择实际游戏作用域。不要同时对同一游戏启用两个模块。可先保留旧应用及数据，完成新包验证后再决定旧应用处理方式。
 
